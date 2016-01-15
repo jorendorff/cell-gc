@@ -1,7 +1,6 @@
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::ops::Deref;
 use std::marker::PhantomData;
 
 // What does this do? You'll never guess!
@@ -136,7 +135,7 @@ impl<'a> Heap<'a> {
         }
 
         // mark phase
-        for (&p, _) in self.pins.borrow().deref() {
+        for (&p, _) in self.pins.borrow().iter() {
             Heap::mark(p);
         }
 
