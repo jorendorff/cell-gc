@@ -442,17 +442,34 @@ mod test {
         });
     }
 
+    // Tests that you can't share values across separate heaps.
+    // Try uncommenting the tests below: if any of them compile successfully,
+    // consider it a test failure!
     /*
-    /// Test that you can't share values across separate heaps.
     #[test]
     fn bug_swapping() {
-        with_heap(|mut heap1| {
+        with_heap(|heap1| {
             with_heap(|mut heap2| {
                 let obj1 = heap1.alloc_null();  // error: cannot infer an appropriate lifetime parameter
                 let obj2 = heap2.alloc((Value::Null, Value::Pair(obj1)));
-                heap1.force_gc();
-                heap2.force_gc();
             });
+        });
+    }
+
+    #[test]
+    fn bug_swapping_2() {
+        let heap1 = with_heap(|h| h);  // error: cannot infer an appropriate lifetime
+        let heap2 = with_heap(|h| h);
+        let obj1 = heap1.alloc_null();
+        let obj2 = heap2.alloc((Value::Null, Value::Pair(obj1)));
+    }
+
+    #[test]
+    fn bug_swapping_3() {
+        with_heap(|heap1| {
+            let heap2 = with_heap(|h| h);  // error: cannot infer an appropriate lifetime
+            let obj1 = heap1.alloc_null();
+            let obj2 = heap2.alloc((Value::Null, Value::Pair(obj1)));
         });
     }
     */
