@@ -267,5 +267,27 @@ fn bug_heap_dropping() {
         obj.set_head(val); // occurs after the heap is gone
     });
 }
+
+#[test]
+fn bug_outliving_1() {
+    let obj = with_heap(|heap| {
+        heap.alloc_null()  // error: cannot infer an appropriate lifetime
+    });
+
+    let val = Value::Pair(obj.clone());
+    obj.set_head(val);  // occurs after the heap is gone
+}
+
+#[test]
+fn bug_outliving_2() {
+    let obj;
+    with_heap(|heap| {
+        obj = heap.alloc_null();  // error: cannot infer an appropriate lifetime
+    });
+
+    let val = Value::Pair(obj.clone());
+    obj.set_head(val);  // occurs after the heap is gone
+}
+
 */
 
