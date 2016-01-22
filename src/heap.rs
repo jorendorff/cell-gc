@@ -58,12 +58,15 @@ impl<'a> HeapStorage<'a> {
         self.freelist = p;
     }
 
-    unsafe fn alloc(&mut self) -> *mut PairStorage<'a> {
+    unsafe fn try_alloc(&mut self) -> Option<*mut PairStorage<'a>> {
         let p = self.freelist;
-        assert!(!p.is_null());
-        let listp = p as *mut *mut PairStorage<'a>;
-        self.freelist = *listp;
-        p
+        if p.is_null() {
+            None
+        } else {
+            let listp = p as *mut *mut PairStorage<'a>;
+            self.freelist = *listp;
+            Some(p)
+        }
     }
 
     unsafe fn sweep(&mut self) {
@@ -174,22 +177,19 @@ impl<'a> Heap<'a> {
     }
 
     pub fn try_alloc(&mut self, pair: (Value<'a>, Value<'a>)) -> Option<Pair<'a>> {
-        if self.storage.freelist.is_null() {
-            unsafe {
-                self.gc();
-            }
-            if self.storage.freelist.is_null() {
-                return None;
-            }
-        }
-
         unsafe {
-            let p = self.storage.alloc();
-            *p = PairStorage {
-                head: pair.0.to_heap(),
-                tail: pair.1.to_heap()
-            };
-            Some(Pair(PinnedRef::new(self, p)))
+            self.storage.try_alloc()
+                .or_else(|| {
+                    self.gc();
+                    self.storage.try_alloc()
+                })
+                .map(move |p| {
+                    *p = PairStorage {
+                        head: pair.0.to_heap(),
+                        tail: pair.1.to_heap()
+                    };
+                    Pair(PinnedRef::new(self, p))
+                })
         }
     }
 
