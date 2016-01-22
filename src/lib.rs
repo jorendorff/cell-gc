@@ -26,6 +26,13 @@ unsafe trait Mark {
     unsafe fn mark(ptr: *mut Self);
 }
 
+unsafe trait HeapInline {
+    type Heap;
+    type Storage;
+    unsafe fn from_heap(heap: &Self::Heap, ptr: &Self::Storage) -> Self;
+    fn to_heap(self) -> Self::Storage;
+}
+
 impl<'a> Heap<'a> {
     fn new() -> Heap<'a> {
         // Allocate with the full capacity so that allocated Pairs never move
@@ -92,8 +99,8 @@ impl<'a> Heap<'a> {
             let (h, t) = pair;
             *p = PairStorage {
                 marked: false,
-                head: value_to_heap(h),
-                tail: value_to_heap(t)
+                head: h.to_heap(),
+                tail: t.to_heap()
             };
             Some(PairRoot::new(self, p))
         }
@@ -197,22 +204,22 @@ impl<'a> PairRoot<'a> {
 
     pub fn head(&self) -> Value<'a> {
         let ptr = self.ptr;
-        unsafe { value_from_heap(&*self.heap, &(*ptr).head) }
+        unsafe { Value::from_heap(&*self.heap, &(*ptr).head) }
     }
 
     pub fn tail(&self) -> Value<'a> {
         let ptr = self.ptr;
-        unsafe { value_from_heap(&*self.heap, &(*ptr).tail) }
+        unsafe { Value::from_heap(&*self.heap, &(*ptr).tail) }
     }
 
     pub fn set_head(&self, v: Value<'a>) {
         let ptr = self.ptr;
-        unsafe { (*ptr).head = value_to_heap(v); }
+        unsafe { (*ptr).head = v.to_heap(); }
     }
 
     pub fn set_tail(&self, v: Value<'a>) {
         let ptr = self.ptr;
-        unsafe { (*ptr).tail = value_to_heap(v); }
+        unsafe { (*ptr).tail = v.to_heap(); }
     }
 
     #[cfg(test)]
@@ -249,24 +256,26 @@ pub enum Value<'a> {
     Pair(PairRoot<'a>)  // <-- equality is by pointer
 }
 
+unsafe impl<'a> HeapInline for Value<'a> {
+    type Heap = Heap<'a>;
+    type Storage = ValueStorage<'a>;
 
-// === Getting data into and out of the heap
-
-fn value_to_heap<'a>(v: Value<'a>) -> ValueStorage<'a> {
-    match v {
-        Value::Null => ValueStorage::Null,
-        Value::Int(n) => ValueStorage::Int(n),
-        Value::Str(rcstr) => ValueStorage::Str(rcstr),
-        Value::Pair(PairRoot{ptr, heap_id, ..}) => ValueStorage::Pair(ptr, heap_id)
+    fn to_heap(self) -> ValueStorage<'a> {
+        match self {
+            Value::Null => ValueStorage::Null,
+            Value::Int(n) => ValueStorage::Int(n),
+            Value::Str(rcstr) => ValueStorage::Str(rcstr),
+            Value::Pair(PairRoot{ptr, heap_id, ..}) => ValueStorage::Pair(ptr, heap_id)
+        }
     }
-}
 
-unsafe fn value_from_heap<'a>(heap: &Heap<'a>, v: &ValueStorage<'a>) -> Value<'a> {
-    match v {
-        &ValueStorage::Null => Value::Null,
-        &ValueStorage::Int(n) => Value::Int(n),
-        &ValueStorage::Str(ref rcstr) => Value::Str(rcstr.clone()),
-        &ValueStorage::Pair(ptr, _) => Value::Pair(PairRoot::new(heap, ptr))
+    unsafe fn from_heap(heap: &Heap<'a>, v: &ValueStorage<'a>) -> Value<'a> {
+        match v {
+            &ValueStorage::Null => Value::Null,
+            &ValueStorage::Int(n) => Value::Int(n),
+            &ValueStorage::Str(ref rcstr) => Value::Str(rcstr.clone()),
+            &ValueStorage::Pair(ptr, _) => Value::Pair(PairRoot::new(heap, ptr))
+        }
     }
 }
 
