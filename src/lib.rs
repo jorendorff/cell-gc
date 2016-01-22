@@ -22,6 +22,10 @@ pub fn with_heap<F, O>(f: F) -> O
     f(&mut Heap::new())
 }
 
+unsafe trait Mark {
+    unsafe fn mark(ptr: *mut Self);
+}
+
 impl<'a> Heap<'a> {
     fn new() -> Heap<'a> {
         // Allocate with the full capacity so that allocated Pairs never move
@@ -33,7 +37,7 @@ impl<'a> Heap<'a> {
         };
         for i in 0 .. HEAP_SIZE {
             h.storage.push(Pair {
-                mark: false,
+                marked: false,
                 head: XValue::Null,
                 tail: XValue::Null
             });
@@ -87,7 +91,7 @@ impl<'a> Heap<'a> {
 
             let (h, t) = pair;
             *p = Pair {
-                mark: false,
+                marked: false,
                 head: value_to_heap(h),
                 tail: value_to_heap(t)
             };
@@ -103,37 +107,22 @@ impl<'a> Heap<'a> {
         self.alloc((Value::Null, Value::Null))
     }
 
-    unsafe fn mark(p: *mut Pair<'a>) {
-        if !p.is_null() && !(*p).mark {
-            (*p).mark = true;
-            Heap::mark_value(&(*p).head);
-            Heap::mark_value(&(*p).tail);
-        }
-    }
-
-    unsafe fn mark_value(v: &XValue<'a>) {
-        match v {
-            &XValue::Pair(p, _) => Heap::mark(p),
-            _ => {}
-        }
-    }
-
     unsafe fn gc(&mut self) {
         // clear mark bits
         for p in &mut self.storage {
-            p.mark = false;
+            p.marked = false;
         }
 
         // mark phase
         for (&p, _) in self.pins.borrow().iter() {
-            Heap::mark(p);
+            Mark::mark(p);
         }
 
         // sweep phase
         self.freelist = std::ptr::null_mut();
         for i in 0 .. HEAP_SIZE {
             let p = &mut self.storage[i] as *mut Pair<'a>;
-            if !(*p).mark {
+            if !(*p).marked {
                 self.add_to_free_list(p);
             }
         }
@@ -150,9 +139,19 @@ impl<'a> Heap<'a> {
 
 // Pair is the only type that is actually allocated inside the heap (private)
 struct Pair<'a> {
-    mark: bool,
+    marked: bool,
     head: XValue<'a>,
     tail: XValue<'a>
+}
+
+unsafe impl<'a> Mark for Pair<'a> {
+    unsafe fn mark(ptr: *mut Pair<'a>) {
+        if !ptr.is_null() && !(*ptr).marked {
+            (*ptr).marked = true;
+            Mark::mark(&mut (*ptr).head as *mut XValue<'a>);
+            Mark::mark(&mut (*ptr).tail as *mut XValue<'a>);
+        }
+    }
 }
 
 // Handle to a Pair that lives in the heap.
@@ -231,6 +230,15 @@ enum XValue<'a> {
     Int(i32),
     Str(Rc<String>),
     Pair(*mut Pair<'a>, HeapId<'a>)
+}
+
+unsafe impl<'a> Mark for XValue<'a> {
+    unsafe fn mark(ptr: *mut XValue<'a>) {
+        match *ptr {
+            XValue::Pair(p, _) => Mark::mark(p),
+            _ => {}
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
