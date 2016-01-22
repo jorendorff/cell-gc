@@ -9,9 +9,9 @@ type HeapId<'a> = PhantomData<std::cell::Cell<&'a mut ()>>;
 // The heap is (for now) just a big Vec of Pairs
 pub struct Heap<'a> {
     id: HeapId<'a>,
-    storage: Vec<Pair<'a>>,
-    freelist: *mut Pair<'a>,
-    pins: RefCell<HashMap<*mut Pair<'a>, usize>>
+    storage: Vec<PairStorage<'a>>,
+    freelist: *mut PairStorage<'a>,
+    pins: RefCell<HashMap<*mut PairStorage<'a>, usize>>
 }
 
 pub const HEAP_SIZE: usize = 10000;
@@ -36,12 +36,12 @@ impl<'a> Heap<'a> {
             pins: RefCell::new(HashMap::new())
         };
         for i in 0 .. HEAP_SIZE {
-            h.storage.push(Pair {
+            h.storage.push(PairStorage {
                 marked: false,
                 head: XValue::Null,
                 tail: XValue::Null
             });
-            let p = &mut h.storage[i] as *mut Pair<'a>;
+            let p = &mut h.storage[i] as *mut PairStorage<'a>;
             unsafe {
                 h.add_to_free_list(p);
             }
@@ -49,13 +49,13 @@ impl<'a> Heap<'a> {
         h
     }
 
-    fn pin(&self, p: *mut Pair<'a>) {
+    fn pin(&self, p: *mut PairStorage<'a>) {
         let mut pins = self.pins.borrow_mut();
         let entry = pins.entry(p).or_insert(0);
         *entry += 1;
     }
 
-    fn unpin(&self, p: *mut Pair<'a>) {
+    fn unpin(&self, p: *mut PairStorage<'a>) {
         let mut pins = self.pins.borrow_mut();
         if {
             let entry = pins.entry(p).or_insert(0);
@@ -67,8 +67,8 @@ impl<'a> Heap<'a> {
         }
     }
 
-    unsafe fn add_to_free_list(&mut self, p: *mut Pair<'a>) {
-        let listp: *mut *mut Pair<'a> = std::mem::transmute(p);
+    unsafe fn add_to_free_list(&mut self, p: *mut PairStorage<'a>) {
+        let listp: *mut *mut PairStorage<'a> = std::mem::transmute(p);
         *listp = self.freelist;
         assert_eq!(*listp, self.freelist);
         self.freelist = p;
@@ -86,11 +86,11 @@ impl<'a> Heap<'a> {
 
         let p = self.freelist;
         unsafe {
-            let listp: *mut *mut Pair<'a> = std::mem::transmute(p);
+            let listp: *mut *mut PairStorage<'a> = std::mem::transmute(p);
             self.freelist = *listp;
 
             let (h, t) = pair;
-            *p = Pair {
+            *p = PairStorage {
                 marked: false,
                 head: value_to_heap(h),
                 tail: value_to_heap(t)
@@ -121,7 +121,7 @@ impl<'a> Heap<'a> {
         // sweep phase
         self.freelist = std::ptr::null_mut();
         for i in 0 .. HEAP_SIZE {
-            let p = &mut self.storage[i] as *mut Pair<'a>;
+            let p = &mut self.storage[i] as *mut PairStorage<'a>;
             if !(*p).marked {
                 self.add_to_free_list(p);
             }
@@ -137,15 +137,15 @@ impl<'a> Heap<'a> {
 
 // === Pair, the reference type
 
-// Pair is the only type that is actually allocated inside the heap (private)
-struct Pair<'a> {
+// PairStorage is the only type that is actually allocated inside the heap (private)
+struct PairStorage<'a> {
     marked: bool,
     head: XValue<'a>,
     tail: XValue<'a>
 }
 
-unsafe impl<'a> Mark for Pair<'a> {
-    unsafe fn mark(ptr: *mut Pair<'a>) {
+unsafe impl<'a> Mark for PairStorage<'a> {
+    unsafe fn mark(ptr: *mut PairStorage<'a>) {
         if !ptr.is_null() && !(*ptr).marked {
             (*ptr).marked = true;
             Mark::mark(&mut (*ptr).head as *mut XValue<'a>);
@@ -154,11 +154,11 @@ unsafe impl<'a> Mark for Pair<'a> {
     }
 }
 
-// Handle to a Pair that lives in the heap.
+// Handle to a PairStorage that lives in the heap.
 #[allow(raw_pointer_derive)]
 #[derive(Debug, PartialEq)]
 pub struct PairRoot<'a> {
-    ptr: *mut Pair<'a>,
+    ptr: *mut PairStorage<'a>,
     heap: *const Heap<'a>,
     heap_id: HeapId<'a>
 }
@@ -186,7 +186,7 @@ impl<'a> Clone for PairRoot<'a> {
 }
 
 impl<'a> PairRoot<'a> {
-    unsafe fn new(heap: &Heap<'a>, p: *mut Pair<'a>) -> PairRoot<'a> {
+    unsafe fn new(heap: &Heap<'a>, p: *mut PairStorage<'a>) -> PairRoot<'a> {
         heap.pin(p);
         PairRoot {
             ptr: p,
@@ -229,7 +229,7 @@ enum XValue<'a> {
     Null,
     Int(i32),
     Str(Rc<String>),
-    Pair(*mut Pair<'a>, HeapId<'a>)
+    Pair(*mut PairStorage<'a>, HeapId<'a>)
 }
 
 unsafe impl<'a> Mark for XValue<'a> {
