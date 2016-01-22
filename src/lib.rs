@@ -36,10 +36,26 @@ unsafe trait Mark {
     unsafe fn mark(ptr: *mut Self);
 }
 
-unsafe trait HeapInline {
-    type Heap;
-    type Storage;
-    unsafe fn from_heap(heap: &Self::Heap, ptr: &Self::Storage) -> Self;
+/// Trait implemented by all types that can be stored in fields of structs (or,
+/// eventually, elements of GCVecs) that are stored in the GC heap.
+unsafe trait HeapInline<'a> {
+    /// The type of the value when it is physically stored in the heap.
+    type Storage: Mark;
+
+    /// Extract the value from the heap. Do not under any circumstances call
+    /// this.  It is for macro-generated code to call; it is impossible for
+    /// ordinary users to call this safely, because `ptr` must be a direct,
+    /// unwrapped reference to a value stored in the GC heap, which ordinary
+    /// users cannot obtain.
+    ///
+    /// This turns any raw pointers in the `Storage` value into safe
+    /// references, so while it's a dangerous function, the result of a correct
+    /// call can be safely handed out to user code.
+    ///
+    unsafe fn from_heap(heap: &Heap<'a>, ptr: &Self::Storage) -> Self;
+
+    /// Convert the value to the form it should have in the heap.
+    /// This is for macro-generated code to call.
     fn to_heap(self) -> Self::Storage;
 }
 
@@ -266,8 +282,7 @@ pub enum Value<'a> {
     Pair(Pair<'a>)  // <-- equality is by pointer
 }
 
-unsafe impl<'a> HeapInline for Value<'a> {
-    type Heap = Heap<'a>;
+unsafe impl<'a> HeapInline<'a> for Value<'a> {
     type Storage = ValueStorage<'a>;
 
     fn to_heap(self) -> ValueStorage<'a> {
