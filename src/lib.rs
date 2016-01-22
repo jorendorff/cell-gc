@@ -6,21 +6,6 @@ use std::marker::PhantomData;
 // What does this do? You'll never guess!
 type HeapId<'a> = PhantomData<std::cell::Cell<&'a mut ()>>;
 
-// Pair is the only type that is actually allocated inside the heap (private)
-struct Pair<'a> {
-    mark: bool,
-    head: XValue<'a>,
-    tail: XValue<'a>
-}
-
-// Values inside the heap (GC heap-to-heap cross-references) (private)
-enum XValue<'a> {
-    Null,
-    Int(i32),
-    Str(Rc<String>),
-    Pair(*mut Pair<'a>, HeapId<'a>)
-}
-
 // The heap is (for now) just a big Vec of Pairs
 pub struct Heap<'a> {
     id: HeapId<'a>,
@@ -161,9 +146,14 @@ impl<'a> Heap<'a> {
 }
 
 
+// === Pair, the reference type
 
-
-// === Values outside the heap that may refer to heap values
+// Pair is the only type that is actually allocated inside the heap (private)
+struct Pair<'a> {
+    mark: bool,
+    head: XValue<'a>,
+    tail: XValue<'a>
+}
 
 // Handle to a Pair that lives in the heap.
 #[allow(raw_pointer_derive)]
@@ -230,6 +220,17 @@ impl<'a> PairRoot<'a> {
     pub fn address(&self) -> usize {
         unsafe { std::mem::transmute(self.ptr) }
     }
+}
+
+
+// === Values (a heap-inline enum)
+
+// Values inside the heap (GC heap-to-heap cross-references) (private)
+enum XValue<'a> {
+    Null,
+    Int(i32),
+    Str(Rc<String>),
+    Pair(*mut Pair<'a>, HeapId<'a>)
 }
 
 #[derive(Debug, Clone, PartialEq)]
