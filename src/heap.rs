@@ -30,12 +30,49 @@ struct HeapStorage<'a> {
 }
 
 impl<'a> HeapStorage<'a> {
-    unsafe fn new() -> HeapStorage<'a> {
-        HeapStorage {
+    unsafe fn new() -> Box<HeapStorage<'a>> {
+        let mut storage = Box::new(HeapStorage {
             mark_bits: BitVec::from_elem(HEAP_SIZE, false),
             mark_entry_point: mark_entry_point::<PairStorage>,
             freelist: ptr::null_mut(),
             objects: mem::uninitialized()
+        });
+
+        // These assertions will likely fail on 32-bit platforms or if someone
+        // is somehow using a custom Box allocator. If either one fails, this
+        // GC will not work.
+        assert_eq!(&mut *storage as *mut HeapStorage<'a> as usize & (HEAP_STORAGE_ALIGN - 1), 0);
+        assert!(mem::size_of::<HeapStorage<'a>>() <= HEAP_STORAGE_ALIGN);
+
+        for i in 0 .. HEAP_SIZE {
+            let p = &mut storage.objects[i] as *mut PairStorage<'a>;
+            storage.add_to_free_list(p);
+        }
+        storage
+    }
+
+    unsafe fn add_to_free_list(&mut self, p: *mut PairStorage<'a>) {
+        let listp = p as *mut *mut PairStorage<'a>;
+        *listp = self.freelist;
+        assert_eq!(*listp, self.freelist);
+        self.freelist = p;
+    }
+
+    unsafe fn alloc(&mut self) -> *mut PairStorage<'a> {
+        let p = self.freelist;
+        assert!(!p.is_null());
+        let listp = p as *mut *mut PairStorage<'a>;
+        self.freelist = *listp;
+        p
+    }
+
+    unsafe fn sweep(&mut self) {
+        self.freelist = ptr::null_mut();
+        for i in 0 .. HEAP_SIZE {
+            let p = &mut self.objects[i] as *mut PairStorage<'a>;
+            if !self.mark_bits[i] {
+                self.add_to_free_list(p);
+            }
         }
     }
 }
@@ -98,25 +135,11 @@ pub unsafe trait HeapInline<'a> {
 
 impl<'a> Heap<'a> {
     fn new() -> Heap<'a> {
-        let mut h = Heap {
+        Heap {
             id: PhantomData,
-            storage: Box::new(unsafe { HeapStorage::new() }),
+            storage: unsafe { HeapStorage::new() },
             pins: RefCell::new(HashMap::new())
-        };
-
-        // These assertions will likely fail on 32-bit platforms or if someone
-        // is somehow using a custom Box allocator. If either one fails, this
-        // GC will not work.
-        assert_eq!(&mut *h.storage as *mut HeapStorage<'a> as usize & (HEAP_STORAGE_ALIGN - 1), 0);
-        assert!(mem::size_of::<HeapStorage<'a>>() <= HEAP_STORAGE_ALIGN);
-
-        for i in 0 .. HEAP_SIZE {
-            let p = &mut h.storage.objects[i] as *mut PairStorage<'a>;
-            unsafe {
-                h.add_to_free_list(p);
-            }
         }
-        h
     }
 
     /// Add the object `*p` to the root set, protecting it from GC.
@@ -150,13 +173,6 @@ impl<'a> Heap<'a> {
         }
     }
 
-    unsafe fn add_to_free_list(&mut self, p: *mut PairStorage<'a>) {
-        let listp = p as *mut *mut PairStorage<'a>;
-        *listp = self.storage.freelist;
-        assert_eq!(*listp, self.storage.freelist);
-        self.storage.freelist = p;
-    }
-
     pub fn try_alloc(&mut self, pair: (Value<'a>, Value<'a>)) -> Option<Pair<'a>> {
         if self.storage.freelist.is_null() {
             unsafe {
@@ -167,15 +183,11 @@ impl<'a> Heap<'a> {
             }
         }
 
-        let p = self.storage.freelist;
         unsafe {
-            let listp = p as *mut *mut PairStorage<'a>;
-            self.storage.freelist = *listp;
-
-            let (h, t) = pair;
+            let p = self.storage.alloc();
             *p = PairStorage {
-                head: h.to_heap(),
-                tail: t.to_heap()
+                head: pair.0.to_heap(),
+                tail: pair.1.to_heap()
             };
             Some(Pair(PinnedRef::new(self, p)))
         }
@@ -226,13 +238,7 @@ impl<'a> Heap<'a> {
         }
 
         // sweep phase
-        self.storage.freelist = ptr::null_mut();
-        for i in 0 .. HEAP_SIZE {
-            let p = &mut self.storage.objects[i] as *mut PairStorage<'a>;
-            if !self.storage.mark_bits[i] {
-                self.add_to_free_list(p);
-            }
-        }
+        self.storage.sweep();
     }
 
     #[cfg(test)]
