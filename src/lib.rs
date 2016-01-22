@@ -1,3 +1,5 @@
+extern crate bit_vec;
+
 #[macro_use] mod macros;
 mod heap;
 

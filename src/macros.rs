@@ -7,13 +7,13 @@ macro_rules! gc_ref_type {
             $($field_name: <$field_type as $crate::HeapInline<'a>>::Storage,)*
         }
 
-        unsafe impl<'a> $crate::Mark<'a> for $crate::Markable<$storage_type<'a>> {
-            unsafe fn mark(ptr: *mut $crate::Markable<$storage_type<'a>>) {
-                if !ptr.is_null() && !(*ptr).marked {
-                    (*ptr).marked = true;
+        unsafe impl<'a> $crate::Mark<'a> for $storage_type<'a> {
+            unsafe fn mark(ptr: *mut $storage_type<'a>) {
+                if !ptr.is_null() && !$crate::Heap::get_mark_bit(ptr) {
+                    $crate::Heap::set_mark_bit(ptr);
                     $(
                         $crate::Mark::mark(
-                            &mut (*ptr).value.$field_name
+                            &mut (*ptr).$field_name
                                 as *mut <$field_type as $crate::HeapInline<'a>>::Storage);
                     )*
                 }
@@ -22,7 +22,7 @@ macro_rules! gc_ref_type {
 
         #[allow(raw_pointer_derive)]
         #[derive(Clone, Debug, PartialEq)]
-        pub struct $ref_type<'a>($crate::PinnedRef<'a, $crate::Markable<$storage_type<'a>>>);
+        pub struct $ref_type<'a>($crate::PinnedRef<'a, $storage_type<'a>>);
 
         impl<'a> $ref_type<'a> {
             $(
@@ -31,14 +31,14 @@ macro_rules! gc_ref_type {
                     unsafe {
                         <$field_type as $crate::HeapInline<'a>>::from_heap(
                             &*self.0.heap,
-                            &(*ptr).value.$field_name)
+                            &(*ptr).$field_name)
                     }
                 }
 
                 pub fn $field_setter_name(&self, v: $field_type) {
                     let ptr = self.0.ptr;
                     unsafe {
-                        (*ptr).value.$field_name =
+                        (*ptr).$field_name =
                             <$field_type as $crate::HeapInline<'a>>::to_heap(v);
                     }
                 }
@@ -46,7 +46,7 @@ macro_rules! gc_ref_type {
         }
 
         unsafe impl<'a> $crate::HeapInline<'a> for $ref_type<'a> {
-            type Storage = *mut $crate::Markable<$storage_type<'a>>;
+            type Storage = *mut $storage_type<'a>;
 
             fn to_heap(self) -> Self::Storage {
                 self.0.ptr

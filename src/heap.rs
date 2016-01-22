@@ -3,20 +3,45 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::marker::PhantomData;
-use std::{fmt, ptr};
+use std::{fmt, mem, ptr};
+use bit_vec::BitVec;
 
 // What does this do? You'll never guess!
 type HeapId<'a> = PhantomData<::std::cell::Cell<&'a mut ()>>;
 
-// The heap is (for now) just a big Vec of Pairs
-pub struct Heap<'a> {
-    id: HeapId<'a>,
-    storage: Vec<Markable<PairStorage<'a>>>,
-    freelist: *mut Markable<PairStorage<'a>>,
-    pins: RefCell<HashMap<*mut Markable<PairStorage<'a>>, usize>>
+/// Total number of Pair objects that can be allocated in a Heap at once.
+///
+/// XXX BOGUS: At present, this is number is carefully selected (with insider
+/// knowledge of both `size_of::<PairStorage>()` on my platform and the `Box`
+/// allocator's behavior) so that a HeapStorage object fits in a page and thus
+/// the assertions below about HEAP_STORAGE_ALIGN pass.
+pub const HEAP_SIZE: usize = 125;
+
+/// We rely on all bits to the right of this bit being 0 in addresses of
+/// HeapStorage instances.
+const HEAP_STORAGE_ALIGN: usize = 0x1000;
+
+// The heap is (for now) just a big array of Pairs
+struct HeapStorage<'a> {
+    mark_bits: BitVec,
+    objects: [PairStorage<'a>; HEAP_SIZE]
 }
 
-pub const HEAP_SIZE: usize = 10000;
+impl<'a> HeapStorage<'a> {
+    unsafe fn new() -> HeapStorage<'a> {
+        HeapStorage {
+            mark_bits: BitVec::from_elem(HEAP_SIZE, false),
+            objects: mem::uninitialized()
+        }
+    }
+}
+
+pub struct Heap<'a> {
+    id: HeapId<'a>,
+    storage: Box<HeapStorage<'a>>,
+    freelist: *mut PairStorage<'a>,
+    pins: RefCell<HashMap<*mut PairStorage<'a>, usize>>
+}
 
 /// Create a heap, pass it to a callback, then destroy the heap.
 ///
@@ -36,11 +61,6 @@ pub fn with_heap<F, O>(f: F) -> O
 ///
 pub unsafe trait Mark<'a> {
     unsafe fn mark(ptr: *mut Self);
-}
-
-pub struct Markable<T> {
-    marked: bool,
-    value: T
 }
 
 /// Trait implemented by all types that can be stored in fields of structs (or,
@@ -68,22 +88,16 @@ pub unsafe trait HeapInline<'a> {
 
 impl<'a> Heap<'a> {
     fn new() -> Heap<'a> {
-        // Allocate with the full capacity so that allocated Pairs never move
         let mut h = Heap {
             id: PhantomData,
-            storage: Vec::with_capacity(HEAP_SIZE),
+            storage: Box::new(unsafe { HeapStorage::new() }),
             freelist: ptr::null_mut(),
             pins: RefCell::new(HashMap::new())
         };
+        assert!(&mut *h.storage as *mut HeapStorage<'a> as usize & (HEAP_STORAGE_ALIGN - 1) == 0);
+        assert!(mem::size_of::<HeapStorage<'a>>() <= HEAP_STORAGE_ALIGN);
         for i in 0 .. HEAP_SIZE {
-            h.storage.push(Markable {
-                marked: false,
-                value: PairStorage {
-                    head: ValueStorage::Null,
-                    tail: ValueStorage::Null
-                }
-            });
-            let p = &mut h.storage[i] as *mut Markable<PairStorage<'a>>;
+            let p = &mut h.storage.objects[i] as *mut PairStorage<'a>;
             unsafe {
                 h.add_to_free_list(p);
             }
@@ -91,13 +105,13 @@ impl<'a> Heap<'a> {
         h
     }
 
-    fn pin(&self, p: *mut Markable<PairStorage<'a>>) {
+    fn pin(&self, p: *mut PairStorage<'a>) {
         let mut pins = self.pins.borrow_mut();
         let entry = pins.entry(p).or_insert(0);
         *entry += 1;
     }
 
-    fn unpin(&self, p: *mut Markable<PairStorage<'a>>) {
+    fn unpin(&self, p: *mut PairStorage<'a>) {
         let mut pins = self.pins.borrow_mut();
         if {
             let entry = pins.entry(p).or_insert(0);
@@ -109,9 +123,8 @@ impl<'a> Heap<'a> {
         }
     }
 
-    unsafe fn add_to_free_list(&mut self, p: *mut Markable<PairStorage<'a>>) {
-        let head_field_ptr = &mut (*p).value.head as *mut ValueStorage;
-        let listp = head_field_ptr as *mut *mut Markable<PairStorage<'a>>;
+    unsafe fn add_to_free_list(&mut self, p: *mut PairStorage<'a>) {
+        let listp = p as *mut *mut PairStorage<'a>;
         *listp = self.freelist;
         assert_eq!(*listp, self.freelist);
         self.freelist = p;
@@ -129,20 +142,35 @@ impl<'a> Heap<'a> {
 
         let p = self.freelist;
         unsafe {
-            let head_field_ptr = &mut (*p).value.head as *mut ValueStorage;
-            let listp = head_field_ptr as *mut *mut Markable<PairStorage<'a>>;
+            let listp = p as *mut *mut PairStorage<'a>;
             self.freelist = *listp;
 
             let (h, t) = pair;
-            *p = Markable {
-                marked: false,
-                value: PairStorage {
-                    head: h.to_heap(),
-                    tail: t.to_heap()
-                }
+            *p = PairStorage {
+                head: h.to_heap(),
+                tail: t.to_heap()
             };
             Some(Pair(PinnedRef::new(self, p)))
         }
+    }
+
+    unsafe fn find_mark_bit<T>(_ptr: *const T) -> (*mut BitVec, usize) {
+        assert_eq!(mem::size_of::<T>(), mem::size_of::<PairStorage<'a>>());
+        let storage_addr = _ptr as usize & !(HEAP_STORAGE_ALIGN - 1);
+        let storage = storage_addr as *mut HeapStorage<'a>;
+        let objects_addr = &mut (*storage).objects[0] as *mut PairStorage<'a> as usize;
+        let index = (_ptr as usize - objects_addr) / mem::size_of::<PairStorage<'a>>();
+        (&mut (*storage).mark_bits as *mut BitVec, index)
+    }
+
+    pub unsafe fn get_mark_bit<T>(_ptr: *const T) -> bool {
+        let (bits, index) = Heap::find_mark_bit(_ptr);
+        (*bits)[index]
+    }
+
+    pub unsafe fn set_mark_bit<T>(_ptr: *const T) {
+        let (bits, index) = Heap::find_mark_bit(_ptr);
+        (*bits).set(index, true);
     }
 
     pub fn alloc(&mut self, pair: (Value<'a>, Value<'a>)) -> Pair<'a> {
@@ -154,12 +182,8 @@ impl<'a> Heap<'a> {
     }
 
     unsafe fn gc(&mut self) {
-        // clear mark bits
-        for p in &mut self.storage {
-            p.marked = false;
-        }
-
         // mark phase
+        self.storage.mark_bits.clear();
         for (&p, _) in self.pins.borrow().iter() {
             Mark::mark(p);
         }
@@ -167,8 +191,8 @@ impl<'a> Heap<'a> {
         // sweep phase
         self.freelist = ptr::null_mut();
         for i in 0 .. HEAP_SIZE {
-            let p = &mut self.storage[i] as *mut Markable<PairStorage<'a>>;
-            if !(*p).marked {
+            let p = &mut self.storage.objects[i] as *mut PairStorage<'a>;
+            if !self.storage.mark_bits[i] {
                 self.add_to_free_list(p);
             }
         }
@@ -188,7 +212,7 @@ pub struct PinnedRef<'a, T> {
 
 impl<'a, T> PinnedRef<'a, T> {
     unsafe fn new(heap: &Heap<'a>, p: *mut T) -> PinnedRef<'a, T> {
-        heap.pin(p as *mut Markable<PairStorage<'a>>);  // XXX BOGUS
+        heap.pin(p as *mut PairStorage<'a>);  // XXX BOGUS
         PinnedRef {
             ptr: p,
             heap: heap as *const Heap<'a>,
@@ -200,7 +224,7 @@ impl<'a, T> PinnedRef<'a, T> {
 impl<'a, T> Drop for PinnedRef<'a, T> {
     fn drop(&mut self) {
         unsafe {
-            (*self.heap).unpin(self.ptr as *mut Markable<PairStorage<'a>>);  // XXX BOGUS
+            (*self.heap).unpin(self.ptr as *mut PairStorage<'a>);  // XXX BOGUS
         }
     }
 }
@@ -209,7 +233,7 @@ impl<'a, T> Clone for PinnedRef<'a, T> {
     fn clone(&self) -> PinnedRef<'a, T> {
         let &PinnedRef { ptr, heap, heap_id } = self;
         unsafe {
-            (*heap).pin(ptr as *mut Markable<PairStorage<'a>>);  // XXX BOGUS
+            (*heap).pin(ptr as *mut PairStorage<'a>);  // XXX BOGUS
         }
         PinnedRef {
             ptr: ptr,
@@ -233,13 +257,12 @@ impl<'a, T> PartialEq for PinnedRef<'a, T> {
 
 impl<'a, T> Eq for PinnedRef<'a, T> {}
 
-
-// === Pair, the reference type
-
 pub trait GCRef {
     #[cfg(test)]
     fn address(&self) -> usize;
 }
+
+// === Pair, the reference type
 
 gc_ref_type! {
     pub struct Pair / PairStorage<'a> {
@@ -258,7 +281,7 @@ enum ValueStorage<'a> {
     Null,
     Int(i32),
     Str(Rc<String>),
-    Pair(*mut Markable<PairStorage<'a>>)
+    Pair(*mut PairStorage<'a>)
 }
 
 unsafe impl<'a> Mark<'a> for ValueStorage<'a> {
