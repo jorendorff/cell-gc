@@ -38,8 +38,8 @@ impl<'a> Heap<'a> {
         for i in 0 .. HEAP_SIZE {
             h.storage.push(PairStorage {
                 marked: false,
-                head: XValue::Null,
-                tail: XValue::Null
+                head: ValueStorage::Null,
+                tail: ValueStorage::Null
             });
             let p = &mut h.storage[i] as *mut PairStorage<'a>;
             unsafe {
@@ -140,16 +140,16 @@ impl<'a> Heap<'a> {
 // PairStorage is the only type that is actually allocated inside the heap (private)
 struct PairStorage<'a> {
     marked: bool,
-    head: XValue<'a>,
-    tail: XValue<'a>
+    head: ValueStorage<'a>,
+    tail: ValueStorage<'a>
 }
 
 unsafe impl<'a> Mark for PairStorage<'a> {
     unsafe fn mark(ptr: *mut PairStorage<'a>) {
         if !ptr.is_null() && !(*ptr).marked {
             (*ptr).marked = true;
-            Mark::mark(&mut (*ptr).head as *mut XValue<'a>);
-            Mark::mark(&mut (*ptr).tail as *mut XValue<'a>);
+            Mark::mark(&mut (*ptr).head as *mut ValueStorage<'a>);
+            Mark::mark(&mut (*ptr).tail as *mut ValueStorage<'a>);
         }
     }
 }
@@ -225,17 +225,17 @@ impl<'a> PairRoot<'a> {
 // === Values (a heap-inline enum)
 
 // Values inside the heap (GC heap-to-heap cross-references) (private)
-enum XValue<'a> {
+enum ValueStorage<'a> {
     Null,
     Int(i32),
     Str(Rc<String>),
     Pair(*mut PairStorage<'a>, HeapId<'a>)
 }
 
-unsafe impl<'a> Mark for XValue<'a> {
-    unsafe fn mark(ptr: *mut XValue<'a>) {
+unsafe impl<'a> Mark for ValueStorage<'a> {
+    unsafe fn mark(ptr: *mut ValueStorage<'a>) {
         match *ptr {
-            XValue::Pair(p, _) => Mark::mark(p),
+            ValueStorage::Pair(p, _) => Mark::mark(p),
             _ => {}
         }
     }
@@ -252,21 +252,21 @@ pub enum Value<'a> {
 
 // === Getting data into and out of the heap
 
-fn value_to_heap<'a>(v: Value<'a>) -> XValue<'a> {
+fn value_to_heap<'a>(v: Value<'a>) -> ValueStorage<'a> {
     match v {
-        Value::Null => XValue::Null,
-        Value::Int(n) => XValue::Int(n),
-        Value::Str(rcstr) => XValue::Str(rcstr),
-        Value::Pair(PairRoot{ptr, heap_id, ..}) => XValue::Pair(ptr, heap_id)
+        Value::Null => ValueStorage::Null,
+        Value::Int(n) => ValueStorage::Int(n),
+        Value::Str(rcstr) => ValueStorage::Str(rcstr),
+        Value::Pair(PairRoot{ptr, heap_id, ..}) => ValueStorage::Pair(ptr, heap_id)
     }
 }
 
-unsafe fn value_from_heap<'a>(heap: &Heap<'a>, v: &XValue<'a>) -> Value<'a> {
+unsafe fn value_from_heap<'a>(heap: &Heap<'a>, v: &ValueStorage<'a>) -> Value<'a> {
     match v {
-        &XValue::Null => Value::Null,
-        &XValue::Int(n) => Value::Int(n),
-        &XValue::Str(ref rcstr) => Value::Str(rcstr.clone()),
-        &XValue::Pair(ptr, _) => Value::Pair(PairRoot::new(heap, ptr))
+        &ValueStorage::Null => Value::Null,
+        &ValueStorage::Int(n) => Value::Int(n),
+        &ValueStorage::Str(ref rcstr) => Value::Str(rcstr.clone()),
+        &ValueStorage::Pair(ptr, _) => Value::Pair(PairRoot::new(heap, ptr))
     }
 }
 
