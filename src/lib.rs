@@ -81,7 +81,7 @@ impl<'a> Heap<'a> {
         self.freelist = p;
     }
 
-    pub fn try_alloc(&mut self, pair: (Value<'a>, Value<'a>)) -> Option<PairRoot<'a>> {
+    pub fn try_alloc(&mut self, pair: (Value<'a>, Value<'a>)) -> Option<Pair<'a>> {
         if self.freelist.is_null() {
             unsafe {
                 self.gc();
@@ -102,15 +102,15 @@ impl<'a> Heap<'a> {
                 head: h.to_heap(),
                 tail: t.to_heap()
             };
-            Some(PairRoot::new(self, p))
+            Some(Pair::new(self, p))
         }
     }
 
-    pub fn alloc(&mut self, pair: (Value<'a>, Value<'a>)) -> PairRoot<'a> {
+    pub fn alloc(&mut self, pair: (Value<'a>, Value<'a>)) -> Pair<'a> {
         self.try_alloc(pair).expect("out of memory (gc did not collect anything)")
     }
 
-    pub fn alloc_null(&mut self) -> PairRoot<'a> {
+    pub fn alloc_null(&mut self) -> Pair<'a> {
         self.alloc((Value::Null, Value::Null))
     }
 
@@ -164,13 +164,13 @@ unsafe impl<'a> Mark for PairStorage<'a> {
 // Handle to a PairStorage that lives in the heap.
 #[allow(raw_pointer_derive)]
 #[derive(Debug, PartialEq)]
-pub struct PairRoot<'a> {
+pub struct Pair<'a> {
     ptr: *mut PairStorage<'a>,
     heap: *const Heap<'a>,
     heap_id: HeapId<'a>
 }
 
-impl<'a> Drop for PairRoot<'a> {
+impl<'a> Drop for Pair<'a> {
     fn drop(&mut self) {
         unsafe {
             (*self.heap).unpin(self.ptr);
@@ -178,13 +178,13 @@ impl<'a> Drop for PairRoot<'a> {
     }
 }
 
-impl<'a> Clone for PairRoot<'a> {
-    fn clone(&self) -> PairRoot<'a> {
-        let &PairRoot { ptr, heap, heap_id } = self;
+impl<'a> Clone for Pair<'a> {
+    fn clone(&self) -> Pair<'a> {
+        let &Pair { ptr, heap, heap_id } = self;
         unsafe {
             (*heap).pin(ptr);
         }
-        PairRoot {
+        Pair {
             ptr: ptr,
             heap: heap,
             heap_id: heap_id
@@ -192,10 +192,10 @@ impl<'a> Clone for PairRoot<'a> {
     }
 }
 
-impl<'a> PairRoot<'a> {
-    unsafe fn new(heap: &Heap<'a>, p: *mut PairStorage<'a>) -> PairRoot<'a> {
+impl<'a> Pair<'a> {
+    unsafe fn new(heap: &Heap<'a>, p: *mut PairStorage<'a>) -> Pair<'a> {
         heap.pin(p);
-        PairRoot {
+        Pair {
             ptr: p,
             heap: heap as *const Heap<'a>,
             heap_id: heap.id
@@ -253,7 +253,7 @@ pub enum Value<'a> {
     Null,
     Int(i32),
     Str(Rc<String>),  // <-- equality is by value
-    Pair(PairRoot<'a>)  // <-- equality is by pointer
+    Pair(Pair<'a>)  // <-- equality is by pointer
 }
 
 unsafe impl<'a> HeapInline for Value<'a> {
@@ -265,7 +265,7 @@ unsafe impl<'a> HeapInline for Value<'a> {
             Value::Null => ValueStorage::Null,
             Value::Int(n) => ValueStorage::Int(n),
             Value::Str(rcstr) => ValueStorage::Str(rcstr),
-            Value::Pair(PairRoot{ptr, heap_id, ..}) => ValueStorage::Pair(ptr, heap_id)
+            Value::Pair(Pair{ptr, heap_id, ..}) => ValueStorage::Pair(ptr, heap_id)
         }
     }
 
@@ -274,7 +274,7 @@ unsafe impl<'a> HeapInline for Value<'a> {
             &ValueStorage::Null => Value::Null,
             &ValueStorage::Int(n) => Value::Int(n),
             &ValueStorage::Str(ref rcstr) => Value::Str(rcstr.clone()),
-            &ValueStorage::Pair(ptr, _) => Value::Pair(PairRoot::new(heap, ptr))
+            &ValueStorage::Pair(ptr, _) => Value::Pair(Pair::new(heap, ptr))
         }
     }
 }
