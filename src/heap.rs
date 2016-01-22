@@ -241,15 +241,19 @@ impl<'a> Heap<'a> {
     }
 }
 
-pub struct PinnedRef<'a, T> {
+pub struct PinnedRef<'a, T: Mark<'a>> {
     ptr: *mut T,
     heap: *const Heap<'a>,
     heap_id: HeapId<'a>
 }
 
-impl<'a, T> PinnedRef<'a, T> {
+impl<'a, T: Mark<'a>> PinnedRef<'a, T> {
+    /// Pin an object, returning a new `PinnedRef` that will unpin it when
+    /// dropped. Unsafe because if `p` is not a pointer to a live allocation of
+    /// type `T` --- and a complete allocation, not a sub-object of one --- then
+    /// later unsafe code will explode.
     unsafe fn new(heap: &Heap<'a>, p: *mut T) -> PinnedRef<'a, T> {
-        heap.pin(p as *mut PairStorage<'a>);  // XXX BOGUS
+        heap.pin(p);
         PinnedRef {
             ptr: p,
             heap: heap as *const Heap<'a>,
@@ -258,19 +262,19 @@ impl<'a, T> PinnedRef<'a, T> {
     }
 }
 
-impl<'a, T> Drop for PinnedRef<'a, T> {
+impl<'a, T: Mark<'a>> Drop for PinnedRef<'a, T> {
     fn drop(&mut self) {
         unsafe {
-            (*self.heap).unpin(self.ptr as *mut PairStorage<'a>);  // XXX BOGUS
+            (*self.heap).unpin(self.ptr);
         }
     }
 }
 
-impl<'a, T> Clone for PinnedRef<'a, T> {
+impl<'a, T: Mark<'a>> Clone for PinnedRef<'a, T> {
     fn clone(&self) -> PinnedRef<'a, T> {
         let &PinnedRef { ptr, heap, heap_id } = self;
         unsafe {
-            (*heap).pin(ptr as *mut PairStorage<'a>);  // XXX BOGUS
+            (*heap).pin(ptr);
         }
         PinnedRef {
             ptr: ptr,
@@ -280,19 +284,19 @@ impl<'a, T> Clone for PinnedRef<'a, T> {
     }
 }
 
-impl<'a, T> fmt::Debug for PinnedRef<'a, T> {
+impl<'a, T: Mark<'a>> fmt::Debug for PinnedRef<'a, T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "PinnedRef {{ ptr: {:p} }}", self.ptr)
     }
 }
 
-impl<'a, T> PartialEq for PinnedRef<'a, T> {
+impl<'a, T: Mark<'a>> PartialEq for PinnedRef<'a, T> {
     fn eq(&self, other: &PinnedRef<'a, T>) -> bool {
         self.ptr == other.ptr
     }
 }
 
-impl<'a, T> Eq for PinnedRef<'a, T> {}
+impl<'a, T: Mark<'a>> Eq for PinnedRef<'a, T> {}
 
 pub trait GCRef {
     #[cfg(test)]
