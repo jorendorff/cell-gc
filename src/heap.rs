@@ -94,8 +94,13 @@ impl<'a> Heap<'a> {
             freelist: ptr::null_mut(),
             pins: RefCell::new(HashMap::new())
         };
-        assert!(&mut *h.storage as *mut HeapStorage<'a> as usize & (HEAP_STORAGE_ALIGN - 1) == 0);
+
+        // These assertions will likely fail on 32-bit platforms or if someone
+        // is somehow using a custom Box allocator. If either one fails, this
+        // GC will not work.
+        assert_eq!(&mut *h.storage as *mut HeapStorage<'a> as usize & (HEAP_STORAGE_ALIGN - 1), 0);
         assert!(mem::size_of::<HeapStorage<'a>>() <= HEAP_STORAGE_ALIGN);
+
         for i in 0 .. HEAP_SIZE {
             let p = &mut h.storage.objects[i] as *mut PairStorage<'a>;
             unsafe {
