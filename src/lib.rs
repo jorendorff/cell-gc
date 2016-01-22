@@ -9,9 +9,9 @@ type HeapId<'a> = PhantomData<std::cell::Cell<&'a mut ()>>;
 // The heap is (for now) just a big Vec of Pairs
 pub struct Heap<'a> {
     id: HeapId<'a>,
-    storage: Vec<PairStorage<'a>>,
-    freelist: *mut PairStorage<'a>,
-    pins: RefCell<HashMap<*mut PairStorage<'a>, usize>>
+    storage: Vec<Markable<PairStorage<'a>>>,
+    freelist: *mut Markable<PairStorage<'a>>,
+    pins: RefCell<HashMap<*mut Markable<PairStorage<'a>>, usize>>
 }
 
 pub const HEAP_SIZE: usize = 10000;
@@ -32,15 +32,20 @@ pub fn with_heap<F, O>(f: F) -> O
 ///
 /// XXX maybe this should not be its own trait - fold into HeapInline?
 ///
-unsafe trait Mark {
+unsafe trait Mark<'a> {
     unsafe fn mark(ptr: *mut Self);
+}
+
+struct Markable<T> {
+    marked: bool,
+    value: T
 }
 
 /// Trait implemented by all types that can be stored in fields of structs (or,
 /// eventually, elements of GCVecs) that are stored in the GC heap.
 unsafe trait HeapInline<'a> {
     /// The type of the value when it is physically stored in the heap.
-    type Storage: Mark;
+    type Storage;
 
     /// Extract the value from the heap. Do not under any circumstances call
     /// this.  It is for macro-generated code to call; it is impossible for
@@ -69,12 +74,14 @@ impl<'a> Heap<'a> {
             pins: RefCell::new(HashMap::new())
         };
         for i in 0 .. HEAP_SIZE {
-            h.storage.push(PairStorage {
+            h.storage.push(Markable {
                 marked: false,
-                head: ValueStorage::Null,
-                tail: ValueStorage::Null
+                value: PairStorage {
+                    head: ValueStorage::Null,
+                    tail: ValueStorage::Null
+                }
             });
-            let p = &mut h.storage[i] as *mut PairStorage<'a>;
+            let p = &mut h.storage[i] as *mut Markable<PairStorage<'a>>;
             unsafe {
                 h.add_to_free_list(p);
             }
@@ -82,13 +89,13 @@ impl<'a> Heap<'a> {
         h
     }
 
-    fn pin(&self, p: *mut PairStorage<'a>) {
+    fn pin(&self, p: *mut Markable<PairStorage<'a>>) {
         let mut pins = self.pins.borrow_mut();
         let entry = pins.entry(p).or_insert(0);
         *entry += 1;
     }
 
-    fn unpin(&self, p: *mut PairStorage<'a>) {
+    fn unpin(&self, p: *mut Markable<PairStorage<'a>>) {
         let mut pins = self.pins.borrow_mut();
         if {
             let entry = pins.entry(p).or_insert(0);
@@ -100,8 +107,8 @@ impl<'a> Heap<'a> {
         }
     }
 
-    unsafe fn add_to_free_list(&mut self, p: *mut PairStorage<'a>) {
-        let listp: *mut *mut PairStorage<'a> = std::mem::transmute(p);
+    unsafe fn add_to_free_list(&mut self, p: *mut Markable<PairStorage<'a>>) {
+        let listp: *mut *mut Markable<PairStorage<'a>> = std::mem::transmute(p);
         *listp = self.freelist;
         assert_eq!(*listp, self.freelist);
         self.freelist = p;
@@ -119,16 +126,18 @@ impl<'a> Heap<'a> {
 
         let p = self.freelist;
         unsafe {
-            let listp: *mut *mut PairStorage<'a> = std::mem::transmute(p);
+            let listp: *mut *mut Markable<PairStorage<'a>> = std::mem::transmute(p);
             self.freelist = *listp;
 
             let (h, t) = pair;
-            *p = PairStorage {
+            *p = Markable {
                 marked: false,
-                head: h.to_heap(),
-                tail: t.to_heap()
+                value: PairStorage {
+                    head: h.to_heap(),
+                    tail: t.to_heap()
+                }
             };
-            Some(Pair::new(self, p))
+            Some(Pair(PinnedRef::new(self, p)))
         }
     }
 
@@ -154,7 +163,7 @@ impl<'a> Heap<'a> {
         // sweep phase
         self.freelist = std::ptr::null_mut();
         for i in 0 .. HEAP_SIZE {
-            let p = &mut self.storage[i] as *mut PairStorage<'a>;
+            let p = &mut self.storage[i] as *mut Markable<PairStorage<'a>>;
             if !(*p).marked {
                 self.add_to_free_list(p);
             }
@@ -167,50 +176,38 @@ impl<'a> Heap<'a> {
     }
 }
 
-
-// === Pair, the reference type
-
-// PairStorage is the only type that is actually allocated inside the heap (private)
-struct PairStorage<'a> {
-    marked: bool,
-    head: ValueStorage<'a>,
-    tail: ValueStorage<'a>
-}
-
-unsafe impl<'a> Mark for PairStorage<'a> {
-    unsafe fn mark(ptr: *mut PairStorage<'a>) {
-        if !ptr.is_null() && !(*ptr).marked {
-            (*ptr).marked = true;
-            Mark::mark(&mut (*ptr).head as *mut ValueStorage<'a>);
-            Mark::mark(&mut (*ptr).tail as *mut ValueStorage<'a>);
-        }
-    }
-}
-
-// Handle to a PairStorage that lives in the heap.
-#[allow(raw_pointer_derive)]
-#[derive(Debug, PartialEq)]
-pub struct Pair<'a> {
-    ptr: *mut PairStorage<'a>,
+struct PinnedRef<'a, T> {
+    ptr: *mut T,
     heap: *const Heap<'a>,
     heap_id: HeapId<'a>
 }
 
-impl<'a> Drop for Pair<'a> {
-    fn drop(&mut self) {
-        unsafe {
-            (*self.heap).unpin(self.ptr);
+impl<'a, T> PinnedRef<'a, T> {
+    unsafe fn new(heap: &Heap<'a>, p: *mut T) -> PinnedRef<'a, T> {
+        heap.pin(p as *mut Markable<PairStorage<'a>>);  // XXX BOGUS
+        PinnedRef {
+            ptr: p,
+            heap: heap as *const Heap<'a>,
+            heap_id: heap.id
         }
     }
 }
 
-impl<'a> Clone for Pair<'a> {
-    fn clone(&self) -> Pair<'a> {
-        let &Pair { ptr, heap, heap_id } = self;
+impl<'a, T> Drop for PinnedRef<'a, T> {
+    fn drop(&mut self) {
         unsafe {
-            (*heap).pin(ptr);
+            (*self.heap).unpin(self.ptr as *mut Markable<PairStorage<'a>>);  // XXX BOGUS
         }
-        Pair {
+    }
+}
+
+impl<'a, T> Clone for PinnedRef<'a, T> {
+    fn clone(&self) -> PinnedRef<'a, T> {
+        let &PinnedRef { ptr, heap, heap_id } = self;
+        unsafe {
+            (*heap).pin(ptr as *mut Markable<PairStorage<'a>>);  // XXX BOGUS
+        }
+        PinnedRef {
             ptr: ptr,
             heap: heap,
             heap_id: heap_id
@@ -218,39 +215,107 @@ impl<'a> Clone for Pair<'a> {
     }
 }
 
-impl<'a> Pair<'a> {
-    unsafe fn new(heap: &Heap<'a>, p: *mut PairStorage<'a>) -> Pair<'a> {
-        heap.pin(p);
-        Pair {
-            ptr: p,
-            heap: heap as *const Heap<'a>,
-            heap_id: heap.id
+impl<'a, T> ::std::fmt::Debug for PinnedRef<'a, T> {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "PinnedRef {{ ptr: {:p} }}", self.ptr)
+    }
+}
+
+impl<'a, T> PartialEq for PinnedRef<'a, T> {
+    fn eq(&self, other: &PinnedRef<'a, T>) -> bool {
+        self.ptr == other.ptr
+    }
+}
+
+impl<'a, T> Eq for PinnedRef<'a, T> {}
+
+
+
+// === Pair, the reference type
+
+pub trait GCRef {
+    #[cfg(test)]
+    fn address(&self) -> usize;
+}
+
+trait TransplantLifetime<'a> {
+    type Result: HeapInline<'a>;
+}
+
+impl<'a, T: Copy + 'static> TransplantLifetime<'a> for T {
+    type Result = T;
+}
+
+macro_rules! gc_ref_type {
+    (pub struct $ref_type: ident / $storage_type: ident {
+        $($field_name: ident / $field_setter_name: ident : $field_type: ty),*
+    }) => {
+        struct $storage_type <'a> {
+            $($field_name: <<$field_type as TransplantLifetime<'a>>::Result as HeapInline<'a>>::Storage,)*
+        }
+
+        unsafe impl<'a> Mark<'a> for Markable<$storage_type<'a>> {
+            unsafe fn mark(ptr: *mut Markable<$storage_type<'a>>) {
+                if !ptr.is_null() && !(*ptr).marked {
+                    (*ptr).marked = true;
+                    $(
+                        Mark::mark(&mut (*ptr).value.$field_name
+                                   as *mut <<$field_type as TransplantLifetime<'a>>::Result as HeapInline<'a>>::Storage);
+                    )*
+                }
+            }
+        }
+
+        #[allow(raw_pointer_derive)]
+        #[derive(Clone, Debug, PartialEq)]
+        pub struct $ref_type<'a>(PinnedRef<'a, Markable<$storage_type<'a>>>);
+
+        impl<'a> $ref_type<'a> {
+            $(
+                pub fn $field_name(&self) -> <$field_type as TransplantLifetime<'a>>::Result {
+                    let ptr = self.0.ptr;
+                    unsafe {
+                        <<$field_type as TransplantLifetime<'a>>::Result as HeapInline<'a>>::from_heap(
+                            &*self.0.heap,
+                            &(*ptr).value.$field_name)
+                    }
+                }
+
+                pub fn $field_setter_name(&self, v: <$field_type as TransplantLifetime<'a>>::Result) {
+                    let ptr = self.0.ptr;
+                    unsafe {
+                        (*ptr).value.$field_name =
+                            <<$field_type as TransplantLifetime<'a>>::Result as HeapInline<'a>>::to_heap(v);
+                    }
+                }
+            )*
+        }
+
+        unsafe impl<'a> HeapInline<'a> for $ref_type<'a> {
+            type Storage = *mut Markable<$storage_type<'a>>;
+
+            fn to_heap(self) -> Self::Storage {
+                self.0.ptr
+            }
+
+            unsafe fn from_heap(heap: &Heap<'a>, v: &Self::Storage) -> Self {
+                $ref_type(PinnedRef::new(heap, *v))
+            }
+        }
+
+        impl<'a> GCRef for $ref_type<'a> {
+            #[cfg(test)]
+            fn address(&self) -> usize {
+                unsafe { std::mem::transmute(self.0.ptr) }
+            }
         }
     }
+}
 
-    pub fn head(&self) -> Value<'a> {
-        let ptr = self.ptr;
-        unsafe { Value::from_heap(&*self.heap, &(*ptr).head) }
-    }
-
-    pub fn tail(&self) -> Value<'a> {
-        let ptr = self.ptr;
-        unsafe { Value::from_heap(&*self.heap, &(*ptr).tail) }
-    }
-
-    pub fn set_head(&self, v: Value<'a>) {
-        let ptr = self.ptr;
-        unsafe { (*ptr).head = v.to_heap(); }
-    }
-
-    pub fn set_tail(&self, v: Value<'a>) {
-        let ptr = self.ptr;
-        unsafe { (*ptr).tail = v.to_heap(); }
-    }
-
-    #[cfg(test)]
-    pub fn address(&self) -> usize {
-        unsafe { std::mem::transmute(self.ptr) }
+gc_ref_type! {
+    pub struct Pair / PairStorage {
+        head / set_head: Value<'static>,
+        tail / set_tail: Value<'static>
     }
 }
 
@@ -262,13 +327,13 @@ enum ValueStorage<'a> {
     Null,
     Int(i32),
     Str(Rc<String>),
-    Pair(*mut PairStorage<'a>, HeapId<'a>)
+    Pair(*mut Markable<PairStorage<'a>>)
 }
 
-unsafe impl<'a> Mark for ValueStorage<'a> {
+unsafe impl<'a> Mark<'a> for ValueStorage<'a> {
     unsafe fn mark(ptr: *mut ValueStorage<'a>) {
         match *ptr {
-            ValueStorage::Pair(p, _) => Mark::mark(p),
+            ValueStorage::Pair(p) => Mark::mark(p),
             _ => {}
         }
     }
@@ -290,7 +355,7 @@ unsafe impl<'a> HeapInline<'a> for Value<'a> {
             Value::Null => ValueStorage::Null,
             Value::Int(n) => ValueStorage::Int(n),
             Value::Str(rcstr) => ValueStorage::Str(rcstr),
-            Value::Pair(Pair{ptr, heap_id, ..}) => ValueStorage::Pair(ptr, heap_id)
+            Value::Pair(pair) => ValueStorage::Pair(HeapInline::<'a>::to_heap(pair))
         }
     }
 
@@ -299,16 +364,20 @@ unsafe impl<'a> HeapInline<'a> for Value<'a> {
             &ValueStorage::Null => Value::Null,
             &ValueStorage::Int(n) => Value::Int(n),
             &ValueStorage::Str(ref rcstr) => Value::Str(rcstr.clone()),
-            &ValueStorage::Pair(ptr, _) => Value::Pair(Pair::new(heap, ptr))
+            &ValueStorage::Pair(ref ptr) => Value::Pair(HeapInline::<'a>::from_heap(heap, ptr))
         }
     }
 }
 
-unsafe impl<T: Copy> Mark for T {
+impl<'a, 'b> TransplantLifetime<'a> for Value<'b> {
+    type Result = Value<'a>;
+}
+
+unsafe impl<'a, T: Copy + 'static> Mark<'a> for T {
     unsafe fn mark(_ptr: *mut T) {}
 }
 
-unsafe impl<'a, T: Copy> HeapInline<'a> for T {
+unsafe impl<'a, T: Copy + 'static> HeapInline<'a> for T {
     type Storage = Self;
 
     fn to_heap(self) -> T { self }

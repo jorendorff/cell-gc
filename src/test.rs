@@ -1,6 +1,7 @@
 use super::with_heap;
 use super::Value;
 use super::HEAP_SIZE;
+use super::GCRef;  // for .address()
 use std::rc::Rc;
 
 /// Test that a Heap can at least allocate two objects.
