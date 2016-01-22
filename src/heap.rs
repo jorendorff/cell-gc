@@ -25,6 +25,7 @@ const HEAP_STORAGE_ALIGN: usize = 0x1000;
 struct HeapStorage<'a> {
     mark_bits: BitVec,
     mark_entry_point: unsafe fn(*mut ()),
+    freelist: *mut PairStorage<'a>,
     objects: [PairStorage<'a>; HEAP_SIZE]
 }
 
@@ -33,6 +34,7 @@ impl<'a> HeapStorage<'a> {
         HeapStorage {
             mark_bits: BitVec::from_elem(HEAP_SIZE, false),
             mark_entry_point: mark_entry_point::<PairStorage>,
+            freelist: ptr::null_mut(),
             objects: mem::uninitialized()
         }
     }
@@ -41,7 +43,6 @@ impl<'a> HeapStorage<'a> {
 pub struct Heap<'a> {
     id: HeapId<'a>,
     storage: Box<HeapStorage<'a>>,
-    freelist: *mut PairStorage<'a>,
     pins: RefCell<HashMap<*mut (), usize>>
 }
 
@@ -100,7 +101,6 @@ impl<'a> Heap<'a> {
         let mut h = Heap {
             id: PhantomData,
             storage: Box::new(unsafe { HeapStorage::new() }),
-            freelist: ptr::null_mut(),
             pins: RefCell::new(HashMap::new())
         };
 
@@ -152,25 +152,25 @@ impl<'a> Heap<'a> {
 
     unsafe fn add_to_free_list(&mut self, p: *mut PairStorage<'a>) {
         let listp = p as *mut *mut PairStorage<'a>;
-        *listp = self.freelist;
-        assert_eq!(*listp, self.freelist);
-        self.freelist = p;
+        *listp = self.storage.freelist;
+        assert_eq!(*listp, self.storage.freelist);
+        self.storage.freelist = p;
     }
 
     pub fn try_alloc(&mut self, pair: (Value<'a>, Value<'a>)) -> Option<Pair<'a>> {
-        if self.freelist.is_null() {
+        if self.storage.freelist.is_null() {
             unsafe {
                 self.gc();
             }
-            if self.freelist.is_null() {
+            if self.storage.freelist.is_null() {
                 return None;
             }
         }
 
-        let p = self.freelist;
+        let p = self.storage.freelist;
         unsafe {
             let listp = p as *mut *mut PairStorage<'a>;
-            self.freelist = *listp;
+            self.storage.freelist = *listp;
 
             let (h, t) = pair;
             *p = PairStorage {
@@ -226,7 +226,7 @@ impl<'a> Heap<'a> {
         }
 
         // sweep phase
-        self.freelist = ptr::null_mut();
+        self.storage.freelist = ptr::null_mut();
         for i in 0 .. HEAP_SIZE {
             let p = &mut self.storage.objects[i] as *mut PairStorage<'a>;
             if !self.storage.mark_bits[i] {
