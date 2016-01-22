@@ -4,7 +4,7 @@ macro_rules! gc_ref_type {
         $($field_name: ident / $field_setter_name: ident : $field_type: ty),*
     }) => {
         struct $storage_type <'a> {
-            $($field_name: <$field_type as HeapInline<'a>>::Storage,)*
+            $($field_name: <$field_type as $crate::HeapInline<'a>>::Storage,)*
         }
 
         unsafe impl<'a> $crate::Mark<'a> for $crate::Markable<$storage_type<'a>> {
@@ -65,5 +65,3 @@ macro_rules! gc_ref_type {
         }
     }
 }
-
-
