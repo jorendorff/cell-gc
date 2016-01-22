@@ -6,7 +6,7 @@ use std::rc::Rc;
 /// Test that a Heap can at least allocate two objects.
 #[test]
 fn can_allocate_twice() {
-    with_heap(|mut heap| {
+    with_heap(|heap| {
         let obj1 = heap.alloc((Value::Int(1), Value::Null));
         let obj2 = heap.alloc((Value::Int(2), Value::Null));
         assert_eq!(obj1.head(), Value::Int(1));
@@ -17,7 +17,7 @@ fn can_allocate_twice() {
 /// Test that rooted objects are not collected and reused.
 #[test]
 fn root_is_not_recycled() {
-    with_heap(|mut heap| {
+    with_heap(|heap| {
         // Create and root one object.
         let root = heap.alloc((Value::Int(1), Value::Str(Rc::new("hello world".to_string()))));
 
@@ -33,7 +33,7 @@ fn root_is_not_recycled() {
 /// reachable.
 #[test]
 fn full_heap() {
-    with_heap(|mut heap| {
+    with_heap(|heap| {
         // Fill up the heap by allocating HEAP_SIZE objects.
         let mut v = Value::Null;
         for _ in 0 .. HEAP_SIZE {
@@ -51,7 +51,7 @@ fn full_heap() {
 /// Test allocate()'s behavior when the heap is only almost full.
 #[test]
 fn nearly_full_heap() {
-    with_heap(|mut heap| {
+    with_heap(|heap| {
         // Make the heap nearly full by allocating (HEAP_SIZE - 1) objects.
         let mut v = Value::Null;
         for _ in 0 .. HEAP_SIZE - 1 {
@@ -72,7 +72,7 @@ fn nearly_full_heap() {
 /// collected.
 #[test]
 fn reachable_objects_not_collected() {
-    with_heap(|mut heap| {
+    with_heap(|heap| {
         let obj1 = heap.alloc_null();
         let (p2, p3, p4, p5);
         {
@@ -122,7 +122,7 @@ fn reachable_objects_not_collected() {
 /// itself.
 #[test]
 fn root_self_references() {
-    with_heap(|mut heap| {
+    with_heap(|heap| {
         // Create a root object that contains pointers to itself.
         let root = heap.alloc_null();
         root.set_head(Value::Pair(root.clone()));
@@ -139,7 +139,7 @@ fn root_self_references() {
 /// Test that the GC is not confused by cycles in the reachable object graph.
 #[test]
 fn test_root_cycle() {
-    with_heap(|mut heap| {
+    with_heap(|heap| {
         // Set up obj1 and obj2 to point to each other.
         let obj1 = heap.alloc_null();
         let obj2 = heap.alloc((Value::Pair(obj1.clone()),
@@ -160,7 +160,7 @@ fn test_root_cycle() {
 /// Test that the GC is not confused by cycles that are garbage.
 #[test]
 fn unreachable_cycle() {
-    with_heap(|mut heap| {
+    with_heap(|heap| {
         // Make a cycle.
         let (p1, p2);
         {
@@ -204,8 +204,8 @@ fn unreachable_cycle() {
 /// one heap to another heap's `alloc` method.
 #[test]
 fn bug_cross_heap_edges_1() {
-    with_heap(|mut heap1| {
-        with_heap(|mut heap2| {
+    with_heap(|heap1| {
+        with_heap(|heap2| {
             let obj1 = heap1.alloc_null();  // error: cannot infer an appropriate lifetime
             let obj2 = heap2.alloc((Value::Null, Value::Pair(obj1)));
         });
@@ -217,16 +217,16 @@ fn bug_cross_heap_edges_1() {
 /// could.)
 #[test]
 fn bug_cross_heap_edges_2() {
-    let mut heap1 = with_heap(|mut h| h);  // error: cannot infer an appropriate lifetime
-    let mut heap2 = with_heap(|mut h| h);
+    let mut heap1 = with_heap(|h| *h);  // error: cannot infer an appropriate lifetime
+    let mut heap2 = with_heap(|h| *h);
     let obj1 = heap1.alloc_null();
     let obj2 = heap2.alloc((Value::Null, Value::Pair(obj1)));
 }
 
 #[test]
 fn bug_cross_heap_edges_2a() {
-    with_heap(|mut heap1| {
-        let mut heap2 = with_heap(|mut h| h);  // error: cannot infer an appropriate lifetime
+    with_heap(|heap1| {
+        let mut heap2 = with_heap(|h| *h);  // error: cannot infer an appropriate lifetime
         let obj1 = heap1.alloc_null();
         let obj2 = heap2.alloc((Value::Null, Value::Pair(obj1)));
     });
@@ -243,6 +243,28 @@ fn bug_cross_heap_edges_3() {
             std::mem::swap(&mut heap1, &mut heap2);  // error: mismatched types ... (lifetime mismatch)
             let obj2 = heap1.alloc((Value::Null, Value::Pair(obj1)));
         });
+    });
+}
+
+#[test]
+fn bug_heap_dropping() {
+    // Check that Rust does not let us drop the heap while references into it
+    // still exist (they would be dangling pointers). The first iteration of
+    // `with_heap` passed the heap to the callback by value, and thus was
+    // susceptible to this bug! It caused:
+    //
+    //     thread panicked while panicking. aborting.
+    //
+    // The fix was to pass the heap to the closure by reference.
+    //
+    with_heap(|heap| {
+        let obj = heap.alloc_null();
+
+        // note: dropping `heap` would just drop the reference, which is no problem
+        ::std::mem::drop(*heap);  // error: cannot move out of borrowed content
+
+        let val = Value::Pair(obj.clone());
+        obj.set_head(val); // occurs after the heap is gone
     });
 }
 */

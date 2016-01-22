@@ -32,9 +32,9 @@ pub struct Heap<'a> {
 pub const HEAP_SIZE: usize = 10000;
 
 pub fn with_heap<F, O>(f: F) -> O
-    where F: for<'a> FnOnce(Heap<'a>) -> O
+    where F: for<'a> FnOnce(&mut Heap<'a>) -> O
 {
-    f(Heap::new())
+    f(&mut Heap::new())
 }
 
 impl<'a> Heap<'a> {
