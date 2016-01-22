@@ -24,6 +24,7 @@ const HEAP_STORAGE_ALIGN: usize = 0x1000;
 // The heap is (for now) just a big array of Pairs
 struct HeapStorage<'a> {
     mark_bits: BitVec,
+    mark_entry_point: unsafe fn(*mut ()),
     objects: [PairStorage<'a>; HEAP_SIZE]
 }
 
@@ -31,6 +32,7 @@ impl<'a> HeapStorage<'a> {
     unsafe fn new() -> HeapStorage<'a> {
         HeapStorage {
             mark_bits: BitVec::from_elem(HEAP_SIZE, false),
+            mark_entry_point: mark_entry_point::<PairStorage>,
             objects: mem::uninitialized()
         }
     }
@@ -40,7 +42,7 @@ pub struct Heap<'a> {
     id: HeapId<'a>,
     storage: Box<HeapStorage<'a>>,
     freelist: *mut PairStorage<'a>,
-    pins: RefCell<HashMap<*mut PairStorage<'a>, usize>>
+    pins: RefCell<HashMap<*mut (), usize>>
 }
 
 /// Create a heap, pass it to a callback, then destroy the heap.
@@ -62,6 +64,13 @@ pub fn with_heap<F, O>(f: F) -> O
 pub unsafe trait Mark<'a> {
     unsafe fn mark(ptr: *mut Self);
 }
+
+/// Non-inlined function that serves as an entry point to marking. This is used
+/// for marking root set entries.
+unsafe fn mark_entry_point<'a, T: Mark<'a>>(addr: *mut ()) {
+    Mark::mark(addr as *mut T);
+}
+
 
 /// Trait implemented by all types that can be stored in fields of structs (or,
 /// eventually, elements of GCVecs) that are stored in the GC heap.
@@ -110,16 +119,29 @@ impl<'a> Heap<'a> {
         h
     }
 
-    fn pin(&self, p: *mut PairStorage<'a>) {
+    /// Add the object `*p` to the root set, protecting it from GC.
+    ///
+    /// An object that has been pinned *n* times stays in the root set
+    /// until it has been unpinned *n* times.
+    ///
+    /// (Unsafe because if the argument is garbage, a later GC will
+    /// crash. Called only from `impl PinnedRef`.)
+    unsafe fn pin<T: Mark<'a>>(&self, p: *mut T) {
+        let p = p as *mut ();
         let mut pins = self.pins.borrow_mut();
         let entry = pins.entry(p).or_insert(0);
         *entry += 1;
     }
 
-    fn unpin(&self, p: *mut PairStorage<'a>) {
+    /// Unpin an object (see `pin`).
+    ///
+    /// (Unsafe because unpinning an object that other code is still using
+    /// causes dangling pointers. Called only from `impl PinnedRef`.)
+    unsafe fn unpin<T: Mark<'a>>(&self, p: *mut T) {
+        let p = p as *mut ();
         let mut pins = self.pins.borrow_mut();
         if {
-            let entry = pins.entry(p).or_insert(0);
+            let entry = pins.entry(p as *mut ()).or_insert(0);
             assert!(*entry != 0);
             *entry -= 1;
             *entry == 0
@@ -159,10 +181,14 @@ impl<'a> Heap<'a> {
         }
     }
 
+    unsafe fn find_header<T>(_ptr: *const T) -> *mut HeapStorage<'a> {
+        let storage_addr = _ptr as usize & !(HEAP_STORAGE_ALIGN - 1);
+        storage_addr as *mut HeapStorage<'a>
+    }
+
     unsafe fn find_mark_bit<T>(_ptr: *const T) -> (*mut BitVec, usize) {
         assert_eq!(mem::size_of::<T>(), mem::size_of::<PairStorage<'a>>());
-        let storage_addr = _ptr as usize & !(HEAP_STORAGE_ALIGN - 1);
-        let storage = storage_addr as *mut HeapStorage<'a>;
+        let storage = Heap::find_header(_ptr);
         let objects_addr = &mut (*storage).objects[0] as *mut PairStorage<'a> as usize;
         let index = (_ptr as usize - objects_addr) / mem::size_of::<PairStorage<'a>>();
         (&mut (*storage).mark_bits as *mut BitVec, index)
@@ -186,11 +212,17 @@ impl<'a> Heap<'a> {
         self.alloc((Value::Null, Value::Null))
     }
 
+    unsafe fn mark(ptr: *mut ()) {
+        let storage = Heap::find_header(ptr);
+        let mark_fn = (*storage).mark_entry_point;
+        mark_fn(ptr);
+    }
+
     unsafe fn gc(&mut self) {
         // mark phase
         self.storage.mark_bits.clear();
         for (&p, _) in self.pins.borrow().iter() {
-            Mark::mark(p);
+            Heap::mark(p);
         }
 
         // sweep phase
