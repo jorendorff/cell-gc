@@ -16,12 +16,22 @@ pub struct Heap<'a> {
 
 pub const HEAP_SIZE: usize = 10000;
 
+/// Create a heap, pass it to a callback, then destroy the heap.
+///
+/// The heap's lifetime is directly tied to this function call, for safety. (So
+/// the API is a little wonky --- but how many heaps were you planning on
+/// creating?)
 pub fn with_heap<F, O>(f: F) -> O
     where F: for<'a> FnOnce(&mut Heap<'a>) -> O
 {
     f(&mut Heap::new())
 }
 
+/// Trait implemented by all types that can be stored directly in the GC heap:
+/// the `Storage` types associated with any `HeapInline` or `HeapRef` type.
+///
+/// XXX maybe this should not be its own trait - fold into HeapInline?
+///
 unsafe trait Mark {
     unsafe fn mark(ptr: *mut Self);
 }
