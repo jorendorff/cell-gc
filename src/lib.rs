@@ -304,6 +304,18 @@ unsafe impl<'a> HeapInline<'a> for Value<'a> {
     }
 }
 
+unsafe impl<T: Copy> Mark for T {
+    unsafe fn mark(_ptr: *mut T) {}
+}
+
+unsafe impl<'a, T: Copy> HeapInline<'a> for T {
+    type Storage = Self;
+
+    fn to_heap(self) -> T { self }
+
+    unsafe fn from_heap(_heap: &Heap<'a>, v: &T) -> T { *v }
+}
+
 
 #[cfg(test)]
 mod test;
