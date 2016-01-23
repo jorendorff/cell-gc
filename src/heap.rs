@@ -25,7 +25,7 @@ const HEAP_STORAGE_ALIGN: usize = 0x1000;
 struct HeapStorage<'a> {
     mark_bits: BitVec,
     mark_entry_point: unsafe fn(*mut ()),
-    freelist: *mut PairStorage<'a>,
+    freelist: *mut (),
     objects: [PairStorage<'a>; HEAP_SIZE]
 }
 
@@ -52,10 +52,10 @@ impl<'a> HeapStorage<'a> {
     }
 
     unsafe fn add_to_free_list(&mut self, p: *mut PairStorage<'a>) {
-        let listp = p as *mut *mut PairStorage<'a>;
+        let listp = p as *mut *mut ();
         *listp = self.freelist;
         assert_eq!(*listp, self.freelist);
-        self.freelist = p;
+        self.freelist = p as *mut ();
     }
 
     unsafe fn try_alloc(&mut self) -> Option<*mut PairStorage<'a>> {
@@ -63,9 +63,9 @@ impl<'a> HeapStorage<'a> {
         if p.is_null() {
             None
         } else {
-            let listp = p as *mut *mut PairStorage<'a>;
+            let listp = p as *mut *mut ();
             self.freelist = *listp;
-            Some(p)
+            Some(p as *mut PairStorage<'a>)
         }
     }
 
