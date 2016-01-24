@@ -275,5 +275,27 @@ macro_rules! gc_inline_enum {
             PARSE_VARIANTS IMPL_MARK $variants {}
             $storage_type
         }
+
+        unsafe impl<'a> $crate::HeapInline<'a> for $stack_type<'a> {
+            type Storage = $storage_type<'a>;
+
+            fn to_heap(self) -> $storage_type<'a> {
+                match self {
+                    $stack_type::Null => $storage_type::Null,
+                    $stack_type::Int(n) => $storage_type::Int(n),
+                    $stack_type::Str(rcstr) => $storage_type::Str(rcstr),
+                    $stack_type::Pair(pair) => $storage_type::Pair(HeapInline::<'a>::to_heap(pair))
+                }
+            }
+
+            unsafe fn from_heap(heap: &Heap<'a>, v: &$storage_type<'a>) -> $stack_type<'a> {
+                match v {
+                    &$storage_type::Null => $stack_type::Null,
+                    &$storage_type::Int(n) => $stack_type::Int(n),
+                    &$storage_type::Str(ref rcstr) => $stack_type::Str(rcstr.clone()),
+                    &$storage_type::Pair(ref ptr) => $stack_type::Pair(HeapInline::<'a>::from_heap(heap, ptr))
+                }
+            }
+        }
     }
 }

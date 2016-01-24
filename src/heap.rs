@@ -372,26 +372,3 @@ gc_inline_enum! {
         Pair(Pair<'a>)  // <-- equality is by pointer
     }
 }
-
-unsafe impl<'a> HeapInline<'a> for Value<'a> {
-    type Storage = ValueStorage<'a>;
-
-    fn to_heap(self) -> ValueStorage<'a> {
-        match self {
-            Value::Null => ValueStorage::Null,
-            Value::Int(n) => ValueStorage::Int(n),
-            Value::Str(rcstr) => ValueStorage::Str(rcstr),
-            Value::Pair(pair) => ValueStorage::Pair(HeapInline::<'a>::to_heap(pair))
-        }
-    }
-
-    unsafe fn from_heap(heap: &Heap<'a>, v: &ValueStorage<'a>) -> Value<'a> {
-        match v {
-            &ValueStorage::Null => Value::Null,
-            &ValueStorage::Int(n) => Value::Int(n),
-            &ValueStorage::Str(ref rcstr) => Value::Str(rcstr.clone()),
-            &ValueStorage::Pair(ref ptr) => Value::Pair(HeapInline::<'a>::from_heap(heap, ptr))
-        }
-    }
-}
-
