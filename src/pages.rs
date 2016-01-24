@@ -16,13 +16,17 @@ pub const HEAP_SIZE: usize = 125;
 /// TypedPage instances.
 pub const PAGE_ALIGN: usize = 0x1000;
 
-// The heap is (for now) just a big array of Pairs
-pub struct TypedPage<'a, T: GCThing<'a>> {
+pub struct PageHeader<'a> {
     pub heap: *mut Heap<'a>,
     pub mark_bits: BitVec,
     pub allocated_bits: BitVec,
     pub mark_entry_point: unsafe fn(*mut ()),
     freelist: *mut (),
+}
+
+// The heap is (for now) just a big array of Pairs
+pub struct TypedPage<'a, T: GCThing<'a>> {
+    pub header: PageHeader<'a>,
     objects: [T; HEAP_SIZE]
 }
 
@@ -45,11 +49,13 @@ impl<'a, T: GCThing<'a>> Drop for TypedPage<'a, T> {
 impl<'a, T: GCThing<'a>> TypedPage<'a, T> {
     pub unsafe fn new(heap: *mut Heap<'a>) -> Box<TypedPage<'a, T>> {
         let mut typed_page = Box::new(TypedPage {
-            heap: heap,
-            mark_bits: BitVec::from_elem(HEAP_SIZE, false),
-            allocated_bits: BitVec::from_elem(HEAP_SIZE, false),
-            mark_entry_point: mark_entry_point::<T>,
-            freelist: ptr::null_mut(),
+            header: PageHeader {
+                heap: heap,
+                mark_bits: BitVec::from_elem(HEAP_SIZE, false),
+                allocated_bits: BitVec::from_elem(HEAP_SIZE, false),
+                mark_entry_point: mark_entry_point::<T>,
+                freelist: ptr::null_mut()
+            },
             objects: mem::uninitialized()
         });
 
@@ -68,9 +74,9 @@ impl<'a, T: GCThing<'a>> TypedPage<'a, T> {
 
     unsafe fn add_to_free_list(&mut self, p: *mut T) {
         let listp = p as *mut *mut ();
-        *listp = self.freelist;
-        assert_eq!(*listp, self.freelist);
-        self.freelist = p as *mut ();
+        *listp = self.header.freelist;
+        assert_eq!(*listp, self.header.freelist);
+        self.header.freelist = p as *mut ();
     }
 
     unsafe fn allocation_index(&self, ptr: *const T) -> usize {
@@ -87,25 +93,25 @@ impl<'a, T: GCThing<'a>> TypedPage<'a, T> {
 
     pub unsafe fn get_mark_bit(&mut self, ptr: *const T) -> bool {
         let index = self.allocation_index(ptr);
-        self.mark_bits[index]
+        self.header.mark_bits[index]
     }
 
     pub unsafe fn set_mark_bit(&mut self, ptr: *const T) {
         let index = self.allocation_index(ptr);
-        self.mark_bits.set(index, true);
+        self.header.mark_bits.set(index, true);
     }
 
     pub unsafe fn try_alloc(&mut self) -> Option<*mut T> {
-        let p = self.freelist;
+        let p = self.header.freelist;
         if p.is_null() {
             None
         } else {
             let listp = p as *mut *mut ();
-            self.freelist = *listp;
+            self.header.freelist = *listp;
             let ap = p as *mut T;
             let index = self.allocation_index(ap);
-            assert!(!self.allocated_bits[index]);
-            self.allocated_bits.set(index, true);
+            assert!(!self.header.allocated_bits[index]);
+            self.header.allocated_bits.set(index, true);
             Some(ap)
         }
     }
@@ -113,10 +119,10 @@ impl<'a, T: GCThing<'a>> TypedPage<'a, T> {
     pub unsafe fn sweep(&mut self) {
         for i in 0 .. HEAP_SIZE {
             let p = &mut self.objects[i] as *mut T;
-            if self.allocated_bits[i] && !self.mark_bits[i] {
+            if self.header.allocated_bits[i] && !self.header.mark_bits[i] {
                 // The next statement has the effect of calling p's destructor.
                 ptr::read(p);
-                self.allocated_bits.set(i, false);
+                self.header.allocated_bits.set(i, false);
                 self.add_to_free_list(p);
             }
         }

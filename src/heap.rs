@@ -164,7 +164,7 @@ impl<'a> Heap<'a> {
     }
 
     unsafe fn from_allocation<T: GCThing<'a>>(ptr: *const T) -> *const Heap<'a> {
-        (*Heap::find_typed_page(ptr)).heap
+        (*Heap::find_typed_page(ptr)).header.heap
     }
 
     pub unsafe fn get_mark_bit<T: GCThing<'a>>(ptr: *const T) -> bool {
@@ -181,7 +181,7 @@ impl<'a> Heap<'a> {
 
     unsafe fn mark_any(ptr: *mut ()) {
         let typed_page = Heap::find_typed_page(ptr as *mut PairStorage);  // BOGUS
-        let mark_fn = (*typed_page).mark_entry_point;
+        let mark_fn = (*typed_page).header.mark_entry_point;
         mark_fn(ptr);
     }
 
@@ -192,7 +192,7 @@ impl<'a> Heap<'a> {
         };
 
         // mark phase
-        page.mark_bits.clear();
+        page.header.mark_bits.clear();
         for (&p, _) in self.pins.borrow().iter() {
             Heap::mark_any(p);
         }
@@ -216,7 +216,7 @@ impl<'a> Drop for Heap<'a> {
         let mut tmp = None;
         mem::swap(&mut tmp, &mut self.page);
         if let Some(page) = tmp {
-            assert!(page.allocated_bits.none());
+            assert!(page.header.allocated_bits.none());
         }
     }
 }
