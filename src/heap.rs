@@ -2,6 +2,7 @@
 
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::default::Default;
 use std::marker::PhantomData;
 use std::{fmt, mem, ptr};
 use bit_vec::BitVec;
@@ -22,16 +23,16 @@ pub const HEAP_SIZE: usize = 125;
 const HEAP_STORAGE_ALIGN: usize = 0x1000;
 
 // The heap is (for now) just a big array of Pairs
-struct HeapStorage<'a> {
+struct HeapStorage<'a, T: GCThing<'a>> {
     heap: *mut Heap<'a>,
     mark_bits: BitVec,
     allocated_bits: BitVec,
     mark_entry_point: unsafe fn(*mut ()),
     freelist: *mut (),
-    objects: [PairStorage<'a>; HEAP_SIZE]
+    objects: [T; HEAP_SIZE]
 }
 
-impl<'a> Drop for HeapStorage<'a> {
+impl<'a, T: GCThing<'a>> Drop for HeapStorage<'a, T> {
     fn drop(&mut self) {
         // All the memory in self.objects is uninitialized at this point. Rust
         // will drop each of those objects, which would crash. So we have this
@@ -40,23 +41,20 @@ impl<'a> Drop for HeapStorage<'a> {
         for i in 0 .. HEAP_SIZE {
             unsafe {
                 ptr::write(
-                    &mut self.objects[i] as *mut PairStorage<'a>,
-                    PairStorage {
-                        head: ValueStorage::Null,
-                        tail: ValueStorage::Null
-                    });
+                    &mut self.objects[i] as *mut T,
+                    T::default());
             }
         }
     }
 }
 
-impl<'a> HeapStorage<'a> {
-    unsafe fn new(heap: *mut Heap<'a>) -> Box<HeapStorage<'a>> {
+impl<'a, T: GCThing<'a>> HeapStorage<'a, T> {
+    unsafe fn new(heap: *mut Heap<'a>) -> Box<HeapStorage<'a, T>> {
         let mut storage = Box::new(HeapStorage {
             heap: heap,
             mark_bits: BitVec::from_elem(HEAP_SIZE, false),
             allocated_bits: BitVec::from_elem(HEAP_SIZE, false),
-            mark_entry_point: mark_entry_point::<PairStorage>,
+            mark_entry_point: mark_entry_point::<T>,
             freelist: ptr::null_mut(),
             objects: mem::uninitialized()
         });
@@ -64,43 +62,43 @@ impl<'a> HeapStorage<'a> {
         // These assertions will likely fail on 32-bit platforms or if someone
         // is somehow using a custom Box allocator. If either one fails, this
         // GC will not work.
-        assert_eq!(&mut *storage as *mut HeapStorage<'a> as usize & (HEAP_STORAGE_ALIGN - 1), 0);
-        assert!(mem::size_of::<HeapStorage<'a>>() <= HEAP_STORAGE_ALIGN);
+        assert_eq!(&mut *storage as *mut HeapStorage<'a, T> as usize & (HEAP_STORAGE_ALIGN - 1), 0);
+        assert!(mem::size_of::<HeapStorage<'a, T>>() <= HEAP_STORAGE_ALIGN);
 
         for i in 0 .. HEAP_SIZE {
-            let p = &mut storage.objects[i] as *mut PairStorage<'a>;
+            let p = &mut storage.objects[i] as *mut T;
             storage.add_to_free_list(p);
         }
         storage
     }
 
-    unsafe fn add_to_free_list(&mut self, p: *mut PairStorage<'a>) {
+    unsafe fn add_to_free_list(&mut self, p: *mut T) {
         let listp = p as *mut *mut ();
         *listp = self.freelist;
         assert_eq!(*listp, self.freelist);
         self.freelist = p as *mut ();
     }
 
-    unsafe fn allocation_index(&self, ptr: *const PairStorage<'a>) -> usize {
-        let base = &self.objects[0] as *const PairStorage<'a>;
+    unsafe fn allocation_index(&self, ptr: *const T) -> usize {
+        let base = &self.objects[0] as *const T;
 
         // Check that ptr is in range.
         assert!(ptr >= base);
         assert!(ptr < base.offset(HEAP_SIZE as isize));
 
-        let index = (ptr as usize - base as usize) / mem::size_of::<PairStorage<'a>>();
-        assert_eq!(&self.objects[index] as *const PairStorage<'a>, ptr);
+        let index = (ptr as usize - base as usize) / mem::size_of::<T>();
+        assert_eq!(&self.objects[index] as *const T, ptr);
         index
     }
 
-    unsafe fn try_alloc(&mut self) -> Option<*mut PairStorage<'a>> {
+    unsafe fn try_alloc(&mut self) -> Option<*mut T> {
         let p = self.freelist;
         if p.is_null() {
             None
         } else {
             let listp = p as *mut *mut ();
             self.freelist = *listp;
-            let ap = p as *mut PairStorage<'a>;
+            let ap = p as *mut T;
             let index = self.allocation_index(ap);
             assert!(!self.allocated_bits[index]);
             self.allocated_bits.set(index, true);
@@ -110,7 +108,7 @@ impl<'a> HeapStorage<'a> {
 
     unsafe fn sweep(&mut self) {
         for i in 0 .. HEAP_SIZE {
-            let p = &mut self.objects[i] as *mut PairStorage<'a>;
+            let p = &mut self.objects[i] as *mut T;
             if self.allocated_bits[i] && !self.mark_bits[i] {
                 // The next statement has the effect of calling p's destructor.
                 ptr::read(p);
@@ -123,7 +121,7 @@ impl<'a> HeapStorage<'a> {
 
 pub struct Heap<'a> {
     id: HeapId<'a>,
-    storage: Option<Box<HeapStorage<'a>>>,
+    storage: Option<Box<HeapStorage<'a, PairStorage<'a>>>>,  // XXX BOGUS
     pins: RefCell<HashMap<*mut (), usize>>
 }
 
@@ -201,21 +199,27 @@ impl<'a> Heap<'a> {
             pins: RefCell::new(HashMap::new())
         }
     }
-    
-    fn get_storage(&mut self) -> &mut Box<HeapStorage<'a>> {
+
+    fn get_storage<T: GCThing<'a>>(&mut self) -> &mut Box<HeapStorage<'a, T>> {
         match self.storage {
-            Some(ref mut storage) => return storage,
+            Some(ref mut storage) => return unsafe { mem::transmute(storage) },
             None => ()
         }
-        self.storage = Some(unsafe {
-            HeapStorage::new(self as *mut Heap<'a>)
-        });
+
+        // XXX BOGUS
+        let mark_t = mark_entry_point::<T> as unsafe fn (*mut ());
+        let mark_pair = mark_entry_point::<PairStorage> as unsafe fn (*mut ());
+        if mark_t == mark_pair {
+            self.storage = Some(unsafe {
+                HeapStorage::new(self as *mut Heap<'a>)
+            });
+        }
+
         match self.storage {
-            Some(ref mut storage) => return storage,
-            None => unreachable!()  // we just set it
+            Some(ref mut storage) => return unsafe { mem::transmute(storage) },
+            None => panic!("Heap::get_storage: unsupported type (sorry!)")
         }
     }
-
 
     /// Add the object `*p` to the root set, protecting it from GC.
     ///
@@ -224,7 +228,7 @@ impl<'a> Heap<'a> {
     ///
     /// (Unsafe because if the argument is garbage, a later GC will
     /// crash. Called only from `impl PinnedRef`.)
-    unsafe fn pin<T: Mark<'a>>(&self, p: *mut T) {
+    unsafe fn pin<T: GCThing<'a>>(&self, p: *mut T) {
         let p = p as *mut ();
         let mut pins = self.pins.borrow_mut();
         let entry = pins.entry(p).or_insert(0);
@@ -235,7 +239,7 @@ impl<'a> Heap<'a> {
     ///
     /// (Unsafe because unpinning an object that other code is still using
     /// causes dangling pointers. Called only from `impl PinnedRef`.)
-    unsafe fn unpin<T: Mark<'a>>(&self, p: *mut T) {
+    unsafe fn unpin<T: GCThing<'a>>(&self, p: *mut T) {
         let p = p as *mut ();
         let mut pins = self.pins.borrow_mut();
         if {
@@ -248,58 +252,53 @@ impl<'a> Heap<'a> {
         }
     }
 
-    pub fn try_alloc(&mut self, fields: PairFields<'a>) -> Option<Pair<'a>> {
+    pub fn try_alloc<T: GCRef<'a>>(&mut self, fields: T::Fields) -> Option<T> {
         unsafe {
-            let alloc = self.get_storage().try_alloc();
+            let alloc = self.get_storage::<T::ReferentStorage>().try_alloc();
             alloc
                 .or_else(|| {
                     self.gc();
-                    self.get_storage().try_alloc()
+                    self.get_storage::<T::ReferentStorage>().try_alloc()
                 })
                 .map(move |p| {
-                    ptr::write(p, PairStorage::from_fields(fields));
-                    Pair(PinnedRef::new(p))
+                    ptr::write(p, T::fields_to_heap(fields));
+                    T::from_pinned_ref(PinnedRef::new(p))
                 })
         }
     }
 
-    unsafe fn find_header<T>(ptr: *const T) -> *mut HeapStorage<'a> {
+    unsafe fn find_header<T: GCThing<'a>>(ptr: *const T) -> *mut HeapStorage<'a, T> {
         let storage_addr = ptr as usize & !(HEAP_STORAGE_ALIGN - 1);
-        storage_addr as *mut HeapStorage<'a>
+        storage_addr as *mut HeapStorage<'a, T>
     }
 
-    unsafe fn from_allocation<T: Mark<'a>>(ptr: *const T) -> *const Heap<'a> {
+    unsafe fn from_allocation<T: GCThing<'a>>(ptr: *const T) -> *const Heap<'a> {
         (*Heap::find_header(ptr)).heap
     }
 
-    unsafe fn find_mark_bit<T>(_ptr: *const T) -> (*mut BitVec, usize) {
-        assert_eq!(mem::size_of::<T>(), mem::size_of::<PairStorage<'a>>());
+    unsafe fn find_mark_bit<T: GCThing<'a>>(_ptr: *const T) -> (*mut BitVec, usize) {
         let storage = Heap::find_header(_ptr);
-        let objects_addr = &mut (*storage).objects[0] as *mut PairStorage<'a> as usize;
-        let index = (_ptr as usize - objects_addr) / mem::size_of::<PairStorage<'a>>();
+        let objects_addr = &mut (*storage).objects[0] as *mut T as usize;
+        let index = (_ptr as usize - objects_addr) / mem::size_of::<T>();
         (&mut (*storage).mark_bits as *mut BitVec, index)
     }
 
-    pub unsafe fn get_mark_bit<T>(_ptr: *const T) -> bool {
-        let (bits, index) = Heap::find_mark_bit(_ptr);
+    pub unsafe fn get_mark_bit<T: GCThing<'a>>(ptr: *const T) -> bool {
+        let (bits, index) = Heap::find_mark_bit(ptr);
         (*bits)[index]
     }
 
-    pub unsafe fn set_mark_bit<T>(_ptr: *const T) {
-        let (bits, index) = Heap::find_mark_bit(_ptr);
+    pub unsafe fn set_mark_bit<T: GCThing<'a>>(ptr: *const T) {
+        let (bits, index) = Heap::find_mark_bit(ptr);
         (*bits).set(index, true);
     }
 
-    pub fn alloc(&mut self, fields: PairFields<'a>) -> Pair<'a> {
+    pub fn alloc<T: GCRef<'a>>(&mut self, fields: T::Fields) -> T {
         self.try_alloc(fields).expect("out of memory (gc did not collect anything)")
     }
 
-    pub fn alloc_null(&mut self) -> Pair<'a> {
-        self.alloc(PairFields { head: Value::Null, tail: Value::Null })
-    }
-
-    unsafe fn mark(ptr: *mut ()) {
-        let storage = Heap::find_header(ptr);
+    unsafe fn mark_any(ptr: *mut ()) {
+        let storage = Heap::find_header(ptr as *mut PairStorage);  // BOGUS
         let mark_fn = (*storage).mark_entry_point;
         mark_fn(ptr);
     }
@@ -313,7 +312,7 @@ impl<'a> Heap<'a> {
         // mark phase
         storage.mark_bits.clear();
         for (&p, _) in self.pins.borrow().iter() {
-            Heap::mark(p);
+            Heap::mark_any(p);
         }
 
         // sweep phase
@@ -338,12 +337,17 @@ impl<'a> Drop for Heap<'a> {
     }
 }
 
-pub struct PinnedRef<'a, T: Mark<'a>> {
+/// Things that can be allocated in the heap (the backing store for a GCRef type).
+pub trait GCThing<'a>: Mark<'a> + Sized + Default {
+    type RefType: GCRef<'a, ReferentStorage=Self>;
+}
+
+pub struct PinnedRef<'a, T: GCThing<'a>> {
     ptr: *mut T,
     heap_id: HeapId<'a>
 }
 
-impl<'a, T: Mark<'a>> PinnedRef<'a, T> {
+impl<'a, T: GCThing<'a>> PinnedRef<'a, T> {
     /// Pin an object, returning a new `PinnedRef` that will unpin it when
     /// dropped. Unsafe because if `p` is not a pointer to a live allocation of
     /// type `T` --- and a complete allocation, not a sub-object of one --- then
@@ -358,7 +362,7 @@ impl<'a, T: Mark<'a>> PinnedRef<'a, T> {
     }
 }
 
-impl<'a, T: Mark<'a>> Drop for PinnedRef<'a, T> {
+impl<'a, T: GCThing<'a>> Drop for PinnedRef<'a, T> {
     fn drop(&mut self) {
         unsafe {
             let heap = Heap::from_allocation(self.ptr);
@@ -367,7 +371,7 @@ impl<'a, T: Mark<'a>> Drop for PinnedRef<'a, T> {
     }
 }
 
-impl<'a, T: Mark<'a>> Clone for PinnedRef<'a, T> {
+impl<'a, T: GCThing<'a>> Clone for PinnedRef<'a, T> {
     fn clone(&self) -> PinnedRef<'a, T> {
         let &PinnedRef { ptr, heap_id } = self;
         unsafe {
@@ -381,21 +385,28 @@ impl<'a, T: Mark<'a>> Clone for PinnedRef<'a, T> {
     }
 }
 
-impl<'a, T: Mark<'a>> fmt::Debug for PinnedRef<'a, T> {
+impl<'a, T: GCThing<'a>> fmt::Debug for PinnedRef<'a, T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "PinnedRef {{ ptr: {:p} }}", self.ptr)
     }
 }
 
-impl<'a, T: Mark<'a>> PartialEq for PinnedRef<'a, T> {
+impl<'a, T: GCThing<'a>> PartialEq for PinnedRef<'a, T> {
     fn eq(&self, other: &PinnedRef<'a, T>) -> bool {
         self.ptr == other.ptr
     }
 }
 
-impl<'a, T: Mark<'a>> Eq for PinnedRef<'a, T> {}
+impl<'a, T: GCThing<'a>> Eq for PinnedRef<'a, T> {}
 
-pub trait GCRef {
+pub trait GCRef<'a>: HeapInline<'a> {
+    type ReferentStorage: GCThing<'a>;
+    type Fields;
+
+    fn from_pinned_ref(r: PinnedRef<'a, Self::ReferentStorage>) -> Self;
+
+    fn fields_to_heap(fields: Self::Fields) -> Self::ReferentStorage;
+
     #[cfg(test)]
     fn address(&self) -> usize;
 }
@@ -450,6 +461,16 @@ gc_ref_type! {
         tail / set_tail: Value<'a>
     }
 }
+
+impl<'a> Default for PairStorage<'a> {
+    fn default() -> PairStorage<'a> {
+        PairStorage {
+            head: ValueStorage::Null,
+            tail: ValueStorage::Null
+        }
+    }
+}
+
 
 
 // === Values (a heap-inline enum)

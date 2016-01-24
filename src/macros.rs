@@ -29,14 +29,6 @@ macro_rules! gc_ref_type {
             }
         }
 
-        impl<'a> $storage_type<'a> {
-            fn from_fields(fields: $fields_type<'a>) -> $storage_type<'a> {
-                $storage_type {
-                    $($field_name: $crate::HeapInline::to_heap(fields.$field_name)),*
-                }
-            }
-        }
-
         pub struct $fields_type<'a> {
             $(pub $field_name: $field_type),*
         }
@@ -75,11 +67,28 @@ macro_rules! gc_ref_type {
             }
         }
 
-        impl<'a> $crate::GCRef for $ref_type<'a> {
+        impl<'a> $crate::GCRef<'a> for $ref_type<'a> {
+            type ReferentStorage = $storage_type<'a>;
+            type Fields = $fields_type<'a>;
+
+            fn from_pinned_ref(r: PinnedRef<'a, $storage_type<'a>>) -> $ref_type<'a> {
+                $ref_type(r)
+            }
+
+            fn fields_to_heap(fields: $fields_type<'a>) -> $storage_type<'a> {
+                $storage_type {
+                    $($field_name: $crate::HeapInline::to_heap(fields.$field_name)),*
+                }
+            }
+
             #[cfg(test)]
             fn address(&self) -> usize {
                 unsafe { ::std::mem::transmute(self.0.ptr) }
             }
+        }
+
+        impl<'a> $crate::GCThing<'a> for $storage_type<'a> {
+            type RefType = $ref_type<'a>;
         }
     }
 }

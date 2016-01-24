@@ -58,7 +58,8 @@ fn full_heap() {
         // The whole heap is reachable.  Now try_alloc() should return null every
         // time it's called.
         for _ in 0 .. 4 {
-            assert_eq!(heap.try_alloc(null_pair()), None);
+            let attempt: Option<Pair> = heap.try_alloc(null_pair());
+            assert_eq!(attempt, None);
         }
     });
 }
