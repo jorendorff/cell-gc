@@ -77,11 +77,7 @@ macro_rules! gc_ref_type {
 
 #[macro_export]
 macro_rules! gc_inline_enum {
-    {
-        AS_ITEM $x:item
-    } => {
-        $x
-    };
+    { AS_ITEM $x:item } => { $x };
 
     {
         PARSE_VARIANTS $helper_name:ident
@@ -264,7 +260,6 @@ macro_rules! gc_inline_enum {
         pub enum $stack_type:ident / $storage_type:ident <'a>
             $variants:tt
     } => {
-
         gc_inline_enum! {
             PARSE_VARIANTS DECLARE_STORAGE_TYPE $variants {}
             $storage_type
@@ -281,82 +276,5 @@ macro_rules! gc_inline_enum {
             PARSE_VARIANTS IMPL_MARK $variants {}
             $storage_type
         }
-                /*
-        pub enum $storage_type<'a> {
-            gc_inline_enum!(FOR_EACH_VARIANT VARIANT_STORAGE $variants {})
-        }
-
-        unsafe impl<'a> $crate::Mark<'a> for $storage_type<'a> {
-            unsafe fn mark(ptr: *mut $storage_type<'a>) {
-                match *ptr {
-                    gc_inline_enum!(FOR_EACH_VARIANT MARK $variants {}),
-                }
-            }
-        }
-
-        unsafe impl<'a> $crate::HeapInline<'a> for $stack_type<'a> {
-            type Storage = $storage_type<'a>;
-
-            fn to_heap(self) -> $storage<'a> {
-                match self {
-                    $(
-                        $stack_type::$variant_name
-                            gc_inline_enum!(VARIANT_PATTERN $($variant)*)
-                            =>
-                            $storage_type::$variant_name
-                            gc_inline_enum!(VARIANT_TO_HEAP $($variant)*)
-                    ),*
-                }
-            }
-
-            unsafe fn from_heap(heap: &$crate::Heap<'a>, v: &$storage_type<'a>)
-                -> $stack_type<'a>
-            {
-                match v {
-                    $(
-                        &$storage_type::$variant_name
-                            gc_inline_enum!(VARIANT_PATTERN_BY_REF $($variant)*)
-                            =>
-                            $stack_type::$variant_name
-                            gc_inline_enum!(VARIANT_FROM_HEAP $($variant)*)
-                    ),*
-                    &ValueStorage::Int(n) => Value::Int(n),
-                    &ValueStorage::Str(ref rcstr) => Value::Str(rcstr.clone()),
-                    &ValueStorage::Pair(ref ptr) => Value::Pair(HeapInline::<'a>::from_heap(heap, ptr))
-                }
-            }
-        }
-*/
     }
 }
-
-
-
-/*
-    (VARIANT_STORAGE $variant_name:ident NO_FIELDS $ignore:tt) => (
-        $variant_name
-    );
-    (VARIANT_STORAGE $variant_name:ident ($($field_type:ty),*) $ignore:tt) => (
-        $variant_name ($($field_type),*)
-    );
-
-    (MARK $variant_name:ident NO_FIELDS $ignore:tt) => (
-        $variant_name => ()
-    );
-    (MARK $variant_name:ident ($(field_type: ty),*) (
-        $ignore:ident / $storage_type:ident
-    )) => (
-        $storage_type::$variant_name
-            ( gc_inline_enum!(FOR_EACH_TYPE_EMIT_REF_BINDING $($field_type)*) )
-            => {
-                $($crate::Mark::mark();)*
-            }
-    );
-
-    (STACK_VARIANT $variant_name:ident NO_FIELDS $ignore:tt) => {
-        $variant_name
-    };
-    (STACK_VARIANT $variant_name:ident ($($field_type: ty),*) $ignore:tt) => {
-        $variant_name($($field_type),*)
-    };
-*/
