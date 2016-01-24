@@ -2,7 +2,8 @@
 
 use std::{mem, ptr};
 use bit_vec::BitVec;
-use heap::{GCThing, Heap, mark_entry_point};
+use traits::{mark_entry_point, GCThing, gcthing_type_id};
+use heap::Heap;
 
 /// Total number of Pair objects that can be allocated in a Heap at once.
 ///
@@ -25,6 +26,10 @@ pub struct PageHeader<'a> {
 }
 
 impl<'a> PageHeader<'a> {
+    pub fn type_id(&self) -> usize {
+        self.mark_entry_point as *const () as usize
+    }
+
     pub fn find(ptr: *mut ()) -> *mut PageHeader<'a> {
         let header_addr = ptr as usize & !(PAGE_ALIGN - 1);
         header_addr as *mut PageHeader<'a>
@@ -81,7 +86,9 @@ impl<'a, T: GCThing<'a>> TypedPage<'a, T> {
 
     pub fn find(ptr: *const T) -> *mut TypedPage<'a, T> {
         let page_addr = ptr as usize & !(PAGE_ALIGN - 1);
-        page_addr as *mut TypedPage<'a, T>
+        let page = page_addr as *mut TypedPage<'a, T>;
+        assert_eq!(gcthing_type_id::<T>(), unsafe { (*page).header.type_id() });
+        page
     }
 
     unsafe fn add_to_free_list(&mut self, p: *mut T) {
