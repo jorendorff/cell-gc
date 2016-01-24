@@ -12,7 +12,7 @@ type HeapId<'a> = PhantomData<::std::cell::Cell<&'a mut ()>>;
 
 pub struct Heap<'a> {
     id: HeapId<'a>,
-    storage: Option<Box<TypedPage<'a, PairStorage<'a>>>>,  // XXX BOGUS
+    page: Option<Box<TypedPage<'a, PairStorage<'a>>>>,  // XXX BOGUS
     pins: RefCell<HashMap<*mut (), usize>>
 }
 
@@ -86,14 +86,14 @@ impl<'a> Heap<'a> {
     fn new() -> Heap<'a> {
         Heap {
             id: PhantomData,
-            storage: None,
+            page: None,
             pins: RefCell::new(HashMap::new())
         }
     }
 
-    fn get_storage<T: GCThing<'a>>(&mut self) -> &mut Box<TypedPage<'a, T>> {
-        match self.storage {
-            Some(ref mut storage) => return unsafe { mem::transmute(storage) },
+    fn get_page<T: GCThing<'a>>(&mut self) -> &mut Box<TypedPage<'a, T>> {
+        match self.page {
+            Some(ref mut page) => return unsafe { mem::transmute(page) },
             None => ()
         }
 
@@ -101,14 +101,14 @@ impl<'a> Heap<'a> {
         let mark_t = mark_entry_point::<T> as unsafe fn (*mut ());
         let mark_pair = mark_entry_point::<PairStorage> as unsafe fn (*mut ());
         if mark_t == mark_pair {
-            self.storage = Some(unsafe {
+            self.page = Some(unsafe {
                 TypedPage::new(self as *mut Heap<'a>)
             });
         }
 
-        match self.storage {
-            Some(ref mut storage) => return unsafe { mem::transmute(storage) },
-            None => panic!("Heap::get_storage: unsupported type (sorry!)")
+        match self.page {
+            Some(ref mut page) => return unsafe { mem::transmute(page) },
+            None => panic!("Heap::get_page: unsupported type (sorry!)")
         }
     }
 
@@ -145,11 +145,11 @@ impl<'a> Heap<'a> {
 
     pub fn try_alloc<T: GCRef<'a>>(&mut self, fields: T::Fields) -> Option<T> {
         unsafe {
-            let alloc = self.get_storage::<T::ReferentStorage>().try_alloc();
+            let alloc = self.get_page::<T::ReferentStorage>().try_alloc();
             alloc
                 .or_else(|| {
                     self.gc();
-                    self.get_storage::<T::ReferentStorage>().try_alloc()
+                    self.get_page::<T::ReferentStorage>().try_alloc()
                 })
                 .map(move |p| {
                     ptr::write(p, T::fields_to_heap(fields));
@@ -159,8 +159,8 @@ impl<'a> Heap<'a> {
     }
 
     unsafe fn find_typed_page<T: GCThing<'a>>(ptr: *const T) -> *mut TypedPage<'a, T> {
-        let storage_addr = ptr as usize & !(PAGE_ALIGN - 1);
-        storage_addr as *mut TypedPage<'a, T>
+        let page_addr = ptr as usize & !(PAGE_ALIGN - 1);
+        page_addr as *mut TypedPage<'a, T>
     }
 
     unsafe fn from_allocation<T: GCThing<'a>>(ptr: *const T) -> *const Heap<'a> {
@@ -180,25 +180,25 @@ impl<'a> Heap<'a> {
     }
 
     unsafe fn mark_any(ptr: *mut ()) {
-        let storage = Heap::find_typed_page(ptr as *mut PairStorage);  // BOGUS
-        let mark_fn = (*storage).mark_entry_point;
+        let typed_page = Heap::find_typed_page(ptr as *mut PairStorage);  // BOGUS
+        let mark_fn = (*typed_page).mark_entry_point;
         mark_fn(ptr);
     }
 
     unsafe fn gc(&mut self) {
-        let storage = match self.storage {
+        let page = match self.page {
             None => return,
-            Some(ref mut storage) => storage
+            Some(ref mut page) => page
         };
 
         // mark phase
-        storage.mark_bits.clear();
+        page.mark_bits.clear();
         for (&p, _) in self.pins.borrow().iter() {
             Heap::mark_any(p);
         }
 
         // sweep phase
-        storage.sweep();
+        page.sweep();
     }
 
     #[cfg(test)]
@@ -214,9 +214,9 @@ impl<'a> Drop for Heap<'a> {
         unsafe { self.gc(); }
 
         let mut tmp = None;
-        mem::swap(&mut tmp, &mut self.storage);
-        if let Some(hs) = tmp {
-            assert!(hs.allocated_bits.none());
+        mem::swap(&mut tmp, &mut self.page);
+        if let Some(page) = tmp {
+            assert!(page.allocated_bits.none());
         }
     }
 }
