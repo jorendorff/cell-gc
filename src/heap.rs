@@ -5,14 +5,14 @@ use std::collections::HashMap;
 use std::default::Default;
 use std::marker::PhantomData;
 use std::{fmt, mem, ptr};
-use pages::{HeapStorage, HEAP_STORAGE_ALIGN};
+use pages::{TypedPage, PAGE_ALIGN};
 
 // What does this do? You'll never guess!
 type HeapId<'a> = PhantomData<::std::cell::Cell<&'a mut ()>>;
 
 pub struct Heap<'a> {
     id: HeapId<'a>,
-    storage: Option<Box<HeapStorage<'a, PairStorage<'a>>>>,  // XXX BOGUS
+    storage: Option<Box<TypedPage<'a, PairStorage<'a>>>>,  // XXX BOGUS
     pins: RefCell<HashMap<*mut (), usize>>
 }
 
@@ -91,7 +91,7 @@ impl<'a> Heap<'a> {
         }
     }
 
-    fn get_storage<T: GCThing<'a>>(&mut self) -> &mut Box<HeapStorage<'a, T>> {
+    fn get_storage<T: GCThing<'a>>(&mut self) -> &mut Box<TypedPage<'a, T>> {
         match self.storage {
             Some(ref mut storage) => return unsafe { mem::transmute(storage) },
             None => ()
@@ -102,7 +102,7 @@ impl<'a> Heap<'a> {
         let mark_pair = mark_entry_point::<PairStorage> as unsafe fn (*mut ());
         if mark_t == mark_pair {
             self.storage = Some(unsafe {
-                HeapStorage::new(self as *mut Heap<'a>)
+                TypedPage::new(self as *mut Heap<'a>)
             });
         }
 
@@ -158,21 +158,21 @@ impl<'a> Heap<'a> {
         }
     }
 
-    unsafe fn find_header<T: GCThing<'a>>(ptr: *const T) -> *mut HeapStorage<'a, T> {
-        let storage_addr = ptr as usize & !(HEAP_STORAGE_ALIGN - 1);
-        storage_addr as *mut HeapStorage<'a, T>
+    unsafe fn find_typed_page<T: GCThing<'a>>(ptr: *const T) -> *mut TypedPage<'a, T> {
+        let storage_addr = ptr as usize & !(PAGE_ALIGN - 1);
+        storage_addr as *mut TypedPage<'a, T>
     }
 
     unsafe fn from_allocation<T: GCThing<'a>>(ptr: *const T) -> *const Heap<'a> {
-        (*Heap::find_header(ptr)).heap
+        (*Heap::find_typed_page(ptr)).heap
     }
 
     pub unsafe fn get_mark_bit<T: GCThing<'a>>(ptr: *const T) -> bool {
-        (*Heap::find_header(ptr)).get_mark_bit(ptr)
+        (*Heap::find_typed_page(ptr)).get_mark_bit(ptr)
     }
 
     pub unsafe fn set_mark_bit<T: GCThing<'a>>(ptr: *const T) {
-        (*Heap::find_header(ptr)).set_mark_bit(ptr);
+        (*Heap::find_typed_page(ptr)).set_mark_bit(ptr);
     }
     
     pub fn alloc<T: GCRef<'a>>(&mut self, fields: T::Fields) -> T {
@@ -180,7 +180,7 @@ impl<'a> Heap<'a> {
     }
 
     unsafe fn mark_any(ptr: *mut ()) {
-        let storage = Heap::find_header(ptr as *mut PairStorage);  // BOGUS
+        let storage = Heap::find_typed_page(ptr as *mut PairStorage);  // BOGUS
         let mark_fn = (*storage).mark_entry_point;
         mark_fn(ptr);
     }

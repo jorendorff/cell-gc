@@ -8,16 +8,16 @@ use heap::{GCThing, Heap, mark_entry_point};
 ///
 /// XXX BOGUS: At present, this is number is carefully selected (with insider
 /// knowledge of both `size_of::<PairStorage>()` on my platform and the `Box`
-/// allocator's behavior) so that a HeapStorage object fits in a page and thus
-/// the assertions below about HEAP_STORAGE_ALIGN pass.
+/// allocator's behavior) so that a TypedPage object fits in a page and thus
+/// the assertions below about PAGE_ALIGN pass.
 pub const HEAP_SIZE: usize = 125;
 
 /// We rely on all bits to the right of this bit being 0 in addresses of
-/// HeapStorage instances.
-pub const HEAP_STORAGE_ALIGN: usize = 0x1000;
+/// TypedPage instances.
+pub const PAGE_ALIGN: usize = 0x1000;
 
 // The heap is (for now) just a big array of Pairs
-pub struct HeapStorage<'a, T: GCThing<'a>> {
+pub struct TypedPage<'a, T: GCThing<'a>> {
     pub heap: *mut Heap<'a>,
     pub mark_bits: BitVec,
     pub allocated_bits: BitVec,
@@ -26,7 +26,7 @@ pub struct HeapStorage<'a, T: GCThing<'a>> {
     objects: [T; HEAP_SIZE]
 }
 
-impl<'a, T: GCThing<'a>> Drop for HeapStorage<'a, T> {
+impl<'a, T: GCThing<'a>> Drop for TypedPage<'a, T> {
     fn drop(&mut self) {
         // All the memory in self.objects is uninitialized at this point. Rust
         // will drop each of those objects, which would crash. So we have this
@@ -42,9 +42,9 @@ impl<'a, T: GCThing<'a>> Drop for HeapStorage<'a, T> {
     }
 }
 
-impl<'a, T: GCThing<'a>> HeapStorage<'a, T> {
-    pub unsafe fn new(heap: *mut Heap<'a>) -> Box<HeapStorage<'a, T>> {
-        let mut storage = Box::new(HeapStorage {
+impl<'a, T: GCThing<'a>> TypedPage<'a, T> {
+    pub unsafe fn new(heap: *mut Heap<'a>) -> Box<TypedPage<'a, T>> {
+        let mut typed_page = Box::new(TypedPage {
             heap: heap,
             mark_bits: BitVec::from_elem(HEAP_SIZE, false),
             allocated_bits: BitVec::from_elem(HEAP_SIZE, false),
@@ -56,14 +56,14 @@ impl<'a, T: GCThing<'a>> HeapStorage<'a, T> {
         // These assertions will likely fail on 32-bit platforms or if someone
         // is somehow using a custom Box allocator. If either one fails, this
         // GC will not work.
-        assert_eq!(&mut *storage as *mut HeapStorage<'a, T> as usize & (HEAP_STORAGE_ALIGN - 1), 0);
-        assert!(mem::size_of::<HeapStorage<'a, T>>() <= HEAP_STORAGE_ALIGN);
+        assert_eq!(&mut *typed_page as *mut TypedPage<'a, T> as usize & (PAGE_ALIGN - 1), 0);
+        assert!(mem::size_of::<TypedPage<'a, T>>() <= PAGE_ALIGN);
 
         for i in 0 .. HEAP_SIZE {
-            let p = &mut storage.objects[i] as *mut T;
-            storage.add_to_free_list(p);
+            let p = &mut typed_page.objects[i] as *mut T;
+            typed_page.add_to_free_list(p);
         }
-        storage
+        typed_page
     }
 
     unsafe fn add_to_free_list(&mut self, p: *mut T) {
