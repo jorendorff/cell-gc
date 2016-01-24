@@ -309,17 +309,46 @@ pub trait GCRef {
     fn address(&self) -> usize;
 }
 
-unsafe impl<'a, T: Copy + 'static> Mark<'a> for T {
-    unsafe fn mark(_ptr: *mut T) {}
+macro_rules! gc_trivial_impl {
+    ($t:ty) => {
+        unsafe impl<'a> Mark<'a> for $t {
+            unsafe fn mark(_ptr: *mut $t) {}
+        }
+
+        unsafe impl<'a> HeapInline<'a> for $t {
+            type Storage = Self;
+            fn to_heap(self) -> $t { self }
+            unsafe fn from_heap(_heap: &Heap<'a>, v: &$t) -> $t { (*v).clone() }
+        }
+    }
 }
 
-unsafe impl<'a, T: Copy + 'static> HeapInline<'a> for T {
-    type Storage = Self;
+gc_trivial_impl!(bool);
+gc_trivial_impl!(char);
+gc_trivial_impl!(i8);
+gc_trivial_impl!(u8);
+gc_trivial_impl!(i16);
+gc_trivial_impl!(u16);
+gc_trivial_impl!(i32);
+gc_trivial_impl!(u32);
+gc_trivial_impl!(i64);
+gc_trivial_impl!(u64);
+gc_trivial_impl!(isize);
+gc_trivial_impl!(usize);
+gc_trivial_impl!(f32);
+gc_trivial_impl!(f64);
 
-    fn to_heap(self) -> T { self }
+gc_trivial_impl!(Rc<String>);
 
-    unsafe fn from_heap(_heap: &Heap<'a>, v: &T) -> T { *v }
-}
+/*
+// 'static types are heap-safe because ref types are never 'static.
+// Unfortunately I can't make the compiler understand this: the rules
+// to prevent conflicting trait impls make this conflict with almost
+// everything.
+unsafe impl<'a, T: Clone + 'static> Mark<'a> for T { ... }
+unsafe impl<'a, T: Clone + 'static> HeapInline<'a> for T { ... }
+*/
+
 
 // === Pair, the reference type
 
@@ -335,29 +364,13 @@ gc_ref_type! {
 
 use std::rc::Rc;
 
-// Values inside the heap (GC heap-to-heap cross-references) (private)
-enum ValueStorage<'a> {
-    Null,
-    Int(i32),
-    Str(Rc<String>),
-    Pair(*mut PairStorage<'a>)
-}
-
-unsafe impl<'a> Mark<'a> for ValueStorage<'a> {
-    unsafe fn mark(ptr: *mut ValueStorage<'a>) {
-        match *ptr {
-            ValueStorage::Pair(p) => Mark::mark(p),
-            _ => {}
-        }
+gc_inline_enum! {
+    pub enum Value / ValueStorage <'a> {
+        Null,
+        Int(i32),
+        Str(Rc<String>),  // <-- equality is by value
+        Pair(Pair<'a>)  // <-- equality is by pointer
     }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum Value<'a> {
-    Null,
-    Int(i32),
-    Str(Rc<String>),  // <-- equality is by value
-    Pair(Pair<'a>)  // <-- equality is by pointer
 }
 
 unsafe impl<'a> HeapInline<'a> for Value<'a> {
