@@ -91,6 +91,16 @@ impl<'a, T: GCThing<'a>> HeapStorage<'a, T> {
         index
     }
 
+    unsafe fn get_mark_bit(&mut self, ptr: *const T) -> bool {
+        let index = self.allocation_index(ptr);
+        self.mark_bits[index]
+    }
+
+    unsafe fn set_mark_bit(&mut self, ptr: *const T) {
+        let index = self.allocation_index(ptr);
+        self.mark_bits.set(index, true);
+    }
+
     unsafe fn try_alloc(&mut self) -> Option<*mut T> {
         let p = self.freelist;
         if p.is_null() {
@@ -276,23 +286,14 @@ impl<'a> Heap<'a> {
         (*Heap::find_header(ptr)).heap
     }
 
-    unsafe fn find_mark_bit<T: GCThing<'a>>(_ptr: *const T) -> (*mut BitVec, usize) {
-        let storage = Heap::find_header(_ptr);
-        let objects_addr = &mut (*storage).objects[0] as *mut T as usize;
-        let index = (_ptr as usize - objects_addr) / mem::size_of::<T>();
-        (&mut (*storage).mark_bits as *mut BitVec, index)
-    }
-
     pub unsafe fn get_mark_bit<T: GCThing<'a>>(ptr: *const T) -> bool {
-        let (bits, index) = Heap::find_mark_bit(ptr);
-        (*bits)[index]
+        (*Heap::find_header(ptr)).get_mark_bit(ptr)
     }
 
     pub unsafe fn set_mark_bit<T: GCThing<'a>>(ptr: *const T) {
-        let (bits, index) = Heap::find_mark_bit(ptr);
-        (*bits).set(index, true);
+        (*Heap::find_header(ptr)).set_mark_bit(ptr);
     }
-
+    
     pub fn alloc<T: GCRef<'a>>(&mut self, fields: T::Fields) -> T {
         self.try_alloc(fields).expect("out of memory (gc did not collect anything)")
     }
