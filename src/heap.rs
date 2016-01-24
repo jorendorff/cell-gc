@@ -23,6 +23,7 @@ const HEAP_STORAGE_ALIGN: usize = 0x1000;
 
 // The heap is (for now) just a big array of Pairs
 struct HeapStorage<'a> {
+    heap: *mut Heap<'a>,
     mark_bits: BitVec,
     allocated_bits: BitVec,
     mark_entry_point: unsafe fn(*mut ()),
@@ -50,8 +51,9 @@ impl<'a> Drop for HeapStorage<'a> {
 }
 
 impl<'a> HeapStorage<'a> {
-    unsafe fn new() -> Box<HeapStorage<'a>> {
+    unsafe fn new(heap: *mut Heap<'a>) -> Box<HeapStorage<'a>> {
         let mut storage = Box::new(HeapStorage {
+            heap: heap,
             mark_bits: BitVec::from_elem(HEAP_SIZE, false),
             allocated_bits: BitVec::from_elem(HEAP_SIZE, false),
             mark_entry_point: mark_entry_point::<PairStorage>,
@@ -121,7 +123,7 @@ impl<'a> HeapStorage<'a> {
 
 pub struct Heap<'a> {
     id: HeapId<'a>,
-    storage: Box<HeapStorage<'a>>,
+    storage: Option<Box<HeapStorage<'a>>>,
     pins: RefCell<HashMap<*mut (), usize>>
 }
 
@@ -195,10 +197,25 @@ impl<'a> Heap<'a> {
     fn new() -> Heap<'a> {
         Heap {
             id: PhantomData,
-            storage: unsafe { HeapStorage::new() },
+            storage: None,
             pins: RefCell::new(HashMap::new())
         }
     }
+
+    fn get_storage(&mut self) -> &mut Box<HeapStorage<'a>> {
+        match self.storage {
+            Some(ref mut storage) => return storage,
+            None => ()
+        }
+        self.storage = Some(unsafe {
+            HeapStorage::new(self as *mut Heap<'a>)
+        });
+        match self.storage {
+            Some(ref mut storage) => return storage,
+            None => unreachable!()  // we just set it
+        }
+    }
+
 
     /// Add the object `*p` to the root set, protecting it from GC.
     ///
@@ -233,10 +250,11 @@ impl<'a> Heap<'a> {
 
     pub fn try_alloc(&mut self, pair: (Value<'a>, Value<'a>)) -> Option<Pair<'a>> {
         unsafe {
-            self.storage.try_alloc()
+            let alloc = self.get_storage().try_alloc();
+            alloc
                 .or_else(|| {
                     self.gc();
-                    self.storage.try_alloc()
+                    self.get_storage().try_alloc()
                 })
                 .map(move |p| {
                     ptr::write(p, PairStorage {
@@ -286,14 +304,19 @@ impl<'a> Heap<'a> {
     }
 
     unsafe fn gc(&mut self) {
+        let storage = match self.storage {
+            None => return,
+            Some(ref mut storage) => storage
+        };
+
         // mark phase
-        self.storage.mark_bits.clear();
+        storage.mark_bits.clear();
         for (&p, _) in self.pins.borrow().iter() {
             Heap::mark(p);
         }
 
         // sweep phase
-        self.storage.sweep();
+        storage.sweep();
     }
 
     #[cfg(test)]
