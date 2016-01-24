@@ -338,6 +338,7 @@ gc_trivial_impl!(usize);
 gc_trivial_impl!(f32);
 gc_trivial_impl!(f64);
 
+use std::rc::Rc;
 gc_trivial_impl!(Rc<String>);
 
 /*
@@ -345,8 +346,8 @@ gc_trivial_impl!(Rc<String>);
 // Unfortunately I can't make the compiler understand this: the rules
 // to prevent conflicting trait impls make this conflict with almost
 // everything.
-unsafe impl<'a, T: Clone + 'static> Mark<'a> for T { ... }
-unsafe impl<'a, T: Clone + 'static> HeapInline<'a> for T { ... }
+unsafe impl<'a, T: Clone + 'static> Mark<'a> for T { ...trivial... }
+unsafe impl<'a, T: Clone + 'static> HeapInline<'a> for T { ...trivial... }
 */
 
 
@@ -361,8 +362,6 @@ gc_ref_type! {
 
 
 // === Values (a heap-inline enum)
-
-use std::rc::Rc;
 
 gc_inline_enum! {
     pub enum Value / ValueStorage <'a> {
