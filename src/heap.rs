@@ -186,7 +186,7 @@ pub unsafe trait HeapInline<'a> {
     /// references, so while it's a dangerous function, the result of a correct
     /// call can be safely handed out to user code.
     ///
-    unsafe fn from_heap(heap: &Heap<'a>, ptr: &Self::Storage) -> Self;
+    unsafe fn from_heap(ptr: &Self::Storage) -> Self;
 
     /// Convert the value to the form it should have in the heap.
     /// This is for macro-generated code to call.
@@ -201,7 +201,7 @@ impl<'a> Heap<'a> {
             pins: RefCell::new(HashMap::new())
         }
     }
-
+    
     fn get_storage(&mut self) -> &mut Box<HeapStorage<'a>> {
         match self.storage {
             Some(ref mut storage) => return storage,
@@ -261,14 +261,18 @@ impl<'a> Heap<'a> {
                         head: pair.0.to_heap(),
                         tail: pair.1.to_heap()
                     });
-                    Pair(PinnedRef::new(self, p))
+                    Pair(PinnedRef::new(p))
                 })
         }
     }
 
-    unsafe fn find_header<T>(_ptr: *const T) -> *mut HeapStorage<'a> {
-        let storage_addr = _ptr as usize & !(HEAP_STORAGE_ALIGN - 1);
+    unsafe fn find_header<T>(ptr: *const T) -> *mut HeapStorage<'a> {
+        let storage_addr = ptr as usize & !(HEAP_STORAGE_ALIGN - 1);
         storage_addr as *mut HeapStorage<'a>
+    }
+
+    unsafe fn from_allocation<T: Mark<'a>>(ptr: *const T) -> *const Heap<'a> {
+        (*Heap::find_header(ptr)).heap
     }
 
     unsafe fn find_mark_bit<T>(_ptr: *const T) -> (*mut BitVec, usize) {
@@ -330,13 +334,15 @@ impl<'a> Drop for Heap<'a> {
         // Perform a final GC to call destructors on any remaining allocations.
         assert!(self.pins.borrow().is_empty());
         unsafe { self.gc(); }
-        assert!(self.storage.allocated_bits.none());
+        assert!(match self.storage {
+            None => true,
+            Some(ref hs) => hs.allocated_bits.none()
+        });
     }
 }
 
 pub struct PinnedRef<'a, T: Mark<'a>> {
     ptr: *mut T,
-    heap: *const Heap<'a>,
     heap_id: HeapId<'a>
 }
 
@@ -345,12 +351,12 @@ impl<'a, T: Mark<'a>> PinnedRef<'a, T> {
     /// dropped. Unsafe because if `p` is not a pointer to a live allocation of
     /// type `T` --- and a complete allocation, not a sub-object of one --- then
     /// later unsafe code will explode.
-    unsafe fn new(heap: &Heap<'a>, p: *mut T) -> PinnedRef<'a, T> {
-        heap.pin(p);
+    unsafe fn new(p: *mut T) -> PinnedRef<'a, T> {
+        let heap = Heap::from_allocation(p);
+        (*heap).pin(p);
         PinnedRef {
             ptr: p,
-            heap: heap as *const Heap<'a>,
-            heap_id: heap.id
+            heap_id: (*heap).id
         }
     }
 }
@@ -358,20 +364,21 @@ impl<'a, T: Mark<'a>> PinnedRef<'a, T> {
 impl<'a, T: Mark<'a>> Drop for PinnedRef<'a, T> {
     fn drop(&mut self) {
         unsafe {
-            (*self.heap).unpin(self.ptr);
+            let heap = Heap::from_allocation(self.ptr);
+            (*heap).unpin(self.ptr);
         }
     }
 }
 
 impl<'a, T: Mark<'a>> Clone for PinnedRef<'a, T> {
     fn clone(&self) -> PinnedRef<'a, T> {
-        let &PinnedRef { ptr, heap, heap_id } = self;
+        let &PinnedRef { ptr, heap_id } = self;
         unsafe {
+            let heap = Heap::from_allocation(ptr);
             (*heap).pin(ptr);
         }
         PinnedRef {
             ptr: ptr,
-            heap: heap,
             heap_id: heap_id
         }
     }
@@ -405,7 +412,7 @@ macro_rules! gc_trivial_impl {
         unsafe impl<'a> HeapInline<'a> for $t {
             type Storage = Self;
             fn to_heap(self) -> $t { self }
-            unsafe fn from_heap(_heap: &Heap<'a>, v: &$t) -> $t { (*v).clone() }
+            unsafe fn from_heap(v: &$t) -> $t { (*v).clone() }
         }
     }
 }

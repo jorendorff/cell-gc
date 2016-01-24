@@ -38,9 +38,7 @@ macro_rules! gc_ref_type {
                 pub fn $field_name(&self) -> $field_type {
                     let ptr = self.0.ptr;
                     unsafe {
-                        HeapInline::from_heap(
-                            &*self.0.heap,
-                            &(*ptr).$field_name)
+                        HeapInline::from_heap(&(*ptr).$field_name)
                     }
                 }
 
@@ -60,8 +58,8 @@ macro_rules! gc_ref_type {
                 self.0.ptr
             }
 
-            unsafe fn from_heap(heap: &$crate::Heap<'a>, v: &Self::Storage) -> Self {
-                $ref_type($crate::PinnedRef::new(heap, *v))
+            unsafe fn from_heap(v: &Self::Storage) -> Self {
+                $ref_type($crate::PinnedRef::new(*v))
             }
         }
 
@@ -312,7 +310,7 @@ macro_rules! gc_inline_enum {
 
     {
         FROM_HEAP DONE { $($accumulated_output:tt)* }
-        $_heap:expr, $value:expr, $_stack_type:ident / $_storage_type:ident
+        $value:expr, $_stack_type:ident / $_storage_type:ident
     } => {
         gc_inline_enum! {
             AS_EXPR
@@ -326,14 +324,14 @@ macro_rules! gc_inline_enum {
         FROM_HEAP VARIANT $name:ident NO_FIELDS
         $more_variants:tt
         { $($accumulated_output:tt)* }
-        $heap:expr, $value:expr, $stack_type:ident / $storage_type:ident
+        $value:expr, $stack_type:ident / $storage_type:ident
     } => {
         gc_inline_enum! {
             PARSE_VARIANTS FROM_HEAP $more_variants {
                 $($accumulated_output)*
                 &$storage_type::$name => $stack_type::$name,
             }
-            $heap, $value, $stack_type / $storage_type
+            $value, $stack_type / $storage_type
         }
     };
 
@@ -351,16 +349,16 @@ macro_rules! gc_inline_enum {
         FROM_HEAP CONTINUE_VARIANT $name:ident
         $more_variants:tt
         { $($accumulated_output:tt)* }
-        $heap:expr, $value:expr, $stack_type:ident / $storage_type:ident
+        $value:expr, $stack_type:ident / $storage_type:ident
         ( $(($binding:ident : $field_type:ty))* )
     } => {
         gc_inline_enum! {
             PARSE_VARIANTS FROM_HEAP $more_variants {
                 $($accumulated_output)*
                 &$storage_type::$name ( ref $($binding),* ) =>
-                    $stack_type::$name( $(HeapInline::from_heap($heap, $binding)),* ),
+                    $stack_type::$name( $(HeapInline::from_heap($binding)),* ),
             }
-            $heap, $value, $stack_type / $storage_type
+            $value, $stack_type / $storage_type
         }
     };
 
@@ -395,10 +393,10 @@ macro_rules! gc_inline_enum {
                 }
             }
 
-            unsafe fn from_heap(heap: &Heap<'a>, v: &$storage_type<'a>) -> $stack_type<'a> {
+            unsafe fn from_heap(v: &$storage_type<'a>) -> $stack_type<'a> {
                 gc_inline_enum! {
                     PARSE_VARIANTS FROM_HEAP $variants {}
-                    heap, v, $stack_type / $storage_type
+                    v, $stack_type / $storage_type
                 }
             }
         }
