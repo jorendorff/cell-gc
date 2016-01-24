@@ -24,15 +24,36 @@ const HEAP_STORAGE_ALIGN: usize = 0x1000;
 // The heap is (for now) just a big array of Pairs
 struct HeapStorage<'a> {
     mark_bits: BitVec,
+    allocated_bits: BitVec,
     mark_entry_point: unsafe fn(*mut ()),
     freelist: *mut (),
     objects: [PairStorage<'a>; HEAP_SIZE]
+}
+
+impl<'a> Drop for HeapStorage<'a> {
+    fn drop(&mut self) {
+        // All the memory in self.objects is uninitialized at this point. Rust
+        // will drop each of those objects, which would crash. So we have this
+        // super lame hack: initialize all the objects with innocuous values so
+        // they can be safely destroyed.
+        for i in 0 .. HEAP_SIZE {
+            unsafe {
+                ptr::write(
+                    &mut self.objects[i] as *mut PairStorage<'a>,
+                    PairStorage {
+                        head: ValueStorage::Null,
+                        tail: ValueStorage::Null
+                    });
+            }
+        }
+    }
 }
 
 impl<'a> HeapStorage<'a> {
     unsafe fn new() -> Box<HeapStorage<'a>> {
         let mut storage = Box::new(HeapStorage {
             mark_bits: BitVec::from_elem(HEAP_SIZE, false),
+            allocated_bits: BitVec::from_elem(HEAP_SIZE, false),
             mark_entry_point: mark_entry_point::<PairStorage>,
             freelist: ptr::null_mut(),
             objects: mem::uninitialized()
@@ -58,6 +79,18 @@ impl<'a> HeapStorage<'a> {
         self.freelist = p as *mut ();
     }
 
+    unsafe fn allocation_index(&self, ptr: *const PairStorage<'a>) -> usize {
+        let base = &self.objects[0] as *const PairStorage<'a>;
+
+        // Check that ptr is in range.
+        assert!(ptr >= base);
+        assert!(ptr < base.offset(HEAP_SIZE as isize));
+
+        let index = (ptr as usize - base as usize) / mem::size_of::<PairStorage<'a>>();
+        assert_eq!(&self.objects[index] as *const PairStorage<'a>, ptr);
+        index
+    }
+
     unsafe fn try_alloc(&mut self) -> Option<*mut PairStorage<'a>> {
         let p = self.freelist;
         if p.is_null() {
@@ -65,15 +98,21 @@ impl<'a> HeapStorage<'a> {
         } else {
             let listp = p as *mut *mut ();
             self.freelist = *listp;
-            Some(p as *mut PairStorage<'a>)
+            let ap = p as *mut PairStorage<'a>;
+            let index = self.allocation_index(ap);
+            assert!(!self.allocated_bits[index]);
+            self.allocated_bits.set(index, true);
+            Some(ap)
         }
     }
 
     unsafe fn sweep(&mut self) {
-        self.freelist = ptr::null_mut();
         for i in 0 .. HEAP_SIZE {
             let p = &mut self.objects[i] as *mut PairStorage<'a>;
-            if !self.mark_bits[i] {
+            if self.allocated_bits[i] && !self.mark_bits[i] {
+                // The next statement has the effect of calling p's destructor.
+                ptr::read(p);
+                self.allocated_bits.set(i, false);
                 self.add_to_free_list(p);
             }
         }
@@ -200,10 +239,10 @@ impl<'a> Heap<'a> {
                     self.storage.try_alloc()
                 })
                 .map(move |p| {
-                    *p = PairStorage {
+                    ptr::write(p, PairStorage {
                         head: pair.0.to_heap(),
                         tail: pair.1.to_heap()
-                    };
+                    });
                     Pair(PinnedRef::new(self, p))
                 })
         }
@@ -260,6 +299,15 @@ impl<'a> Heap<'a> {
     #[cfg(test)]
     pub fn force_gc(&mut self) {
         unsafe { self.gc(); }
+    }
+}
+
+impl<'a> Drop for Heap<'a> {
+    fn drop(&mut self) {
+        // Perform a final GC to call destructors on any remaining allocations.
+        assert!(self.pins.borrow().is_empty());
+        unsafe { self.gc(); }
+        assert!(self.storage.allocated_bits.none());
     }
 }
 
