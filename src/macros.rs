@@ -38,7 +38,7 @@ macro_rules! gc_ref_type {
                 pub fn $field_name(&self) -> $field_type {
                     let ptr = self.0.ptr;
                     unsafe {
-                        <$field_type as $crate::HeapInline<'a>>::from_heap(
+                        HeapInline::from_heap(
                             &*self.0.heap,
                             &(*ptr).$field_name)
                     }
@@ -47,8 +47,7 @@ macro_rules! gc_ref_type {
                 pub fn $field_setter_name(&self, v: $field_type) {
                     let ptr = self.0.ptr;
                     unsafe {
-                        (*ptr).$field_name =
-                            <$field_type as $crate::HeapInline<'a>>::to_heap(v);
+                        (*ptr).$field_name = HeapInline::to_heap(v);
                     }
                 }
             )*
