@@ -248,7 +248,7 @@ impl<'a> Heap<'a> {
         }
     }
 
-    pub fn try_alloc(&mut self, pair: (Value<'a>, Value<'a>)) -> Option<Pair<'a>> {
+    pub fn try_alloc(&mut self, fields: PairFields<'a>) -> Option<Pair<'a>> {
         unsafe {
             let alloc = self.get_storage().try_alloc();
             alloc
@@ -257,10 +257,7 @@ impl<'a> Heap<'a> {
                     self.get_storage().try_alloc()
                 })
                 .map(move |p| {
-                    ptr::write(p, PairStorage {
-                        head: pair.0.to_heap(),
-                        tail: pair.1.to_heap()
-                    });
+                    ptr::write(p, PairStorage::from_fields(fields));
                     Pair(PinnedRef::new(p))
                 })
         }
@@ -293,12 +290,12 @@ impl<'a> Heap<'a> {
         (*bits).set(index, true);
     }
 
-    pub fn alloc(&mut self, pair: (Value<'a>, Value<'a>)) -> Pair<'a> {
-        self.try_alloc(pair).expect("out of memory (gc did not collect anything)")
+    pub fn alloc(&mut self, fields: PairFields<'a>) -> Pair<'a> {
+        self.try_alloc(fields).expect("out of memory (gc did not collect anything)")
     }
 
     pub fn alloc_null(&mut self) -> Pair<'a> {
-        self.alloc((Value::Null, Value::Null))
+        self.alloc(PairFields { head: Value::Null, tail: Value::Null })
     }
 
     unsafe fn mark(ptr: *mut ()) {
@@ -448,7 +445,7 @@ unsafe impl<'a, T: Clone + 'static> HeapInline<'a> for T { ...trivial... }
 // === Pair, the reference type
 
 gc_ref_type! {
-    pub struct Pair / PairStorage<'a> {
+    pub struct Pair / PairFields / PairStorage<'a> {
         head / set_head: Value<'a>,
         tail / set_tail: Value<'a>
     }

@@ -1,15 +1,25 @@
-use super::with_heap;
-use super::Value;
+use super::{Heap, with_heap, Value, Pair, PairFields};
 use super::HEAP_SIZE;
 use super::GCRef;  // for .address()
 use std::rc::Rc;
+
+/// Helper function to avoid having to write out `PairFields` literals all over the place.
+fn alloc_pair<'a>(heap: &mut Heap<'a>, head: Value<'a>, tail: Value<'a>) -> Pair<'a> {
+    heap.alloc(PairFields { head: head, tail: tail })
+}
+
+/// Allocate a pair with the values `(null, null)`.
+fn alloc_null_pair<'a>(heap: &mut Heap<'a>) -> Pair<'a> {
+    alloc_pair(heap, Value::Null, Value::Null)
+}
+
 
 /// Test that a Heap can at least allocate two objects.
 #[test]
 fn can_allocate_twice() {
     with_heap(|heap| {
-        let obj1 = heap.alloc((Value::Int(1), Value::Null));
-        let obj2 = heap.alloc((Value::Int(2), Value::Null));
+        let obj1 = alloc_pair(heap, Value::Int(1), Value::Null);
+        let obj2 = alloc_pair(heap, Value::Int(2), Value::Null);
         assert_eq!(obj1.head(), Value::Int(1));
         assert_eq!(obj2.head(), Value::Int(2));
     });
@@ -20,14 +30,18 @@ fn can_allocate_twice() {
 fn root_is_not_recycled() {
     with_heap(|heap| {
         // Create and root one object.
-        let root = heap.alloc((Value::Int(1), Value::Str(Rc::new("hello world".to_string()))));
+        let root = alloc_pair(heap, Value::Int(1), Value::Str(Rc::new("hello world".to_string())));
 
         // Subsequent allocations never return root.
         for _ in 0 .. HEAP_SIZE * 2 {
-            let tmp = heap.alloc_null();
+            let tmp = alloc_null_pair(heap);
             assert!(tmp != root);
         }
     });
+}
+
+fn null_pair<'a>() -> PairFields<'a> {
+    PairFields { head: Value::Null, tail: Value::Null }
 }
 
 /// Test try_alloc()'s behavior when the heap is full and every Object is
@@ -38,13 +52,13 @@ fn full_heap() {
         // Fill up the heap by allocating HEAP_SIZE objects.
         let mut v = Value::Null;
         for _ in 0 .. HEAP_SIZE {
-            v = Value::Pair(heap.alloc((Value::Null, v)));
+            v = Value::Pair(alloc_pair(heap, Value::Null, v));
         }
 
         // The whole heap is reachable.  Now try_alloc() should return null every
         // time it's called.
         for _ in 0 .. 4 {
-            assert_eq!(heap.try_alloc((Value::Null, Value::Null)), None);
+            assert_eq!(heap.try_alloc(null_pair()), None);
         }
     });
 }
@@ -56,15 +70,15 @@ fn nearly_full_heap() {
         // Make the heap nearly full by allocating (HEAP_SIZE - 1) objects.
         let mut v = Value::Null;
         for _ in 0 .. HEAP_SIZE - 1 {
-            v = Value::Pair(heap.alloc((Value::Null, v)));
+            v = Value::Pair(alloc_pair(heap, Value::Null, v));
         }
 
         // Now the entire heap is reachable except for one Object.  We should
         // be able to call allocate() successfully, repeatedly.  It returns
         // that one object every time it's called!
-        let last = heap.alloc_null().address();
+        let last = alloc_null_pair(heap).address();
         for _ in 0 .. 10 {
-            assert_eq!(heap.alloc_null().address(), last);
+            assert_eq!(alloc_null_pair(heap).address(), last);
         }
     });
 }
@@ -74,19 +88,19 @@ fn nearly_full_heap() {
 #[test]
 fn reachable_objects_not_collected() {
     with_heap(|heap| {
-        let obj1 = heap.alloc_null();
+        let obj1 = alloc_null_pair(heap);
         let (p2, p3, p4, p5);
         {
-            let obj2 = heap.alloc_null();
+            let obj2 = alloc_null_pair(heap);
             p2 = obj2.address();
             obj1.set_head(Value::Pair(obj2.clone()));
-            let obj3 = heap.alloc_null();
+            let obj3 = alloc_null_pair(heap);
             p3 = obj3.address();
             obj1.set_tail(Value::Pair(obj3));
-            let obj4 = heap.alloc_null();
+            let obj4 = alloc_null_pair(heap);
             p4 = obj4.address();
             obj2.set_head(Value::Pair(obj4));
-            let obj5 = heap.alloc_null();
+            let obj5 = alloc_null_pair(heap);
             p5 = obj5.address();
             obj2.set_tail(Value::Pair(obj5));
         }
@@ -125,7 +139,7 @@ fn reachable_objects_not_collected() {
 fn root_self_references() {
     with_heap(|heap| {
         // Create a root object that contains pointers to itself.
-        let root = heap.alloc_null();
+        let root = alloc_null_pair(heap);
         root.set_head(Value::Pair(root.clone()));
         root.set_tail(Value::Pair(root.clone()));
 
@@ -142,9 +156,10 @@ fn root_self_references() {
 fn test_root_cycle() {
     with_heap(|heap| {
         // Set up obj1 and obj2 to point to each other.
-        let obj1 = heap.alloc_null();
-        let obj2 = heap.alloc((Value::Pair(obj1.clone()),
-                               Value::Pair(obj1.clone())));  // obj2 points to obj1
+        let obj1 = alloc_null_pair(heap);
+        let obj2 = alloc_pair(heap,
+                              Value::Pair(obj1.clone()),
+                              Value::Pair(obj1.clone()));  // obj2 points to obj1
         obj1.set_head(Value::Pair(obj2.clone()));  // and vice versa
         obj1.set_tail(Value::Pair(obj2.clone()));
 
@@ -165,9 +180,9 @@ fn unreachable_cycle() {
         // Make a cycle.
         let (p1, p2);
         {
-            let obj1 = heap.alloc_null();
+            let obj1 = alloc_null_pair(heap);
             p1 = obj1.address();
-            let obj2 = heap.alloc_null();
+            let obj2 = alloc_null_pair(heap);
             p2 = obj2.address();
             obj2.set_tail(Value::Pair(obj1.clone()));
             obj1.set_tail(Value::Pair(obj2.clone()));
@@ -178,7 +193,7 @@ fn unreachable_cycle() {
         let mut recycled2 = 0;
         let mut root = Value::Null;
         for _ in 0 .. HEAP_SIZE {
-            let p = heap.alloc((Value::Null, root));
+            let p = alloc_pair(heap, Value::Null, root);
             root = Value::Pair(p.clone());
             if p.address() == p1 {
                 recycled1 += 1;
@@ -259,7 +274,7 @@ fn bug_heap_dropping() {
     // The fix was to pass the heap to the closure by reference.
     //
     with_heap(|heap| {
-        let obj = heap.alloc_null();
+        let obj = alloc_null_pair(heap);
 
         // note: dropping `heap` would just drop the reference, which is no problem
         ::std::mem::drop(*heap);  // error: cannot move out of borrowed content
@@ -272,7 +287,7 @@ fn bug_heap_dropping() {
 #[test]
 fn bug_outliving_1() {
     let obj = with_heap(|heap| {
-        heap.alloc_null()  // error: cannot infer an appropriate lifetime
+        alloc_null_pair(heap)  // error: cannot infer an appropriate lifetime
     });
 
     let val = Value::Pair(obj.clone());
@@ -283,7 +298,7 @@ fn bug_outliving_1() {
 fn bug_outliving_2() {
     let obj;
     with_heap(|heap| {
-        obj = heap.alloc_null();  // error: cannot infer an appropriate lifetime
+        obj = alloc_null_pair(heap);  // error: cannot infer an appropriate lifetime
     });
 
     let val = Value::Pair(obj.clone());

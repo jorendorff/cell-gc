@@ -1,10 +1,10 @@
 #[macro_export]
 macro_rules! gc_ref_type {
-    (pub struct $ref_type:ident / $storage_type:ident <'a> {
+    (pub struct $ref_type:ident / $fields_type:ident / $storage_type:ident <'a> {
         $($field_name:ident / $field_setter_name:ident : $field_type: ty),*
     }) => {
-        struct $storage_type <'a> {
-            $($field_name: <$field_type as $crate::HeapInline<'a>>::Storage,)*
+        struct $storage_type<'a> {
+            $($field_name: <$field_type as $crate::HeapInline<'a>>::Storage),*
         }
 
         unsafe impl<'a> $crate::Mark<'a> for $storage_type<'a> {
@@ -27,6 +27,18 @@ macro_rules! gc_ref_type {
                     Mark::mark(ptr);
                 }
             }
+        }
+
+        impl<'a> $storage_type<'a> {
+            fn from_fields(fields: $fields_type<'a>) -> $storage_type<'a> {
+                $storage_type {
+                    $($field_name: $crate::HeapInline::to_heap(fields.$field_name)),*
+                }
+            }
+        }
+
+        pub struct $fields_type<'a> {
+            $(pub $field_name: $field_type),*
         }
 
         #[allow(raw_pointer_derive)]
