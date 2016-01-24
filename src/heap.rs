@@ -119,19 +119,18 @@ impl<'a> Heap<'a> {
     }
 
     unsafe fn gc(&mut self) {
-        let page = match self.page {
-            None => return,
-            Some(ref mut page) => page
-        };
-
         // mark phase
-        page.header.mark_bits.clear();
+        for page in self.page.iter_mut() {
+            page.header.mark_bits.clear();
+        }
         for (&ptr, _) in self.pins.borrow().iter() {
             (*PageHeader::<'a>::find(ptr)).mark(ptr);
         }
 
         // sweep phase
-        page.sweep();
+        for page in self.page.iter_mut() {
+            page.sweep();
+        }
     }
 
     #[cfg(test)]
