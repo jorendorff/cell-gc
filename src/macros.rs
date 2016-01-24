@@ -77,6 +77,7 @@ macro_rules! gc_ref_type {
 #[macro_export]
 macro_rules! gc_inline_enum {
     { AS_ITEM $x:item } => { $x };
+    { AS_EXPR $x:expr } => { $x };
 
     {
         PARSE_VARIANTS $helper_name:ident
@@ -256,6 +257,30 @@ macro_rules! gc_inline_enum {
     };
 
     {
+        TO_HEAP DONE { $($accumulated_output:tt)* }
+        $self_:expr, $_stack_type:ident / $_storage_type:ident
+    } => {
+        gc_inline_enum! {
+            AS_EXPR
+            match $self_ {
+                $($accumulated_output)*
+            }
+        }
+    };
+
+    {
+        FROM_HEAP DONE { $($accumulated_output:tt)* }
+        $value:expr, $_stack_type:ident / $_storage_type:ident
+    } => {
+        gc_inline_enum! {
+            AS_EXPR
+            match $value {
+                $($accumulated_output)*
+            }
+        }
+    };
+
+    {
         pub enum $stack_type:ident / $storage_type:ident <'a>
             $variants:tt
     } => {
@@ -280,20 +305,26 @@ macro_rules! gc_inline_enum {
             type Storage = $storage_type<'a>;
 
             fn to_heap(self) -> $storage_type<'a> {
-                match self {
-                    $stack_type::Null => $storage_type::Null,
-                    $stack_type::Int(n) => $storage_type::Int(n),
-                    $stack_type::Str(rcstr) => $storage_type::Str(rcstr),
-                    $stack_type::Pair(pair) => $storage_type::Pair(HeapInline::<'a>::to_heap(pair))
+                gc_inline_enum! {
+                    TO_HEAP DONE {
+                        $stack_type::Null => $storage_type::Null,
+                        $stack_type::Int(n) => $storage_type::Int(n),
+                        $stack_type::Str(rcstr) => $storage_type::Str(rcstr),
+                        $stack_type::Pair(pair) => $storage_type::Pair(HeapInline::<'a>::to_heap(pair))
+                    }
+                    self, $stack_type / $storage_type
                 }
             }
 
             unsafe fn from_heap(heap: &Heap<'a>, v: &$storage_type<'a>) -> $stack_type<'a> {
-                match v {
-                    &$storage_type::Null => $stack_type::Null,
-                    &$storage_type::Int(n) => $stack_type::Int(n),
-                    &$storage_type::Str(ref rcstr) => $stack_type::Str(rcstr.clone()),
-                    &$storage_type::Pair(ref ptr) => $stack_type::Pair(HeapInline::<'a>::from_heap(heap, ptr))
+                gc_inline_enum! {
+                    FROM_HEAP DONE {
+                        &$storage_type::Null => $stack_type::Null,
+                        &$storage_type::Int(n) => $stack_type::Int(n),
+                        &$storage_type::Str(ref rcstr) => $stack_type::Str(rcstr.clone()),
+                        &$storage_type::Pair(ref ptr) => $stack_type::Pair(HeapInline::<'a>::from_heap(heap, ptr))
+                    }
+                    v, $stack_type / $storage_type
                 }
             }
         }
