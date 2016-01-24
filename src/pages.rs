@@ -14,7 +14,7 @@ pub const HEAP_SIZE: usize = 125;
 
 /// We rely on all bits to the right of this bit being 0 in addresses of
 /// TypedPage instances.
-pub const PAGE_ALIGN: usize = 0x1000;
+const PAGE_ALIGN: usize = 0x1000;
 
 pub struct PageHeader<'a> {
     pub heap: *mut Heap<'a>,
@@ -22,6 +22,13 @@ pub struct PageHeader<'a> {
     pub allocated_bits: BitVec,
     pub mark_entry_point: unsafe fn(*mut ()),
     freelist: *mut (),
+}
+
+impl<'a> PageHeader<'a> {
+    pub fn find(ptr: *mut ()) -> *mut PageHeader<'a> {
+        let header_addr = ptr as usize & !(PAGE_ALIGN - 1);
+        header_addr as *mut PageHeader<'a>
+    }
 }
 
 // The heap is (for now) just a big array of Pairs
@@ -70,6 +77,11 @@ impl<'a, T: GCThing<'a>> TypedPage<'a, T> {
             typed_page.add_to_free_list(p);
         }
         typed_page
+    }
+
+    pub fn find(ptr: *const T) -> *mut TypedPage<'a, T> {
+        let page_addr = ptr as usize & !(PAGE_ALIGN - 1);
+        page_addr as *mut TypedPage<'a, T>
     }
 
     unsafe fn add_to_free_list(&mut self, p: *mut T) {

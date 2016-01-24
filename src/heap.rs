@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::default::Default;
 use std::marker::PhantomData;
 use std::{fmt, mem, ptr};
-use pages::{TypedPage, PAGE_ALIGN};
+use pages::{PageHeader, TypedPage};
 
 // What does this do? You'll never guess!
 type HeapId<'a> = PhantomData<::std::cell::Cell<&'a mut ()>>;
@@ -158,30 +158,25 @@ impl<'a> Heap<'a> {
         }
     }
 
-    unsafe fn find_typed_page<T: GCThing<'a>>(ptr: *const T) -> *mut TypedPage<'a, T> {
-        let page_addr = ptr as usize & !(PAGE_ALIGN - 1);
-        page_addr as *mut TypedPage<'a, T>
-    }
-
     unsafe fn from_allocation<T: GCThing<'a>>(ptr: *const T) -> *const Heap<'a> {
-        (*Heap::find_typed_page(ptr)).header.heap
+        (*TypedPage::find(ptr)).header.heap
     }
 
     pub unsafe fn get_mark_bit<T: GCThing<'a>>(ptr: *const T) -> bool {
-        (*Heap::find_typed_page(ptr)).get_mark_bit(ptr)
+        (*TypedPage::find(ptr)).get_mark_bit(ptr)
     }
 
     pub unsafe fn set_mark_bit<T: GCThing<'a>>(ptr: *const T) {
-        (*Heap::find_typed_page(ptr)).set_mark_bit(ptr);
+        (*TypedPage::find(ptr)).set_mark_bit(ptr);
     }
-    
+
     pub fn alloc<T: GCRef<'a>>(&mut self, fields: T::Fields) -> T {
         self.try_alloc(fields).expect("out of memory (gc did not collect anything)")
     }
 
     unsafe fn mark_any(ptr: *mut ()) {
-        let typed_page = Heap::find_typed_page(ptr as *mut PairStorage);  // BOGUS
-        let mark_fn = (*typed_page).header.mark_entry_point;
+        let header = PageHeader::find(ptr);
+        let mark_fn = (*header).mark_entry_point;
         mark_fn(ptr);
     }
 
