@@ -312,13 +312,55 @@ macro_rules! gc_inline_enum {
 
     {
         FROM_HEAP DONE { $($accumulated_output:tt)* }
-        $value:expr, $_stack_type:ident / $_storage_type:ident
+        $_heap:expr, $value:expr, $_stack_type:ident / $_storage_type:ident
     } => {
         gc_inline_enum! {
             AS_EXPR
             match $value {
                 $($accumulated_output)*
             }
+        }
+    };
+
+    {
+        FROM_HEAP VARIANT $name:ident NO_FIELDS
+        $more_variants:tt
+        { $($accumulated_output:tt)* }
+        $heap:expr, $value:expr, $stack_type:ident / $storage_type:ident
+    } => {
+        gc_inline_enum! {
+            PARSE_VARIANTS FROM_HEAP $more_variants {
+                $($accumulated_output)*
+                &$storage_type::$name => $stack_type::$name,
+            }
+            $heap, $value, $stack_type / $storage_type
+        }
+    };
+
+    {
+        FROM_HEAP VARIANT $name:ident ( $($field_type:ty),* )
+        $($etc:tt)*
+    } => {
+        gc_inline_enum! {
+            TYPES_TO_IDENTS ( $($field_type),*, ) () (a b c d e f g h i j k l m n o p q r s t u v w x y z)
+            (FROM_HEAP CONTINUE_VARIANT $name $($etc)*)
+        }
+    };
+
+    {
+        FROM_HEAP CONTINUE_VARIANT $name:ident
+        $more_variants:tt
+        { $($accumulated_output:tt)* }
+        $heap:expr, $value:expr, $stack_type:ident / $storage_type:ident
+        ( $(($binding:ident : $field_type:ty))* )
+    } => {
+        gc_inline_enum! {
+            PARSE_VARIANTS FROM_HEAP $more_variants {
+                $($accumulated_output)*
+                &$storage_type::$name ( ref $($binding),* ) =>
+                    $stack_type::$name( $(HeapInline::from_heap($heap, $binding)),* ),
+            }
+            $heap, $value, $stack_type / $storage_type
         }
     };
 
@@ -355,13 +397,8 @@ macro_rules! gc_inline_enum {
 
             unsafe fn from_heap(heap: &Heap<'a>, v: &$storage_type<'a>) -> $stack_type<'a> {
                 gc_inline_enum! {
-                    FROM_HEAP DONE {
-                        &$storage_type::Null => $stack_type::Null,
-                        &$storage_type::Int(n) => $stack_type::Int(n),
-                        &$storage_type::Str(ref rcstr) => $stack_type::Str(rcstr.clone()),
-                        &$storage_type::Pair(ref ptr) => $stack_type::Pair(HeapInline::<'a>::from_heap(heap, ptr))
-                    }
-                    v, $stack_type / $storage_type
+                    PARSE_VARIANTS FROM_HEAP $variants {}
+                    heap, v, $stack_type / $storage_type
                 }
             }
         }
