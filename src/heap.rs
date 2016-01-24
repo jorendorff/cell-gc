@@ -115,6 +115,22 @@ unsafe fn mark_entry_point<'a, T: Mark<'a>>(addr: *mut ()) {
 
 /// Trait implemented by all types that can be stored in fields of structs (or,
 /// eventually, elements of GCVecs) that are stored in the GC heap.
+///
+/// This trait is unsafe to implement for several reasons, ranging from:
+///
+/// *   The common-sense: API users aren't supposed to know or care about this.
+///     It is only public so that the public macros can see it.
+///     Use `gc_ref_type!` and `gc_inline_enum!`.
+///
+/// *   To the obvious: `Storage` objects are full of pointers and if `to_heap`
+///     puts garbage into them, GC will crash.
+///
+/// *   To the subtle: `from_heap` receives a non-mut reference to a heap
+///     value. But there may exist gc-references to that value, in which case
+///     `from_heap` (or other code it calls) could modify the value while this
+///     direct, non-mut reference exists, which could lead to crashes (due to
+///     changing enums if nothing else) - all without using any unsafe code.
+///
 pub unsafe trait HeapInline<'a> {
     /// The type of the value when it is physically stored in the heap.
     type Storage;
