@@ -269,6 +269,48 @@ macro_rules! gc_inline_enum {
     };
 
     {
+        TO_HEAP VARIANT $name:ident NO_FIELDS
+        $more_variants:tt
+        { $($accumulated_output:tt)* }
+        $self_:expr, $stack_type:ident / $storage_type:ident
+    } => {
+        gc_inline_enum! {
+            PARSE_VARIANTS TO_HEAP $more_variants {
+                $($accumulated_output)*
+                $stack_type::$name => $storage_type::$name,
+            }
+            $self_, $stack_type / $storage_type
+        }
+    };
+
+    {
+        TO_HEAP VARIANT $name:ident ( $($field_type:ty),* )
+        $($etc:tt)*
+    } => {
+        gc_inline_enum! {
+            TYPES_TO_IDENTS ( $($field_type),*, ) () (a b c d e f g h i j k l m n o p q r s t u v w x y z)
+            (TO_HEAP CONTINUE_VARIANT $name $($etc)*)
+        }
+    };
+
+    {
+        TO_HEAP CONTINUE_VARIANT $name:ident
+        $more_variants:tt
+        { $($accumulated_output:tt)* }
+        $self_:expr, $stack_type:ident / $storage_type:ident
+        ( $(($binding:ident : $field_type:ty))* )
+    } => {
+        gc_inline_enum! {
+            PARSE_VARIANTS TO_HEAP $more_variants {
+                $($accumulated_output)*
+                $stack_type::$name ( $($binding),* ) =>
+                    $storage_type::$name( $(HeapInline::to_heap($binding)),* ),
+            }
+            $self_, $stack_type / $storage_type
+        }
+    };
+
+    {
         FROM_HEAP DONE { $($accumulated_output:tt)* }
         $value:expr, $_stack_type:ident / $_storage_type:ident
     } => {
@@ -306,12 +348,7 @@ macro_rules! gc_inline_enum {
 
             fn to_heap(self) -> $storage_type<'a> {
                 gc_inline_enum! {
-                    TO_HEAP DONE {
-                        $stack_type::Null => $storage_type::Null,
-                        $stack_type::Int(n) => $storage_type::Int(n),
-                        $stack_type::Str(rcstr) => $storage_type::Str(rcstr),
-                        $stack_type::Pair(pair) => $storage_type::Pair(HeapInline::<'a>::to_heap(pair))
-                    }
+                    PARSE_VARIANTS TO_HEAP $variants {}
                     self, $stack_type / $storage_type
                 }
             }
