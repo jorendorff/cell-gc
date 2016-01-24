@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::default::Default;
 use std::marker::PhantomData;
 use std::{fmt, mem, ptr};
-use traits::{Mark, mark_entry_point, HeapInline, GCThing, GCRef, gcthing_type_id};
+use traits::{Mark, HeapInline, GCThing, GCRef, gcthing_type_id};
 use pages::{PageHeader, TypedPage};
 
 // What does this do? You'll never guess!
@@ -118,12 +118,6 @@ impl<'a> Heap<'a> {
         self.try_alloc(fields).expect("out of memory (gc did not collect anything)")
     }
 
-    unsafe fn mark_any(ptr: *mut ()) {
-        let header = PageHeader::find(ptr);
-        let mark_fn = (*header).mark_entry_point;
-        mark_fn(ptr);
-    }
-
     unsafe fn gc(&mut self) {
         let page = match self.page {
             None => return,
@@ -132,8 +126,8 @@ impl<'a> Heap<'a> {
 
         // mark phase
         page.header.mark_bits.clear();
-        for (&p, _) in self.pins.borrow().iter() {
-            Heap::mark_any(p);
+        for (&ptr, _) in self.pins.borrow().iter() {
+            (*PageHeader::<'a>::find(ptr)).mark(ptr);
         }
 
         // sweep phase

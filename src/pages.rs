@@ -21,7 +21,7 @@ pub struct PageHeader<'a> {
     pub heap: *mut Heap<'a>,
     pub mark_bits: BitVec,
     pub allocated_bits: BitVec,
-    pub mark_entry_point: unsafe fn(*mut ()),
+    mark_entry_point: unsafe fn(*mut ()),
     freelist: *mut (),
 }
 
@@ -33,6 +33,10 @@ impl<'a> PageHeader<'a> {
     pub fn find(ptr: *mut ()) -> *mut PageHeader<'a> {
         let header_addr = ptr as usize & !(PAGE_ALIGN - 1);
         header_addr as *mut PageHeader<'a>
+    }
+
+    pub unsafe fn mark(&self, ptr: *mut ()) {
+        (self.mark_entry_point)(ptr);
     }
 }
 
