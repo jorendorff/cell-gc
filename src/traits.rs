@@ -1,3 +1,5 @@
+use gcref::GCRef;
+
 /// `InHeap` types can be stored directly in the GC heap.
 ///
 /// Application code does not need to use this trait. It is only public so that
@@ -81,6 +83,21 @@ pub unsafe trait IntoHeap<'a>: Sized {
 pub fn heap_type_id<'a, T: InHeap<'a>>() -> usize {
     mark_entry_point::<T> as *const () as usize
 }
+
+/// Relate an `IntoHeap` type to the corresponding safe reference type.
+///
+/// Application code does not need to use this trait. It is only public so that
+/// the public macros can use it. Use the friendly macros!
+///
+pub trait IntoHeapAllocation<'a>: IntoHeap<'a>
+{
+    type Ref: IntoHeap<'a>;
+
+    fn wrap_gcref(gcref: GCRef<'a, Self::In>) -> Self::Ref;
+}
+
+
+// === Provided implmentations for primitive types
 
 macro_rules! gc_trivial_impl {
     ($t:ty) => {

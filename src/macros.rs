@@ -1,9 +1,12 @@
 #[macro_export]
 macro_rules! gc_ref_type {
-    (pub struct $fields_type:ident / $storage_type:ident <'a> {
-        $($field_name:ident / $field_setter_name:ident : $field_type: ty),*
-    }) => {
-        struct $storage_type<'a> {
+    {
+        pub struct $fields_type:ident / $ref_type:ident / $storage_type:ident / $ref_storage_type:ident <'a> {
+            $($field_name:ident / $field_setter_name:ident : $field_type: ty),*
+        }
+    } => {
+        // === $storage_type: the InHeap representation of the struct
+        pub struct $storage_type<'a> {
             $($field_name: <$field_type as $crate::IntoHeap<'a>>::In),*
         }
 
@@ -26,21 +29,8 @@ macro_rules! gc_ref_type {
             }
         }
 
-        unsafe impl<'a> $crate::InHeap<'a> for *mut $storage_type<'a> {
-            type Out = $crate::GCRef<'a, $storage_type<'a>>;
-
-            unsafe fn mark(field_ptr: *mut *mut $storage_type<'a>) {
-                let ptr = *field_ptr;
-                if !ptr.is_null() {
-                    InHeap::mark(ptr);
-                }
-            }
-
-            unsafe fn from_heap(&self) -> $crate::GCRef<'a, $storage_type<'a>> {
-                $crate::GCRef::new(*self)
-            }
-        }
-
+        // === $fields_type: A safe version of the struct
+        #[derive(Clone, Debug, PartialEq)]
         pub struct $fields_type<'a> {
             $(pub $field_name: $field_type),*
         }
@@ -55,36 +45,66 @@ macro_rules! gc_ref_type {
             }
         }
 
-        impl<'a> $crate::GCRef<'a, $storage_type<'a>> {
+        impl<'a> $crate::IntoHeapAllocation<'a> for $fields_type<'a> {
+            type Ref = $ref_type<'a>;
+
+            fn wrap_gcref(gcref: GCRef<'a, $storage_type<'a>>) -> $ref_type<'a> {
+                $ref_type(gcref)
+            }
+        }
+
+        // === $ref_storage_type: The InHeap representation of a reference to the struct
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        pub struct $ref_storage_type<'a>(*mut $storage_type<'a>);
+
+        unsafe impl<'a> $crate::InHeap<'a> for $ref_storage_type<'a> {
+            type Out = $ref_type<'a>;
+
+            unsafe fn mark(ptr_to_ptr: *mut $ref_storage_type<'a>) {
+                let $ref_storage_type(ptr) = *ptr_to_ptr;
+                if !ptr.is_null() {
+                    InHeap::mark(ptr);
+                }
+            }
+
+            unsafe fn from_heap(&self) -> $ref_type<'a> {
+                $ref_type($crate::GCRef::new(self.0))
+            }
+        }
+
+        // === $ref_type: A safe reference to the struct
+        #[derive(Clone, Debug, PartialEq, Eq)]
+        pub struct $ref_type<'a>($crate::GCRef<'a, $storage_type<'a>>);
+
+        unsafe impl<'a> $crate::IntoHeap<'a> for $ref_type<'a> {
+            type In = $ref_storage_type<'a>;
+
+            fn into_heap(self) -> $ref_storage_type<'a> {
+                $ref_storage_type(self.0.as_ptr())
+            }
+        }
+
+        impl<'a> $ref_type<'a> {
+            // Field accessors.
             $(
                 pub fn $field_name(&self) -> $field_type {
-                    let ptr = self.as_ptr();
+                    let ptr = self.0.as_ptr();
                     unsafe {
                         InHeap::from_heap(&(*ptr).$field_name)
                     }
                 }
 
                 pub fn $field_setter_name(&self, v: $field_type) {
-                    let ptr = self.as_ptr();
+                    let ptr = self.0.as_ptr();
                     unsafe {
                         (*ptr).$field_name = IntoHeap::into_heap(v);
                     }
                 }
             )*
-        }
 
-        unsafe impl<'a> $crate::IntoHeap<'a> for $crate::GCRef<'a, $storage_type<'a>> {
-            type In = *mut $storage_type<'a>;
-
-            fn into_heap(self) -> *mut $storage_type<'a> {
-                self.as_ptr()
-            }
-        }
-
-        impl<'a> $crate::GCRef<'a, $storage_type<'a>> {
             #[cfg(test)]
             fn address(&self) -> usize {
-                self.as_ptr() as usize
+                self.0.as_ptr() as usize
             }
         }
     }

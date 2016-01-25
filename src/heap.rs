@@ -4,7 +4,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::ptr;
-use traits::{InHeap, IntoHeap, heap_type_id};
+use traits::{InHeap, IntoHeap, IntoHeapAllocation, heap_type_id};
 use pages::{PageHeader, TypedPage, PageBox};
 use gcref::GCRef;
 
@@ -78,7 +78,7 @@ impl<'a> Heap<'a> {
         }
     }
 
-    pub fn try_alloc<T: IntoHeap<'a>>(&mut self, value: T) -> Option<GCRef<'a, T::In>> {
+    pub fn try_alloc<T: IntoHeapAllocation<'a>>(&mut self, value: T) -> Option<T::Ref> {
         unsafe {
             let alloc = self.get_page::<T::In>().try_alloc();
             alloc
@@ -88,7 +88,7 @@ impl<'a> Heap<'a> {
                 })
                 .map(move |p| {
                     ptr::write(p, value.into_heap());
-                    GCRef::new(p)
+                    T::wrap_gcref(GCRef::new(p))
                 })
         }
     }
@@ -105,7 +105,7 @@ impl<'a> Heap<'a> {
         (*TypedPage::find(ptr)).set_mark_bit(ptr);
     }
 
-    pub fn alloc<T: IntoHeap<'a>>(&mut self, value: T) -> GCRef<'a, T::In> {
+    pub fn alloc<T: IntoHeapAllocation<'a>>(&mut self, value: T) -> T::Ref {
         self.try_alloc(value).expect("out of memory (gc did not collect anything)")
     }
 

@@ -2,30 +2,28 @@ use std::rc::Rc;
 use super::*;
 
 gc_ref_type! {
-    pub struct Pair / PairStorage<'a> {
+    pub struct Pair / PairRef / PairStorage / PairRefStorage <'a> {
         head / set_head: Value<'a>,
         tail / set_tail: Value<'a>
     }
 }
-
-type GCRefPair<'a> = GCRef<'a, PairStorage<'a> >;
 
 gc_inline_enum! {
     pub enum Value / ValueStorage <'a> {
         Null,
         Int(i32),
         Str(Rc<String>),  // <-- equality is by value
-        Pair(GCRefPair<'a>)  // <-- equality is by pointer
+        Pair(PairRef<'a>)  // <-- equality is by pointer
     }
 }
 
 /// Helper function to avoid having to write out `Pair` literals all over the place.
-fn alloc_pair<'a>(heap: &mut Heap<'a>, head: Value<'a>, tail: Value<'a>) -> GCRefPair<'a> {
+fn alloc_pair<'a>(heap: &mut Heap<'a>, head: Value<'a>, tail: Value<'a>) -> PairRef<'a> {
     heap.alloc(Pair { head: head, tail: tail })
 }
 
 /// Allocate a pair with the values `(null, null)`.
-fn alloc_null_pair<'a>(heap: &mut Heap<'a>) -> GCRefPair<'a> {
+fn alloc_null_pair<'a>(heap: &mut Heap<'a>) -> PairRef<'a> {
     alloc_pair(heap, Value::Null, Value::Null)
 }
 
@@ -74,7 +72,7 @@ fn full_heap() {
         // The whole heap is reachable.  Now try_alloc() should return null every
         // time it's called.
         for _ in 0 .. 4 {
-            let attempt: Option<GCRefPair> = heap.try_alloc(null_pair());
+            let attempt: Option<PairRef> = heap.try_alloc(null_pair());
             assert_eq!(attempt, None);
         }
     });
@@ -323,4 +321,3 @@ fn bug_outliving_2() {
 }
 
 */
-
