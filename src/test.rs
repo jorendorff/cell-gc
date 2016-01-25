@@ -1,7 +1,31 @@
-use super::{Heap, with_heap, Value, Pair, PairFields};
-use super::HEAP_SIZE;
-use super::GCRef;  // for .address()
+use std::default::Default;
 use std::rc::Rc;
+use super::*;
+
+gc_ref_type! {
+    pub struct Pair / PairFields / PairStorage<'a> {
+        head / set_head: Value<'a>,
+        tail / set_tail: Value<'a>
+    }
+}
+
+impl<'a> Default for PairStorage<'a> {
+    fn default() -> PairStorage<'a> {
+        PairStorage {
+            head: ValueStorage::Null,
+            tail: ValueStorage::Null
+        }
+    }
+}
+
+gc_inline_enum! {
+    pub enum Value / ValueStorage <'a> {
+        Null,
+        Int(i32),
+        Str(Rc<String>),  // <-- equality is by value
+        Pair(Pair<'a>)  // <-- equality is by pointer
+    }
+}
 
 /// Helper function to avoid having to write out `PairFields` literals all over the place.
 fn alloc_pair<'a>(heap: &mut Heap<'a>, head: Value<'a>, tail: Value<'a>) -> Pair<'a> {

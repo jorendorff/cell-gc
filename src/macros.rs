@@ -40,14 +40,14 @@ macro_rules! gc_ref_type {
         impl<'a> $ref_type<'a> {
             $(
                 pub fn $field_name(&self) -> $field_type {
-                    let ptr = self.0.ptr;
+                    let ptr = self.0.get_ptr();
                     unsafe {
                         HeapInline::from_heap(&(*ptr).$field_name)
                     }
                 }
 
                 pub fn $field_setter_name(&self, v: $field_type) {
-                    let ptr = self.0.ptr;
+                    let ptr = self.0.get_ptr();
                     unsafe {
                         (*ptr).$field_name = HeapInline::to_heap(v);
                     }
@@ -59,7 +59,7 @@ macro_rules! gc_ref_type {
             type Storage = *mut $storage_type<'a>;
 
             fn to_heap(self) -> Self::Storage {
-                self.0.ptr
+                self.0.get_ptr()
             }
 
             unsafe fn from_heap(v: &Self::Storage) -> Self {
@@ -83,7 +83,7 @@ macro_rules! gc_ref_type {
 
             #[cfg(test)]
             fn address(&self) -> usize {
-                unsafe { ::std::mem::transmute(self.0.ptr) }
+                unsafe { ::std::mem::transmute(self.0.get_ptr()) }
             }
         }
 

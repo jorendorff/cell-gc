@@ -2,10 +2,9 @@
 
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::default::Default;
 use std::marker::PhantomData;
 use std::{fmt, ptr};
-use traits::{Mark, HeapInline, GCThing, GCRef, gcthing_type_id};
+use traits::{Mark, GCThing, GCRef, gcthing_type_id};
 use pages::{PageHeader, TypedPage, PageBox};
 
 // What does this do? You'll never guess!
@@ -152,7 +151,7 @@ impl<'a, T: GCThing<'a>> PinnedRef<'a, T> {
     /// dropped. Unsafe because if `p` is not a pointer to a live allocation of
     /// type `T` --- and a complete allocation, not a sub-object of one --- then
     /// later unsafe code will explode.
-    unsafe fn new(p: *mut T) -> PinnedRef<'a, T> {
+    pub unsafe fn new(p: *mut T) -> PinnedRef<'a, T> {
         let heap = Heap::from_allocation(p);
         (*heap).pin(p);
         PinnedRef {
@@ -160,6 +159,8 @@ impl<'a, T: GCThing<'a>> PinnedRef<'a, T> {
             heap_id: (*heap).id
         }
     }
+
+    pub fn get_ptr(&self) -> *mut T { self.ptr }
 }
 
 impl<'a, T: GCThing<'a>> Drop for PinnedRef<'a, T> {
@@ -207,37 +208,3 @@ impl<'a, T: GCThing<'a>> Eq for PinnedRef<'a, T> {}
 unsafe impl<'a, T: Clone + 'static> Mark<'a> for T { ...trivial... }
 unsafe impl<'a, T: Clone + 'static> HeapInline<'a> for T { ...trivial... }
 */
-
-
-// === Pair, the reference type
-
-gc_ref_type! {
-    pub struct Pair / PairFields / PairStorage<'a> {
-        head / set_head: Value<'a>,
-        tail / set_tail: Value<'a>
-    }
-}
-
-impl<'a> Default for PairStorage<'a> {
-    fn default() -> PairStorage<'a> {
-        PairStorage {
-            head: ValueStorage::Null,
-            tail: ValueStorage::Null
-        }
-    }
-}
-
-
-
-// === Values (a heap-inline enum)
-
-use std::rc::Rc;
-
-gc_inline_enum! {
-    pub enum Value / ValueStorage <'a> {
-        Null,
-        Int(i32),
-        Str(Rc<String>),  // <-- equality is by value
-        Pair(Pair<'a>)  // <-- equality is by pointer
-    }
-}
