@@ -12,7 +12,7 @@ use gcref::GCRef;
 pub type HeapId<'a> = PhantomData<::std::cell::Cell<&'a mut ()>>;
 
 pub struct Heap<'a> {
-    pub id: HeapId<'a>,
+    id: HeapId<'a>,
     pages: HashMap<usize, PageBox<'a>>,
     pins: RefCell<HashMap<*mut (), usize>>
 }

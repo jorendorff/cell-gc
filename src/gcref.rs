@@ -1,6 +1,7 @@
 use traits::InHeap;
 use heap::{Heap, HeapId};
 use std::fmt;
+use std::marker::PhantomData;
 
 pub struct GCRef<'a, T: InHeap<'a>> {
     ptr: *mut T,
@@ -13,11 +14,11 @@ impl<'a, T: InHeap<'a>> GCRef<'a, T> {
     /// type `T` --- and a complete allocation, not a sub-object of one --- then
     /// later unsafe code will explode.
     pub unsafe fn new(p: *mut T) -> GCRef<'a, T> {
-        let heap = Heap::from_allocation(p);
+        let heap: *const Heap<'a> = Heap::from_allocation(p);
         (*heap).pin(p);
         GCRef {
             ptr: p,
-            heap_id: (*heap).id
+            heap_id: PhantomData
         }
     }
 
