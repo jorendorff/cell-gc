@@ -121,7 +121,7 @@ impl<'a> Heap<'a> {
     unsafe fn gc(&mut self) {
         // mark phase
         for page in self.page.iter_mut() {
-            page.header.mark_bits.clear();
+            page.header.clear_mark_bits();
         }
         for (&ptr, _) in self.pins.borrow().iter() {
             (*PageHeader::<'a>::find(ptr)).mark(ptr);
@@ -148,7 +148,7 @@ impl<'a> Drop for Heap<'a> {
         let mut tmp = None;
         mem::swap(&mut tmp, &mut self.page);
         if let Some(page) = tmp {
-            assert!(page.header.allocated_bits.none());
+            assert!(page.header.is_empty());
         }
     }
 }

@@ -19,8 +19,8 @@ const PAGE_ALIGN: usize = 0x1000;
 
 pub struct PageHeader<'a> {
     pub heap: *mut Heap<'a>,
-    pub mark_bits: BitVec,
-    pub allocated_bits: BitVec,
+    mark_bits: BitVec,
+    allocated_bits: BitVec,
     mark_entry_point: unsafe fn(*mut ()),
     freelist: *mut (),
 }
@@ -33,6 +33,15 @@ impl<'a> PageHeader<'a> {
     pub fn find(ptr: *mut ()) -> *mut PageHeader<'a> {
         let header_addr = ptr as usize & !(PAGE_ALIGN - 1);
         header_addr as *mut PageHeader<'a>
+    }
+
+    pub fn clear_mark_bits() {
+        self.mark_bits.clear();
+    }
+
+    /// True if nothing on this page is allocated.
+    pub fn is_empty() -> bool {
+        self.allocated_bits.none()
     }
 
     pub unsafe fn mark(&self, ptr: *mut ()) {
