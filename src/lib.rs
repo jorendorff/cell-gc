@@ -5,7 +5,7 @@ mod traits;
 mod pages;
 mod heap;
 
-pub use heap::*;
+pub use heap::{Heap, with_heap, PinnedRef};
 pub use traits::{Mark, HeapInline, GCThing, GCRef};
 pub use pages::HEAP_SIZE;
 
