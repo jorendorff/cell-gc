@@ -4,7 +4,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::ptr;
-use traits::{Mark, HeapInline, GCThing, GCRef, gcthing_type_id};
+use traits::{Mark, ToHeap, GCThing, GCRef, gcthing_type_id};
 use pages::{PageHeader, TypedPage, PageBox};
 use refs::PinnedRef;
 

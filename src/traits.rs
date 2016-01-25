@@ -1,9 +1,9 @@
 use refs::PinnedRef;
 
 /// Trait implemented by all types that can be stored directly in the GC heap:
-/// the `Storage` types associated with any `HeapInline` or `HeapRef` type.
+/// the `Storage` types associated with any `ToHeap` type.
 ///
-/// XXX maybe this should not be its own trait - fold into HeapInline?
+/// XXX maybe this should not be its own trait - fold into ToHeap?
 ///
 pub unsafe trait Mark<'a> {
     unsafe fn mark(ptr: *mut Self);
@@ -33,7 +33,7 @@ pub unsafe fn mark_entry_point<'a, T: Mark<'a>>(addr: *mut ()) {
 ///     direct, non-mut reference exists, which could lead to crashes (due to
 ///     changing enums if nothing else) - all without using any unsafe code.
 ///
-pub unsafe trait HeapInline<'a> {
+pub unsafe trait ToHeap<'a> {
     /// The type of the value when it is physically stored in the heap.
     type Storage;
 
@@ -63,9 +63,9 @@ pub fn gcthing_type_id<'a, T: GCThing<'a>>() -> usize {
     mark_entry_point::<T> as *const () as usize
 }
 
-pub trait GCRef<'a>: HeapInline<'a> {
+pub trait GCRef<'a>: ToHeap<'a> {
     type ReferentStorage: GCThing<'a>;
-    type Fields: HeapInline<'a, Storage=Self::ReferentStorage>;
+    type Fields: ToHeap<'a, Storage=Self::ReferentStorage>;
 
     fn from_pinned_ref(r: PinnedRef<'a, Self::ReferentStorage>) -> Self;
 
@@ -79,7 +79,7 @@ macro_rules! gc_trivial_impl {
             unsafe fn mark(_ptr: *mut $t) {}
         }
 
-        unsafe impl<'a> HeapInline<'a> for $t {
+        unsafe impl<'a> ToHeap<'a> for $t {
             type Storage = Self;
             fn to_heap(self) -> $t { self }
             unsafe fn from_heap(v: &$t) -> $t { (*v).clone() }
@@ -111,5 +111,5 @@ gc_trivial_impl!(Rc<String>);
 // to prevent conflicting trait impls make this conflict with almost
 // everything.
 unsafe impl<'a, T: Clone + 'static> Mark<'a> for T { ...trivial... }
-unsafe impl<'a, T: Clone + 'static> HeapInline<'a> for T { ...trivial... }
+unsafe impl<'a, T: Clone + 'static> ToHeap<'a> for T { ...trivial... }
 */
