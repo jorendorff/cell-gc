@@ -4,9 +4,9 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::ptr;
-use traits::{InHeap, ToHeap, heap_type_id};
+use traits::{InHeap, IntoHeap, heap_type_id};
 use pages::{PageHeader, TypedPage, PageBox};
-use refs::GCRef;
+use gcref::GCRef;
 
 // What does this do? You'll never guess!
 pub type HeapId<'a> = PhantomData<::std::cell::Cell<&'a mut ()>>;
@@ -78,7 +78,7 @@ impl<'a> Heap<'a> {
         }
     }
 
-    pub fn try_alloc<T: ToHeap<'a>>(&mut self, value: T) -> Option<GCRef<'a, T::Storage>> {
+    pub fn try_alloc<T: IntoHeap<'a>>(&mut self, value: T) -> Option<GCRef<'a, T::Storage>> {
         unsafe {
             let alloc = self.get_page::<T::Storage>().try_alloc();
             alloc
@@ -87,7 +87,7 @@ impl<'a> Heap<'a> {
                     self.get_page::<T::Storage>().try_alloc()
                 })
                 .map(move |p| {
-                    ptr::write(p, value.to_heap());
+                    ptr::write(p, value.into_heap());
                     GCRef::new(p)
                 })
         }
@@ -105,7 +105,7 @@ impl<'a> Heap<'a> {
         (*TypedPage::find(ptr)).set_mark_bit(ptr);
     }
 
-    pub fn alloc<T: ToHeap<'a>>(&mut self, value: T) -> GCRef<'a, T::Storage> {
+    pub fn alloc<T: IntoHeap<'a>>(&mut self, value: T) -> GCRef<'a, T::Storage> {
         self.try_alloc(value).expect("out of memory (gc did not collect anything)")
     }
 
