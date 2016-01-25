@@ -15,19 +15,25 @@ pub unsafe fn mark_entry_point<'a, T: Mark<'a>>(addr: *mut ()) {
     Mark::mark(addr as *mut T);
 }
 
-/// Trait implemented by all types that can be stored in fields of structs (or,
-/// eventually, elements of GCVecs) that are stored in the GC heap.
+/// `ToHeap` types are safe to use and can be stored in a field of a GC struct.
+///
+/// "Safe to use" means they don't expose raw pointers to GC memory, and they
+/// obey Rust's safety and aliasing rules. If a `ToHeap` value contains a
+/// pointer to a GC allocation, then that allocation (and everything reachable
+/// from it) is protected from GC.
+///
+/// "Stored in a field of a GC struct" - This includes primitive types like `i32`,
+/// but also GC structs themselves (because they can be nested).
 ///
 /// This trait is unsafe to implement for several reasons, ranging from:
 ///
 /// *   The common-sense: API users aren't supposed to know or care about this.
-///     It is only public so that the public macros can see it.
-///     Use `gc_ref_type!` and `gc_inline_enum!`.
+///     It is only public so that the public macros can see it. Use the macros.
 ///
-/// *   To the obvious: `Storage` objects are full of pointers and if `to_heap`
-///     puts garbage into them, GC will crash.
+/// *   ...To the obvious: `Storage` objects are full of pointers and if
+///     `to_heap` puts garbage into them, GC will crash.
 ///
-/// *   To the subtle: `from_heap` receives a non-mut reference to a heap
+/// *   ...To the subtle: `from_heap` receives a non-mut reference to a heap
 ///     value. But there may exist gc-references to that value, in which case
 ///     `from_heap` (or other code it calls) could modify the value while this
 ///     direct, non-mut reference exists, which could lead to crashes (due to
