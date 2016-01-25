@@ -199,12 +199,3 @@ impl<'a, T: GCThing<'a>> PartialEq for PinnedRef<'a, T> {
 }
 
 impl<'a, T: GCThing<'a>> Eq for PinnedRef<'a, T> {}
-
-/*
-// 'static types are heap-safe because ref types are never 'static.
-// Unfortunately I can't make the compiler understand this: the rules
-// to prevent conflicting trait impls make this conflict with almost
-// everything.
-unsafe impl<'a, T: Clone + 'static> Mark<'a> for T { ...trivial... }
-unsafe impl<'a, T: Clone + 'static> HeapInline<'a> for T { ...trivial... }
-*/

@@ -106,3 +106,12 @@ gc_trivial_impl!(f64);
 
 use std::rc::Rc;
 gc_trivial_impl!(Rc<String>);
+
+/*
+// 'static types are heap-safe because ref types are never 'static.
+// Unfortunately I can't make the compiler understand this: the rules
+// to prevent conflicting trait impls make this conflict with almost
+// everything.
+unsafe impl<'a, T: Clone + 'static> Mark<'a> for T { ...trivial... }
+unsafe impl<'a, T: Clone + 'static> HeapInline<'a> for T { ...trivial... }
+*/
