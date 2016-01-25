@@ -2,7 +2,7 @@ use std::rc::Rc;
 use super::*;
 
 gc_ref_type! {
-    pub struct Pair / PairFields / PairStorage<'a> {
+    pub struct GCRefPair / Pair / PairStorage<'a> {
         head / set_head: Value<'a>,
         tail / set_tail: Value<'a>
     }
@@ -13,17 +13,17 @@ gc_inline_enum! {
         Null,
         Int(i32),
         Str(Rc<String>),  // <-- equality is by value
-        Pair(Pair<'a>)  // <-- equality is by pointer
+        Pair(GCRefPair<'a>)  // <-- equality is by pointer
     }
 }
 
-/// Helper function to avoid having to write out `PairFields` literals all over the place.
-fn alloc_pair<'a>(heap: &mut Heap<'a>, head: Value<'a>, tail: Value<'a>) -> Pair<'a> {
-    heap.alloc(PairFields { head: head, tail: tail })
+/// Helper function to avoid having to write out `Pair` literals all over the place.
+fn alloc_pair<'a>(heap: &mut Heap<'a>, head: Value<'a>, tail: Value<'a>) -> GCRefPair<'a> {
+    heap.alloc(Pair { head: head, tail: tail })
 }
 
 /// Allocate a pair with the values `(null, null)`.
-fn alloc_null_pair<'a>(heap: &mut Heap<'a>) -> Pair<'a> {
+fn alloc_null_pair<'a>(heap: &mut Heap<'a>) -> GCRefPair<'a> {
     alloc_pair(heap, Value::Null, Value::Null)
 }
 
@@ -54,8 +54,8 @@ fn root_is_not_recycled() {
     });
 }
 
-fn null_pair<'a>() -> PairFields<'a> {
-    PairFields { head: Value::Null, tail: Value::Null }
+fn null_pair<'a>() -> Pair<'a> {
+    Pair { head: Value::Null, tail: Value::Null }
 }
 
 /// Test try_alloc()'s behavior when the heap is full and every Object is
@@ -72,7 +72,7 @@ fn full_heap() {
         // The whole heap is reachable.  Now try_alloc() should return null every
         // time it's called.
         for _ in 0 .. 4 {
-            let attempt: Option<Pair> = heap.try_alloc(null_pair());
+            let attempt: Option<GCRefPair> = heap.try_alloc(null_pair());
             assert_eq!(attempt, None);
         }
     });
