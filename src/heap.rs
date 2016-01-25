@@ -4,7 +4,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::ptr;
-use traits::{Mark, GCThing, GCRef, gcthing_type_id};
+use traits::{Mark, HeapInline, GCThing, GCRef, gcthing_type_id};
 use pages::{PageHeader, TypedPage, PageBox};
 use refs::PinnedRef;
 
@@ -87,7 +87,7 @@ impl<'a> Heap<'a> {
                     self.get_page::<T::ReferentStorage>().try_alloc()
                 })
                 .map(move |p| {
-                    ptr::write(p, T::fields_to_heap(fields));
+                    ptr::write(p, fields.to_heap());
                     T::from_pinned_ref(PinnedRef::new(p))
                 })
         }

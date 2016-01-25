@@ -65,11 +65,9 @@ pub fn gcthing_type_id<'a, T: GCThing<'a>>() -> usize {
 
 pub trait GCRef<'a>: HeapInline<'a> {
     type ReferentStorage: GCThing<'a>;
-    type Fields;
+    type Fields: HeapInline<'a, Storage=Self::ReferentStorage>;
 
     fn from_pinned_ref(r: PinnedRef<'a, Self::ReferentStorage>) -> Self;
-
-    fn fields_to_heap(fields: Self::Fields) -> Self::ReferentStorage;
 
     #[cfg(test)]
     fn address(&self) -> usize;

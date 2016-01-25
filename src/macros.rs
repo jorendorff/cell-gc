@@ -33,6 +33,22 @@ macro_rules! gc_ref_type {
             $(pub $field_name: $field_type),*
         }
 
+        unsafe impl<'a> $crate::HeapInline<'a> for $fields_type<'a> {
+            type Storage = $storage_type<'a>;
+
+            fn to_heap(self) -> Self::Storage {
+                $storage_type {
+                    $( $field_name: $crate::HeapInline::to_heap(self.$field_name) ),*
+                }
+            }
+
+            unsafe fn from_heap(v: &Self::Storage) -> Self {
+                $fields_type {
+                    $( $field_name: $crate::HeapInline::from_heap(&v.$field_name) ),*
+                }
+            }
+        }
+
         #[allow(raw_pointer_derive)]
         #[derive(Clone, Debug, PartialEq)]
         pub struct $ref_type<'a>($crate::PinnedRef<'a, $storage_type<'a>>);
@@ -73,12 +89,6 @@ macro_rules! gc_ref_type {
 
             fn from_pinned_ref(r: PinnedRef<'a, $storage_type<'a>>) -> $ref_type<'a> {
                 $ref_type(r)
-            }
-
-            fn fields_to_heap(fields: $fields_type<'a>) -> $storage_type<'a> {
-                $storage_type {
-                    $($field_name: $crate::HeapInline::to_heap(fields.$field_name)),*
-                }
             }
 
             #[cfg(test)]
