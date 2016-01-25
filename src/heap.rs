@@ -78,13 +78,13 @@ impl<'a> Heap<'a> {
         }
     }
 
-    pub fn try_alloc<T: IntoHeap<'a>>(&mut self, value: T) -> Option<GCRef<'a, T::Storage>> {
+    pub fn try_alloc<T: IntoHeap<'a>>(&mut self, value: T) -> Option<GCRef<'a, T::In>> {
         unsafe {
-            let alloc = self.get_page::<T::Storage>().try_alloc();
+            let alloc = self.get_page::<T::In>().try_alloc();
             alloc
                 .or_else(|| {
                     self.gc();
-                    self.get_page::<T::Storage>().try_alloc()
+                    self.get_page::<T::In>().try_alloc()
                 })
                 .map(move |p| {
                     ptr::write(p, value.into_heap());
@@ -105,7 +105,7 @@ impl<'a> Heap<'a> {
         (*TypedPage::find(ptr)).set_mark_bit(ptr);
     }
 
-    pub fn alloc<T: IntoHeap<'a>>(&mut self, value: T) -> GCRef<'a, T::Storage> {
+    pub fn alloc<T: IntoHeap<'a>>(&mut self, value: T) -> GCRef<'a, T::In> {
         self.try_alloc(value).expect("out of memory (gc did not collect anything)")
     }
 

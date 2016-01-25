@@ -4,7 +4,7 @@ macro_rules! gc_ref_type {
         $($field_name:ident / $field_setter_name:ident : $field_type: ty),*
     }) => {
         struct $storage_type<'a> {
-            $($field_name: <$field_type as $crate::IntoHeap<'a>>::Storage),*
+            $($field_name: <$field_type as $crate::IntoHeap<'a>>::In),*
         }
 
         unsafe impl<'a> $crate::InHeap<'a> for $storage_type<'a> {
@@ -46,7 +46,7 @@ macro_rules! gc_ref_type {
         }
 
         unsafe impl<'a> $crate::IntoHeap<'a> for $fields_type<'a> {
-            type Storage = $storage_type<'a>;
+            type In = $storage_type<'a>;
 
             fn into_heap(self) -> $storage_type<'a> {
                 $storage_type {
@@ -74,7 +74,7 @@ macro_rules! gc_ref_type {
         }
 
         unsafe impl<'a> $crate::IntoHeap<'a> for $crate::GCRef<'a, $storage_type<'a>> {
-            type Storage = *mut $storage_type<'a>;
+            type In = *mut $storage_type<'a>;
 
             fn into_heap(self) -> *mut $storage_type<'a> {
                 self.as_ptr()
@@ -189,7 +189,7 @@ macro_rules! gc_inline_enum {
         gc_inline_enum! {
             PARSE_VARIANTS DECLARE_STORAGE_TYPE $more_variants {
                 $($accumulated_output)*
-                $variant_name($(<$field_type as $crate::IntoHeap<'a>>::Storage),*),
+                $variant_name($(<$field_type as $crate::IntoHeap<'a>>::In),*),
             }
             $storage_type
         }
@@ -242,7 +242,7 @@ macro_rules! gc_inline_enum {
             PARSE_VARIANTS MARK $more_variants {
                 $($accumulated_output)*
                 $storage_type::$name ( $(ref mut $binding),* ) => {
-                    $( $crate::InHeap::mark($binding as *mut <$field_type as IntoHeap<'a>>::Storage); )*
+                    $( $crate::InHeap::mark($binding as *mut <$field_type as IntoHeap<'a>>::In); )*
                 }
             }
             $ptr, $storage_type
@@ -411,7 +411,7 @@ macro_rules! gc_inline_enum {
         }
 
         unsafe impl<'a> $crate::IntoHeap<'a> for $stack_type<'a> {
-            type Storage = $storage_type<'a>;
+            type In = $storage_type<'a>;
 
             fn into_heap(self) -> $storage_type<'a> {
                 gc_inline_enum! {

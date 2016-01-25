@@ -50,11 +50,11 @@ pub unsafe fn mark_entry_point<'a, T: InHeap<'a>>(addr: *mut ()) {
 ///
 pub unsafe trait IntoHeap<'a>: Sized {
     /// The type of the value when it is physically stored in the heap.
-    type Storage: InHeap<'a, Out=Self>;
+    type In: InHeap<'a, Out=Self>;
 
     /// Convert the value to the form it should have in the heap.
     /// This is for macro-generated code to call.
-    fn into_heap(self) -> Self::Storage;
+    fn into_heap(self) -> Self::In;
 }
 
 pub fn heap_type_id<'a, T: InHeap<'a>>() -> usize {
@@ -70,7 +70,7 @@ macro_rules! gc_trivial_impl {
         }
 
         unsafe impl<'a> IntoHeap<'a> for $t {
-            type Storage = $t;
+            type In = $t;
             fn into_heap(self) -> $t { self }
         }
     }
