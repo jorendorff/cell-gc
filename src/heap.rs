@@ -124,7 +124,6 @@ impl<'a> Heap<'a> {
         }
     }
 
-    #[cfg(test)]
     pub fn force_gc(&mut self) {
         unsafe { self.gc(); }
     }

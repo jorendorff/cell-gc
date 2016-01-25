@@ -5,3 +5,6 @@ authors = ["Jason Orendorff <jason.orendorff@gmail.com>"]
 
 [dependencies]
 bit-vec = "0.4.3"
+
+[dev-dependencies]
+compiletest_rs = "*"

@@ -80,7 +80,7 @@ macro_rules! gc_ref_type {
             type In = $ref_storage_type<'a>;
 
             fn into_heap(self) -> $ref_storage_type<'a> {
-                $ref_storage_type(self.0.as_ptr())
+                $ref_storage_type(self.0.as_mut_ptr())
             }
         }
 
@@ -95,16 +95,15 @@ macro_rules! gc_ref_type {
                 }
 
                 pub fn $field_setter_name(&self, v: $field_type) {
-                    let ptr = self.0.as_ptr();
+                    let ptr = self.0.as_mut_ptr();
                     unsafe {
                         (*ptr).$field_name = IntoHeap::into_heap(v);
                     }
                 }
             )*
 
-            #[cfg(test)]
-            fn address(&self) -> usize {
-                self.0.as_ptr() as usize
+            pub fn as_mut_ptr(&self) -> *mut $storage_type<'a> {
+                self.0.as_mut_ptr()
             }
         }
     }

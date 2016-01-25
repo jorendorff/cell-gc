@@ -21,7 +21,8 @@ impl<'a, T: InHeap<'a>> GCRef<'a, T> {
         }
     }
 
-    pub fn as_ptr(&self) -> *mut T { self.ptr }
+    pub fn as_ptr(&self) -> *const T { self.ptr }
+    pub fn as_mut_ptr(&self) -> *mut T { self.ptr }
 }
 
 impl<'a, T: InHeap<'a>> Drop for GCRef<'a, T> {
