@@ -2,7 +2,7 @@
 /// the `Storage` types associated with any `IntoHeap` type.
 ///
 pub unsafe trait InHeap<'a>: Sized {
-    type Out: IntoHeap<'a>;
+    type Out: IntoHeap<'a, In=Self>;
 
     unsafe fn mark(ptr: *mut Self);
 
