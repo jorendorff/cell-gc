@@ -4,7 +4,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::ptr;
-use traits::{InHeap, ToHeap, GCThing, GCRef, gcthing_type_id};
+use traits::{InHeap, ToHeap, GCRef, heap_type_id};
 use pages::{PageHeader, TypedPage, PageBox};
 use refs::PinnedRef;
 
@@ -37,8 +37,8 @@ impl<'a> Heap<'a> {
         }
     }
 
-    fn get_page<T: GCThing<'a>>(&mut self) -> &mut TypedPage<'a, T> {
-        let key = gcthing_type_id::<T>();
+    fn get_page<T: InHeap<'a>>(&mut self) -> &mut TypedPage<'a, T> {
+        let key = heap_type_id::<T>();
         let heap_ptr = self as *mut Heap<'a>;
         self.pages
             .entry(key)
@@ -54,7 +54,7 @@ impl<'a> Heap<'a> {
     ///
     /// (Unsafe because if the argument is garbage, a later GC will
     /// crash. Called only from `impl PinnedRef`.)
-    pub unsafe fn pin<T: GCThing<'a>>(&self, p: *mut T) {
+    pub unsafe fn pin<T: InHeap<'a>>(&self, p: *mut T) {
         let p = p as *mut ();
         let mut pins = self.pins.borrow_mut();
         let entry = pins.entry(p).or_insert(0);
@@ -65,7 +65,7 @@ impl<'a> Heap<'a> {
     ///
     /// (Unsafe because unpinning an object that other code is still using
     /// causes dangling pointers. Called only from `impl PinnedRef`.)
-    pub unsafe fn unpin<T: GCThing<'a>>(&self, p: *mut T) {
+    pub unsafe fn unpin<T: InHeap<'a>>(&self, p: *mut T) {
         let p = p as *mut ();
         let mut pins = self.pins.borrow_mut();
         if {
@@ -78,13 +78,13 @@ impl<'a> Heap<'a> {
         }
     }
 
-    pub fn try_alloc<T: GCRef<'a>>(&mut self, fields: T::Fields) -> Option<T> {
+    pub fn try_alloc<T: GCRef<'a>>(&mut self, fields: T::Target) -> Option<T> {
         unsafe {
-            let alloc = self.get_page::<T::ReferentStorage>().try_alloc();
+            let alloc = self.get_page::<T::TargetStorage>().try_alloc();
             alloc
                 .or_else(|| {
                     self.gc();
-                    self.get_page::<T::ReferentStorage>().try_alloc()
+                    self.get_page::<T::TargetStorage>().try_alloc()
                 })
                 .map(move |p| {
                     ptr::write(p, fields.to_heap());
@@ -93,19 +93,19 @@ impl<'a> Heap<'a> {
         }
     }
 
-    pub unsafe fn from_allocation<T: GCThing<'a>>(ptr: *const T) -> *const Heap<'a> {
+    pub unsafe fn from_allocation<T: InHeap<'a>>(ptr: *const T) -> *const Heap<'a> {
         (*TypedPage::find(ptr)).header.heap
     }
 
-    pub unsafe fn get_mark_bit<T: GCThing<'a>>(ptr: *const T) -> bool {
+    pub unsafe fn get_mark_bit<T: InHeap<'a>>(ptr: *const T) -> bool {
         (*TypedPage::find(ptr)).get_mark_bit(ptr)
     }
 
-    pub unsafe fn set_mark_bit<T: GCThing<'a>>(ptr: *const T) {
+    pub unsafe fn set_mark_bit<T: InHeap<'a>>(ptr: *const T) {
         (*TypedPage::find(ptr)).set_mark_bit(ptr);
     }
 
-    pub fn alloc<T: GCRef<'a>>(&mut self, fields: T::Fields) -> T {
+    pub fn alloc<T: GCRef<'a>>(&mut self, fields: T::Target) -> T {
         self.try_alloc(fields).expect("out of memory (gc did not collect anything)")
     }
 

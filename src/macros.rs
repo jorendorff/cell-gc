@@ -86,8 +86,8 @@ macro_rules! gc_ref_type {
         }
 
         impl<'a> $crate::GCRef<'a> for $ref_type<'a> {
-            type ReferentStorage = $storage_type<'a>;
-            type Fields = $fields_type<'a>;
+            type Target = $fields_type<'a>;
+            type TargetStorage = $storage_type<'a>;
 
             fn from_pinned_ref(r: PinnedRef<'a, $storage_type<'a>>) -> $ref_type<'a> {
                 $ref_type(r)
@@ -97,10 +97,6 @@ macro_rules! gc_ref_type {
             fn address(&self) -> usize {
                 unsafe { ::std::mem::transmute(self.0.get_ptr()) }
             }
-        }
-
-        impl<'a> $crate::GCThing<'a> for $storage_type<'a> {
-            type RefType = $ref_type<'a>;
         }
     }
 }

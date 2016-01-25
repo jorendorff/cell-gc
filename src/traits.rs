@@ -3,7 +3,7 @@ use refs::PinnedRef;
 /// Trait implemented by all types that can be stored directly in the GC heap:
 /// the `Storage` types associated with any `ToHeap` type.
 ///
-pub unsafe trait InHeap<'a> {
+pub unsafe trait InHeap<'a>: Sized {
     type Out: ToHeap<'a>;
 
     unsafe fn mark(ptr: *mut Self);
@@ -50,29 +50,24 @@ pub unsafe fn mark_entry_point<'a, T: InHeap<'a>>(addr: *mut ()) {
 ///     direct, non-mut reference exists, which could lead to crashes (due to
 ///     changing enums if nothing else) - all without using any unsafe code.
 ///
-pub unsafe trait ToHeap<'a> {
+pub unsafe trait ToHeap<'a>: Sized {
     /// The type of the value when it is physically stored in the heap.
-    type Storage;
+    type Storage: InHeap<'a, Out=Self>;
 
     /// Convert the value to the form it should have in the heap.
     /// This is for macro-generated code to call.
     fn to_heap(self) -> Self::Storage;
 }
 
-/// Things that can be allocated in the heap (the backing store for a GCRef type).
-pub trait GCThing<'a>: InHeap<'a> + Sized {
-    type RefType: GCRef<'a, ReferentStorage=Self>;
-}
-
-pub fn gcthing_type_id<'a, T: GCThing<'a>>() -> usize {
+pub fn heap_type_id<'a, T: InHeap<'a>>() -> usize {
     mark_entry_point::<T> as *const () as usize
 }
 
 pub trait GCRef<'a>: ToHeap<'a> {
-    type ReferentStorage: GCThing<'a>;
-    type Fields: ToHeap<'a, Storage=Self::ReferentStorage>;
+    type Target: ToHeap<'a, Storage=Self::TargetStorage>;
+    type TargetStorage: InHeap<'a, Out=Self::Target>;
 
-    fn from_pinned_ref(r: PinnedRef<'a, Self::ReferentStorage>) -> Self;
+    fn from_pinned_ref(r: PinnedRef<'a, Self::TargetStorage>) -> Self;
 
     #[cfg(test)]
     fn address(&self) -> usize;

@@ -2,7 +2,7 @@
 
 use std::{mem, ptr};
 use bit_vec::BitVec;
-use traits::{mark_entry_point, GCThing, gcthing_type_id};
+use traits::{mark_entry_point, InHeap, heap_type_id};
 use heap::Heap;
 
 /// Total number of objects that can be allocated in a single page at once.
@@ -59,8 +59,8 @@ impl<'a> PageHeader<'a> {
         self.mark_fn as usize
     }
 
-    pub fn downcast_mut<T: GCThing<'a>>(&mut self) -> Option<&mut TypedPage<'a, T>> {
-        if gcthing_type_id::<T>() == self.type_id() {
+    pub fn downcast_mut<T: InHeap<'a>>(&mut self) -> Option<&mut TypedPage<'a, T>> {
+        if heap_type_id::<T>() == self.type_id() {
             let ptr = self as *mut PageHeader<'a> as *mut TypedPage<'a, T>;
             Some(unsafe { &mut *ptr })
         } else {
@@ -69,12 +69,12 @@ impl<'a> PageHeader<'a> {
     }
 }
 
-pub struct TypedPage<'a, T: GCThing<'a>> {
+pub struct TypedPage<'a, T: InHeap<'a>> {
     pub header: PageHeader<'a>,
     objects: [T; HEAP_SIZE]
 }
 
-impl<'a, T: GCThing<'a>> TypedPage<'a, T> {
+impl<'a, T: InHeap<'a>> TypedPage<'a, T> {
     unsafe fn init(&mut self) {
         for i in 0 .. HEAP_SIZE {
             let p = &mut self.objects[i] as *mut T;
@@ -85,7 +85,7 @@ impl<'a, T: GCThing<'a>> TypedPage<'a, T> {
     pub fn find(ptr: *const T) -> *mut TypedPage<'a, T> {
         let page_addr = ptr as usize & !(PAGE_ALIGN - 1);
         let page = page_addr as *mut TypedPage<'a, T>;
-        assert_eq!(gcthing_type_id::<T>(), unsafe { (*page).header.type_id() });
+        assert_eq!(heap_type_id::<T>(), unsafe { (*page).header.type_id() });
         page
     }
 
@@ -146,14 +146,14 @@ impl<'a, T: GCThing<'a>> TypedPage<'a, T> {
     }
 }
 
-unsafe fn sweep_entry_point<'a, T: GCThing<'a>>(header: &mut PageHeader<'a>) {
+unsafe fn sweep_entry_point<'a, T: InHeap<'a>>(header: &mut PageHeader<'a>) {
     header.downcast_mut::<T>().unwrap().sweep();
 }
 
 pub struct PageBox<'a>(*mut PageHeader<'a>);
 
 impl<'a> PageBox<'a> {
-    pub fn new<T: GCThing<'a>>(heap: *mut Heap<'a>) -> PageBox<'a> {
+    pub fn new<T: InHeap<'a>>(heap: *mut Heap<'a>) -> PageBox<'a> {
         assert!(mem::size_of::<TypedPage<'a, T>>() <= PAGE_SIZE);
         let raw_page: *mut () = {
             let mut vec: Vec<u8> = Vec::with_capacity(PAGE_SIZE);
