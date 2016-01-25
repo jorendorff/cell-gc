@@ -159,7 +159,7 @@ macro_rules! gc_inline_enum {
     } => {
         gc_inline_enum! {
             AS_ITEM
-            enum $storage_type<'a> {
+            pub enum $storage_type<'a> {
                 $($accumulated_output)*
             }
         }
