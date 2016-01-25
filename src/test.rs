@@ -1,4 +1,3 @@
-use std::default::Default;
 use std::rc::Rc;
 use super::*;
 
@@ -6,15 +5,6 @@ gc_ref_type! {
     pub struct Pair / PairFields / PairStorage<'a> {
         head / set_head: Value<'a>,
         tail / set_tail: Value<'a>
-    }
-}
-
-impl<'a> Default for PairStorage<'a> {
-    fn default() -> PairStorage<'a> {
-        PairStorage {
-            head: ValueStorage::Null,
-            tail: ValueStorage::Null
-        }
     }
 }
 

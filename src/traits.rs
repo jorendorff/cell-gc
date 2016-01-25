@@ -55,7 +55,7 @@ pub unsafe trait HeapInline<'a> {
 }
 
 /// Things that can be allocated in the heap (the backing store for a GCRef type).
-pub trait GCThing<'a>: Mark<'a> + Sized + Default {
+pub trait GCThing<'a>: Mark<'a> + Sized {
     type RefType: GCRef<'a, ReferentStorage=Self>;
 }
 
