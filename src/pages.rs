@@ -28,7 +28,7 @@ pub struct PageHeader<'a> {
     mark_bits: BitVec,
     allocated_bits: BitVec,
     mark_fn: unsafe fn(*mut ()),
-    sweep_fn: unsafe fn(*mut PageHeader<'a>),
+    sweep_fn: unsafe fn(&mut PageHeader<'a>),
     freelist: *mut ()
 }
 
@@ -57,6 +57,15 @@ impl<'a> PageHeader<'a> {
 
     pub fn type_id(&self) -> usize {
         self.mark_fn as usize
+    }
+
+    pub fn downcast_mut<T: GCThing<'a>>(&mut self) -> Option<&mut TypedPage<'a, T>> {
+        if gcthing_type_id::<T>() == self.type_id() {
+            let ptr = self as *mut PageHeader<'a> as *mut TypedPage<'a, T>;
+            Some(unsafe { &mut *ptr })
+        } else {
+            None
+        }
     }
 }
 
@@ -137,10 +146,8 @@ impl<'a, T: GCThing<'a>> TypedPage<'a, T> {
     }
 }
 
-unsafe fn sweep_entry_point<'a, T: GCThing<'a>>(header: *mut PageHeader<'a>) {
-    // little reinterpret_cast as downcast, no worries
-    let typed_page = header as *mut TypedPage<'a, T>;
-    (*typed_page).sweep();
+unsafe fn sweep_entry_point<'a, T: GCThing<'a>>(header: &mut PageHeader<'a>) {
+    header.downcast_mut::<T>().unwrap().sweep();
 }
 
 pub struct PageBox<'a>(*mut PageHeader<'a>);
@@ -177,26 +184,18 @@ impl<'a> PageBox<'a> {
             PageBox(&mut (*page).header as *mut PageHeader<'a>)
         }
     }
+}
 
-    pub fn downcast_mut<T: GCThing<'a>>(&mut self) -> Option<&mut TypedPage<'a, T>> {
-        if gcthing_type_id::<T>() == unsafe { (*self.0).type_id() } {
-            let ptr = self.0 as *mut TypedPage<'a, T>;
-            Some(unsafe { &mut *ptr })
-        } else {
-            None
-        }
-    }
-
-    pub fn header(&self) -> &PageHeader<'a> {
+impl<'a> ::std::ops::Deref for PageBox<'a> {
+    type Target = PageHeader<'a>;
+    fn deref(&self) -> &PageHeader<'a> {
         unsafe { &*self.0 }
     }
+}
 
-    pub fn header_mut(&mut self) -> &mut PageHeader<'a> {
+impl<'a> ::std::ops::DerefMut for PageBox<'a> {
+    fn deref_mut(&mut self) -> &mut PageHeader<'a> {
         unsafe { &mut *self.0 }
-    }
-
-    pub fn sweep(&mut self) {
-        unsafe { (*self.0).sweep(); }
     }
 }
 
@@ -217,6 +216,6 @@ impl<'a> Drop for PageBox<'a> {
 
 impl<'a> ::std::hash::Hash for PageBox<'a> {
     fn hash<H: ::std::hash::Hasher>(&self, hasher: &mut H) {
-        hasher.write_usize(self.header().type_id());
+        hasher.write_usize(self.type_id());
     }
 }
