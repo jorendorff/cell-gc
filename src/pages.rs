@@ -65,22 +65,6 @@ pub struct TypedPage<'a, T: GCThing<'a>> {
     objects: [T; HEAP_SIZE]
 }
 
-impl<'a, T: GCThing<'a>> Drop for TypedPage<'a, T> {
-    fn drop(&mut self) {
-        // All the memory in self.objects is uninitialized at this point. Rust
-        // will drop each of those objects, which would crash. So we have this
-        // super lame hack: initialize all the objects with innocuous values so
-        // they can be safely destroyed.
-        for i in 0 .. HEAP_SIZE {
-            unsafe {
-                ptr::write(
-                    &mut self.objects[i] as *mut T,
-                    T::default());
-            }
-        }
-    }
-}
-
 impl<'a, T: GCThing<'a>> TypedPage<'a, T> {
     unsafe fn init(&mut self) {
         for i in 0 .. HEAP_SIZE {
