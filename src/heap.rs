@@ -5,15 +5,15 @@ use std::collections::HashMap;
 use std::default::Default;
 use std::marker::PhantomData;
 use std::{fmt, mem, ptr};
-use traits::{Mark, HeapInline, GCThing, GCRef, gcthing_type_id};
-use pages::{PageHeader, TypedPage};
+use traits::{Mark, HeapInline, GCThing, GCRef};
+use pages::{PageHeader, TypedPage, PageBox};
 
 // What does this do? You'll never guess!
 type HeapId<'a> = PhantomData<::std::cell::Cell<&'a mut ()>>;
 
 pub struct Heap<'a> {
     id: HeapId<'a>,
-    page: Option<Box<TypedPage<'a, PairStorage<'a>>>>,  // XXX BOGUS
+    page: Option<PageBox<'a>>,
     pins: RefCell<HashMap<*mut (), usize>>
 }
 
@@ -37,22 +37,16 @@ impl<'a> Heap<'a> {
         }
     }
 
-    fn get_page<T: GCThing<'a>>(&mut self) -> &mut Box<TypedPage<'a, T>> {
-        match self.page {
-            Some(ref mut page) => return unsafe { mem::transmute(page) },
-            None => ()
-        }
-
-        // XXX BOGUS
-        if gcthing_type_id::<T>() == gcthing_type_id::<PairStorage>() {
-            self.page = Some(unsafe {
-                TypedPage::new(self as *mut Heap<'a>)
-            });
-        }
-
-        match self.page {
-            Some(ref mut page) => return unsafe { mem::transmute(page) },
-            None => panic!("Heap::get_page: unsupported type (sorry!)")
+    fn get_page<T: GCThing<'a>>(&mut self) -> &mut TypedPage<'a, T> {
+        if let Some(ref mut page) = self.page {
+            page.downcast_mut::<T>().expect("only one type of thing can be implemented")
+        } else {
+            self.page = Some(PageBox::new::<T>(self));
+            if let Some(ref mut page) = self.page {
+                page.downcast_mut::<T>().unwrap()
+            } else {
+                unreachable!("we just assigned Some value to this");
+            }
         }
     }
 
@@ -120,15 +114,15 @@ impl<'a> Heap<'a> {
 
     unsafe fn gc(&mut self) {
         // mark phase
-        for page in self.page.iter_mut() {
-            page.header.clear_mark_bits();
+        if let Some(ref mut page) = self.page {
+            page.header_mut().clear_mark_bits();
         }
         for (&ptr, _) in self.pins.borrow().iter() {
             (*PageHeader::<'a>::find(ptr)).mark(ptr);
         }
 
         // sweep phase
-        for page in self.page.iter_mut() {
+        if let Some(ref mut page) = self.page {
             page.sweep();
         }
     }
@@ -148,7 +142,7 @@ impl<'a> Drop for Heap<'a> {
         let mut tmp = None;
         mem::swap(&mut tmp, &mut self.page);
         if let Some(page) = tmp {
-            assert!(page.header.is_empty());
+            assert!(page.header().is_empty());
         }
     }
 }

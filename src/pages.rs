@@ -5,51 +5,61 @@ use bit_vec::BitVec;
 use traits::{mark_entry_point, GCThing, gcthing_type_id};
 use heap::Heap;
 
-/// Total number of Pair objects that can be allocated in a Heap at once.
+/// Total number of objects that can be allocated in a single page at once.
 ///
 /// XXX BOGUS: At present, this is number is carefully selected (with insider
-/// knowledge of both `size_of::<PairStorage>()` on my platform and the `Box`
+/// knowledge of both `size_of::<PairStorage>()` on my platform and the `Vec`
 /// allocator's behavior) so that a TypedPage object fits in a page and thus
 /// the assertions below about PAGE_ALIGN pass.
-pub const HEAP_SIZE: usize = 125;
+pub const HEAP_SIZE: usize = 124;
+
+const PAGE_SIZE: usize = 0x1000;
 
 /// We rely on all bits to the right of this bit being 0 in addresses of
 /// TypedPage instances.
 const PAGE_ALIGN: usize = 0x1000;
 
+fn is_aligned(ptr: *const ()) -> bool {
+    ptr as usize & (PAGE_ALIGN - 1) == 0
+}
+
 pub struct PageHeader<'a> {
     pub heap: *mut Heap<'a>,
     mark_bits: BitVec,
     allocated_bits: BitVec,
-    mark_entry_point: unsafe fn(*mut ()),
-    freelist: *mut (),
+    mark_fn: unsafe fn(*mut ()),
+    sweep_fn: unsafe fn(*mut PageHeader<'a>),
+    freelist: *mut ()
 }
 
 impl<'a> PageHeader<'a> {
-    pub fn type_id(&self) -> usize {
-        self.mark_entry_point as *const () as usize
-    }
-
     pub fn find(ptr: *mut ()) -> *mut PageHeader<'a> {
         let header_addr = ptr as usize & !(PAGE_ALIGN - 1);
         header_addr as *mut PageHeader<'a>
     }
 
-    pub fn clear_mark_bits() {
+    pub fn clear_mark_bits(&mut self) {
         self.mark_bits.clear();
     }
 
     /// True if nothing on this page is allocated.
-    pub fn is_empty() -> bool {
+    pub fn is_empty(&self) -> bool {
         self.allocated_bits.none()
     }
 
     pub unsafe fn mark(&self, ptr: *mut ()) {
-        (self.mark_entry_point)(ptr);
+        (self.mark_fn)(ptr);
+    }
+
+    pub unsafe fn sweep(&mut self) {
+        (self.sweep_fn)(self);
+    }
+
+    pub fn type_id(&self) -> usize {
+        self.mark_fn as usize
     }
 }
 
-// The heap is (for now) just a big array of Pairs
 pub struct TypedPage<'a, T: GCThing<'a>> {
     pub header: PageHeader<'a>,
     objects: [T; HEAP_SIZE]
@@ -72,29 +82,11 @@ impl<'a, T: GCThing<'a>> Drop for TypedPage<'a, T> {
 }
 
 impl<'a, T: GCThing<'a>> TypedPage<'a, T> {
-    pub unsafe fn new(heap: *mut Heap<'a>) -> Box<TypedPage<'a, T>> {
-        let mut typed_page = Box::new(TypedPage {
-            header: PageHeader {
-                heap: heap,
-                mark_bits: BitVec::from_elem(HEAP_SIZE, false),
-                allocated_bits: BitVec::from_elem(HEAP_SIZE, false),
-                mark_entry_point: mark_entry_point::<T>,
-                freelist: ptr::null_mut()
-            },
-            objects: mem::uninitialized()
-        });
-
-        // These assertions will likely fail on 32-bit platforms or if someone
-        // is somehow using a custom Box allocator. If either one fails, this
-        // GC will not work.
-        assert_eq!(&mut *typed_page as *mut TypedPage<'a, T> as usize & (PAGE_ALIGN - 1), 0);
-        assert!(mem::size_of::<TypedPage<'a, T>>() <= PAGE_ALIGN);
-
+    unsafe fn init(&mut self) {
         for i in 0 .. HEAP_SIZE {
-            let p = &mut typed_page.objects[i] as *mut T;
-            typed_page.add_to_free_list(p);
+            let p = &mut self.objects[i] as *mut T;
+            self.add_to_free_list(p);
         }
-        typed_page
     }
 
     pub fn find(ptr: *const T) -> *mut TypedPage<'a, T> {
@@ -148,7 +140,7 @@ impl<'a, T: GCThing<'a>> TypedPage<'a, T> {
         }
     }
 
-    pub unsafe fn sweep(&mut self) {
+    unsafe fn sweep(&mut self) {
         for i in 0 .. HEAP_SIZE {
             let p = &mut self.objects[i] as *mut T;
             if self.header.allocated_bits[i] && !self.header.mark_bits[i] {
@@ -158,5 +150,89 @@ impl<'a, T: GCThing<'a>> TypedPage<'a, T> {
                 self.add_to_free_list(p);
             }
         }
+    }
+}
+
+unsafe fn sweep_entry_point<'a, T: GCThing<'a>>(header: *mut PageHeader<'a>) {
+    // little reinterpret_cast as downcast, no worries
+    let typed_page = header as *mut TypedPage<'a, T>;
+    (*typed_page).sweep();
+}
+
+pub struct PageBox<'a>(*mut PageHeader<'a>);
+
+impl<'a> PageBox<'a> {
+    pub fn new<T: GCThing<'a>>(heap: &mut Heap<'a>) -> PageBox<'a> {
+        assert!(mem::size_of::<TypedPage<'a, T>>() <= PAGE_SIZE);
+        let raw_page: *mut () = {
+            let mut vec: Vec<u8> = Vec::with_capacity(PAGE_SIZE);
+            let page = vec.as_mut_ptr() as *mut ();
+
+            // Rust makes no guarantee whatsoever that this will work.
+            // If it doesn't, panic.
+            assert!(is_aligned(page));
+
+            mem::forget(vec);
+            page
+        };
+
+        let page: *mut TypedPage<'a, T> = raw_page as *mut TypedPage<'a, T>;
+        unsafe {
+            ptr::write(page, TypedPage {
+                header: PageHeader {
+                    heap: heap as *mut Heap<'a>,
+                    mark_bits: BitVec::from_elem(HEAP_SIZE, false),
+                    allocated_bits: BitVec::from_elem(HEAP_SIZE, false),
+                    mark_fn: mark_entry_point::<T>,
+                    sweep_fn: sweep_entry_point::<T>,
+                    freelist: ptr::null_mut()
+                },
+                objects: mem::uninitialized()
+            });
+            TypedPage::<'a, T>::init(&mut *page);
+            PageBox(&mut (*page).header as *mut PageHeader<'a>)
+        }
+    }
+
+    pub fn downcast_mut<T: GCThing<'a>>(&mut self) -> Option<&mut TypedPage<'a, T>> {
+        if gcthing_type_id::<T>() == unsafe { (*self.0).type_id() } {
+            let ptr = self.0 as *mut TypedPage<'a, T>;
+            Some(unsafe { &mut *ptr })
+        } else {
+            None
+        }
+    }
+
+    pub fn header(&self) -> &PageHeader<'a> {
+        unsafe { &*self.0 }
+    }
+
+    pub fn header_mut(&mut self) -> &mut PageHeader<'a> {
+        unsafe { &mut *self.0 }
+    }
+
+    pub fn sweep(&mut self) {
+        unsafe { (*self.0).sweep(); }
+    }
+}
+
+impl<'a> Drop for PageBox<'a> {
+    fn drop(&mut self) {
+        unsafe {
+            assert!((*self.0).is_empty());
+
+            // Call the header's destructor. (ptr::read returns a temporary copy of
+            // the header. Since we don't store it anywhere, it is then dropped.)
+            ptr::read(self.0);
+
+            // Deallocate the memory.
+            Vec::from_raw_parts(self.0 as *mut u8, 0, PAGE_SIZE);
+        }
+    }
+}
+
+impl<'a> ::std::hash::Hash for PageBox<'a> {
+    fn hash<H: ::std::hash::Hasher>(&self, hasher: &mut H) {
+        hasher.write_usize(self.header().type_id());
     }
 }
