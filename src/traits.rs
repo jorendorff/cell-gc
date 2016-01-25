@@ -1,19 +1,45 @@
-/// Trait implemented by all types that can be stored directly in the GC heap:
-/// the `Storage` types associated with any `IntoHeap` type.
+/// `InHeap` types can be stored directly in the GC heap.
+///
+/// Application code does not need to use this trait. It is only public so that
+/// the public macros can use it. Use the friendly macros!
+///
+/// GC types come in pairs: an `InHeap` type, which is stored physically inside
+/// the heap, and may be packed with pointer fields and unsafe methods; and an
+/// `IntoHeap` type, which is safe, is used in application code, and lives on
+/// the stack.
+///
+/// Users never get a direct `&` reference to any value stored in the heap. All
+/// access is through safe `IntoHeap` types, like `GCRef`.
+///
+/// *   For primitive types, like `i32`, the two types are the same.
+///
+/// *   `GCRef<'a, T>` is an `IntoHeap` type; the corresponding `InHeap` type
+///     is the pointer type `*mut T`.
+///
+/// *   For macro-generated structs and enums, the user specifies the names of
+///     both types. Both types have identical fields or variants, but fields of
+///     the `InHeap` type are `InHeap`, and fields of the `IntoHeap` type are
+///     `IntoHeap`.
+///
+/// Unsafe to implement: `from_heap` receives a non-mut reference to a heap
+/// value. There may exist gc-references to that value, in which case
+/// `from_heap` (or other code it calls) could *without using any unsafe code*
+/// modify the value while this direct, non-mut reference exists. This breaks
+/// Rust's aliasing rules and could cause crashes due to changing enums, if
+/// nothing else.
 ///
 pub unsafe trait InHeap<'a>: Sized {
     type Out: IntoHeap<'a, In=Self>;
 
     unsafe fn mark(ptr: *mut Self);
 
-    /// Extract the value from the heap. This is for macro-generated code to
-    /// call; it is impossible for ordinary users to call this safely, because
-    /// `self` must be a direct, unwrapped reference to a value stored in the
-    /// GC heap, which ordinary users cannot obtain.
+    /// Extract the value from the heap. This turns any raw pointers in the
+    /// `InHeap` value into safe references, so while it's an unsafe function,
+    /// the result of a correct call can be safely handed out to user code.
     ///
-    /// This turns any raw pointers in the `Storage` value into safe
-    /// references, so while it's a dangerous function, the result of a correct
-    /// call can be safely handed out to user code.
+    /// Unsafe to call: It is impossible for ordinary users to call this
+    /// safely, because `self` must be a direct, unwrapped reference to a value
+    /// stored in the GC heap, which ordinary users cannot obtain.
     ///
     unsafe fn from_heap(&self) -> Self::Out;
 }
@@ -24,29 +50,24 @@ pub unsafe fn mark_entry_point<'a, T: InHeap<'a>>(addr: *mut ()) {
     InHeap::mark(addr as *mut T);
 }
 
-/// `IntoHeap` types are safe to use and can be stored in a field of a GC struct.
+/// `IntoHeap` types live on the stack, in application code. They are the
+/// safe, user-friendly analogues to pointer-filled `InHeap` types. When you
+/// use `gc_ref_type!` to declare a new GC struct or enum, `IntoHeap` types are
+/// the types you use for fields.
 ///
-/// "Safe to use" means they don't expose raw pointers to GC memory, and they
-/// obey Rust's safety and aliasing rules. If a `IntoHeap` value contains a
-/// pointer to a GC allocation, then that allocation (and everything reachable
-/// from it) is protected from GC.
+/// Application code does not need to use this trait. It is only public so that
+/// the public macros can use it. Use the friendly macros!
 ///
-/// "Stored in a field of a GC struct" - This includes primitive types like `i32`,
-/// but also GC structs themselves (because they can be nested).
+/// "Safe to use" means they don't expose pointers or references to GC memory;
+/// and they obey Rust's safety and aliasing rules. If an `IntoHeap` value
+/// contains a pointer to a GC allocation, then that allocation (and everything
+/// reachable from it) is protected from GC.
 ///
-/// This trait is unsafe to implement for several reasons, ranging from:
+/// "Stored in a field of a GC struct" - This includes primitive types like
+/// `i32`, but also GC structs and enums (they can nest).
 ///
-/// *   The common-sense: API users aren't supposed to know or care about this.
-///     It is only public so that the public macros can see it. Use the macros.
-///
-/// *   ...To the obvious: `Storage` objects are full of pointers and if
-///     `into_heap` puts garbage into them, GC will crash.
-///
-/// *   ...To the subtle: `from_heap` receives a non-mut reference to a heap
-///     value. But there may exist gc-references to that value, in which case
-///     `from_heap` (or other code it calls) could modify the value while this
-///     direct, non-mut reference exists, which could lead to crashes (due to
-///     changing enums if nothing else) - all without using any unsafe code.
+/// Unsafe to implement: `InHeap` objects are full of pointers; if `into_heap`
+/// puts garbage into them, GC will crash.
 ///
 pub unsafe trait IntoHeap<'a>: Sized {
     /// The type of the value when it is physically stored in the heap.
