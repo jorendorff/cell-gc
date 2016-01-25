@@ -153,7 +153,7 @@ unsafe fn sweep_entry_point<'a, T: GCThing<'a>>(header: &mut PageHeader<'a>) {
 pub struct PageBox<'a>(*mut PageHeader<'a>);
 
 impl<'a> PageBox<'a> {
-    pub fn new<T: GCThing<'a>>(heap: &mut Heap<'a>) -> PageBox<'a> {
+    pub fn new<T: GCThing<'a>>(heap: *mut Heap<'a>) -> PageBox<'a> {
         assert!(mem::size_of::<TypedPage<'a, T>>() <= PAGE_SIZE);
         let raw_page: *mut () = {
             let mut vec: Vec<u8> = Vec::with_capacity(PAGE_SIZE);
@@ -171,7 +171,7 @@ impl<'a> PageBox<'a> {
         unsafe {
             ptr::write(page, TypedPage {
                 header: PageHeader {
-                    heap: heap as *mut Heap<'a>,
+                    heap: heap,
                     mark_bits: BitVec::from_elem(HEAP_SIZE, false),
                     allocated_bits: BitVec::from_elem(HEAP_SIZE, false),
                     mark_fn: mark_entry_point::<T>,
@@ -211,11 +211,5 @@ impl<'a> Drop for PageBox<'a> {
             // Deallocate the memory.
             Vec::from_raw_parts(self.0 as *mut u8, 0, PAGE_SIZE);
         }
-    }
-}
-
-impl<'a> ::std::hash::Hash for PageBox<'a> {
-    fn hash<H: ::std::hash::Hasher>(&self, hasher: &mut H) {
-        hasher.write_usize(self.type_id());
     }
 }
