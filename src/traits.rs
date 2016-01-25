@@ -1,4 +1,4 @@
-use heap::PinnedRef;
+use refs::PinnedRef;
 
 /// Trait implemented by all types that can be stored directly in the GC heap:
 /// the `Storage` types associated with any `HeapInline` or `HeapRef` type.

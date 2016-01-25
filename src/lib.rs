@@ -4,8 +4,10 @@ mod traits;
 #[macro_use] mod macros;
 mod pages;
 mod heap;
+mod refs;
 
-pub use heap::{Heap, with_heap, PinnedRef};
+pub use heap::{Heap, with_heap};
+pub use refs::PinnedRef;
 pub use traits::{Mark, HeapInline, GCThing, GCRef};
 pub use pages::HEAP_SIZE;
 
