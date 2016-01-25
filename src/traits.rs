@@ -3,16 +3,27 @@ use refs::PinnedRef;
 /// Trait implemented by all types that can be stored directly in the GC heap:
 /// the `Storage` types associated with any `ToHeap` type.
 ///
-/// XXX maybe this should not be its own trait - fold into ToHeap?
-///
-pub unsafe trait Mark<'a> {
+pub unsafe trait InHeap<'a> {
+    type Out: ToHeap<'a>;
+
     unsafe fn mark(ptr: *mut Self);
+
+    /// Extract the value from the heap. This is for macro-generated code to
+    /// call; it is impossible for ordinary users to call this safely, because
+    /// `self` must be a direct, unwrapped reference to a value stored in the
+    /// GC heap, which ordinary users cannot obtain.
+    ///
+    /// This turns any raw pointers in the `Storage` value into safe
+    /// references, so while it's a dangerous function, the result of a correct
+    /// call can be safely handed out to user code.
+    ///
+    unsafe fn from_heap(&self) -> Self::Out;
 }
 
 /// Non-inlined function that serves as an entry point to marking. This is used
 /// for marking root set entries.
-pub unsafe fn mark_entry_point<'a, T: Mark<'a>>(addr: *mut ()) {
-    Mark::mark(addr as *mut T);
+pub unsafe fn mark_entry_point<'a, T: InHeap<'a>>(addr: *mut ()) {
+    InHeap::mark(addr as *mut T);
 }
 
 /// `ToHeap` types are safe to use and can be stored in a field of a GC struct.
@@ -43,25 +54,13 @@ pub unsafe trait ToHeap<'a> {
     /// The type of the value when it is physically stored in the heap.
     type Storage;
 
-    /// Extract the value from the heap. Do not under any circumstances call
-    /// this.  It is for macro-generated code to call; it is impossible for
-    /// ordinary users to call this safely, because `ptr` must be a direct,
-    /// unwrapped reference to a value stored in the GC heap, which ordinary
-    /// users cannot obtain.
-    ///
-    /// This turns any raw pointers in the `Storage` value into safe
-    /// references, so while it's a dangerous function, the result of a correct
-    /// call can be safely handed out to user code.
-    ///
-    unsafe fn from_heap(ptr: &Self::Storage) -> Self;
-
     /// Convert the value to the form it should have in the heap.
     /// This is for macro-generated code to call.
     fn to_heap(self) -> Self::Storage;
 }
 
 /// Things that can be allocated in the heap (the backing store for a GCRef type).
-pub trait GCThing<'a>: Mark<'a> + Sized {
+pub trait GCThing<'a>: InHeap<'a> + Sized {
     type RefType: GCRef<'a, ReferentStorage=Self>;
 }
 
@@ -81,14 +80,15 @@ pub trait GCRef<'a>: ToHeap<'a> {
 
 macro_rules! gc_trivial_impl {
     ($t:ty) => {
-        unsafe impl<'a> Mark<'a> for $t {
+        unsafe impl<'a> InHeap<'a> for $t {
+            type Out = $t;
             unsafe fn mark(_ptr: *mut $t) {}
+            unsafe fn from_heap(&self) -> $t { self.clone() }
         }
 
         unsafe impl<'a> ToHeap<'a> for $t {
-            type Storage = Self;
+            type Storage = $t;
             fn to_heap(self) -> $t { self }
-            unsafe fn from_heap(v: &$t) -> $t { (*v).clone() }
         }
     }
 }
@@ -116,6 +116,6 @@ gc_trivial_impl!(Rc<String>);
 // Unfortunately I can't make the compiler understand this: the rules
 // to prevent conflicting trait impls make this conflict with almost
 // everything.
-unsafe impl<'a, T: Clone + 'static> Mark<'a> for T { ...trivial... }
+unsafe impl<'a, T: Clone + 'static> InHeap<'a> for T { ...trivial... }
 unsafe impl<'a, T: Clone + 'static> ToHeap<'a> for T { ...trivial... }
 */
