@@ -27,7 +27,7 @@ macro_rules! gc_ref_type {
         }
 
         unsafe impl<'a> $crate::InHeap<'a> for *mut $storage_type<'a> {
-            type Out = $crate::PinnedRef<'a, $storage_type<'a>>;
+            type Out = $crate::GCRef<'a, $storage_type<'a>>;
 
             unsafe fn mark(field_ptr: *mut *mut $storage_type<'a>) {
                 let ptr = *field_ptr;
@@ -36,8 +36,8 @@ macro_rules! gc_ref_type {
                 }
             }
 
-            unsafe fn from_heap(&self) -> $crate::PinnedRef<'a, $storage_type<'a>> {
-                $crate::PinnedRef::new(*self)
+            unsafe fn from_heap(&self) -> $crate::GCRef<'a, $storage_type<'a>> {
+                $crate::GCRef::new(*self)
             }
         }
 
@@ -55,7 +55,7 @@ macro_rules! gc_ref_type {
             }
         }
 
-        impl<'a> $crate::PinnedRef<'a, $storage_type<'a>> {
+        impl<'a> $crate::GCRef<'a, $storage_type<'a>> {
             $(
                 pub fn $field_name(&self) -> $field_type {
                     let ptr = self.as_ptr();
@@ -73,7 +73,7 @@ macro_rules! gc_ref_type {
             )*
         }
 
-        unsafe impl<'a> $crate::ToHeap<'a> for $crate::PinnedRef<'a, $storage_type<'a>> {
+        unsafe impl<'a> $crate::ToHeap<'a> for $crate::GCRef<'a, $storage_type<'a>> {
             type Storage = *mut $storage_type<'a>;
 
             fn to_heap(self) -> *mut $storage_type<'a> {
@@ -81,7 +81,7 @@ macro_rules! gc_ref_type {
             }
         }
 
-        impl<'a> $crate::PinnedRef<'a, $storage_type<'a>> {
+        impl<'a> $crate::GCRef<'a, $storage_type<'a>> {
             #[cfg(test)]
             fn address(&self) -> usize {
                 self.as_ptr() as usize

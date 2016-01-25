@@ -8,7 +8,7 @@ gc_ref_type! {
     }
 }
 
-type GCRefPair<'a> = PinnedRef<'a, PairStorage<'a> >;
+type GCRefPair<'a> = GCRef<'a, PairStorage<'a> >;
 
 gc_inline_enum! {
     pub enum Value / ValueStorage <'a> {

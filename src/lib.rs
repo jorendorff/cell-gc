@@ -7,7 +7,7 @@ mod heap;
 mod refs;
 
 pub use heap::{Heap, with_heap};
-pub use refs::PinnedRef;
+pub use refs::GCRef;
 pub use traits::{InHeap, ToHeap};
 pub use pages::HEAP_SIZE;
 

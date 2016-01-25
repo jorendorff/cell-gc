@@ -6,7 +6,7 @@ use std::marker::PhantomData;
 use std::ptr;
 use traits::{InHeap, ToHeap, heap_type_id};
 use pages::{PageHeader, TypedPage, PageBox};
-use refs::PinnedRef;
+use refs::GCRef;
 
 // What does this do? You'll never guess!
 pub type HeapId<'a> = PhantomData<::std::cell::Cell<&'a mut ()>>;
@@ -53,7 +53,7 @@ impl<'a> Heap<'a> {
     /// until it has been unpinned *n* times.
     ///
     /// (Unsafe because if the argument is garbage, a later GC will
-    /// crash. Called only from `impl PinnedRef`.)
+    /// crash. Called only from `impl GCRef`.)
     pub unsafe fn pin<T: InHeap<'a>>(&self, p: *mut T) {
         let p = p as *mut ();
         let mut pins = self.pins.borrow_mut();
@@ -64,7 +64,7 @@ impl<'a> Heap<'a> {
     /// Unpin an object (see `pin`).
     ///
     /// (Unsafe because unpinning an object that other code is still using
-    /// causes dangling pointers. Called only from `impl PinnedRef`.)
+    /// causes dangling pointers. Called only from `impl GCRef`.)
     pub unsafe fn unpin<T: InHeap<'a>>(&self, p: *mut T) {
         let p = p as *mut ();
         let mut pins = self.pins.borrow_mut();
@@ -78,7 +78,7 @@ impl<'a> Heap<'a> {
         }
     }
 
-    pub fn try_alloc<T: ToHeap<'a>>(&mut self, value: T) -> Option<PinnedRef<'a, T::Storage>> {
+    pub fn try_alloc<T: ToHeap<'a>>(&mut self, value: T) -> Option<GCRef<'a, T::Storage>> {
         unsafe {
             let alloc = self.get_page::<T::Storage>().try_alloc();
             alloc
@@ -88,7 +88,7 @@ impl<'a> Heap<'a> {
                 })
                 .map(move |p| {
                     ptr::write(p, value.to_heap());
-                    PinnedRef::new(p)
+                    GCRef::new(p)
                 })
         }
     }
@@ -105,7 +105,7 @@ impl<'a> Heap<'a> {
         (*TypedPage::find(ptr)).set_mark_bit(ptr);
     }
 
-    pub fn alloc<T: ToHeap<'a>>(&mut self, value: T) -> PinnedRef<'a, T::Storage> {
+    pub fn alloc<T: ToHeap<'a>>(&mut self, value: T) -> GCRef<'a, T::Storage> {
         self.try_alloc(value).expect("out of memory (gc did not collect anything)")
     }
 
