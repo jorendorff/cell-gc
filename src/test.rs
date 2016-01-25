@@ -2,11 +2,13 @@ use std::rc::Rc;
 use super::*;
 
 gc_ref_type! {
-    pub struct GCRefPair / Pair / PairStorage<'a> {
+    pub struct Pair / PairStorage<'a> {
         head / set_head: Value<'a>,
         tail / set_tail: Value<'a>
     }
 }
+
+type GCRefPair<'a> = PinnedRef<'a, PairStorage<'a> >;
 
 gc_inline_enum! {
     pub enum Value / ValueStorage <'a> {

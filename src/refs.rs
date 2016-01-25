@@ -21,7 +21,7 @@ impl<'a, T: InHeap<'a>> PinnedRef<'a, T> {
         }
     }
 
-    pub fn get_ptr(&self) -> *mut T { self.ptr }
+    pub fn as_ptr(&self) -> *mut T { self.ptr }
 }
 
 impl<'a, T: InHeap<'a>> Drop for PinnedRef<'a, T> {

@@ -1,6 +1,6 @@
 #[macro_export]
 macro_rules! gc_ref_type {
-    (pub struct $ref_type:ident / $fields_type:ident / $storage_type:ident <'a> {
+    (pub struct $fields_type:ident / $storage_type:ident <'a> {
         $($field_name:ident / $field_setter_name:ident : $field_type: ty),*
     }) => {
         struct $storage_type<'a> {
@@ -27,7 +27,7 @@ macro_rules! gc_ref_type {
         }
 
         unsafe impl<'a> $crate::InHeap<'a> for *mut $storage_type<'a> {
-            type Out = $ref_type<'a>;
+            type Out = $crate::PinnedRef<'a, $storage_type<'a>>;
 
             unsafe fn mark(field_ptr: *mut *mut $storage_type<'a>) {
                 let ptr = *field_ptr;
@@ -36,8 +36,8 @@ macro_rules! gc_ref_type {
                 }
             }
 
-            unsafe fn from_heap(&self) -> $ref_type<'a> {
-                $ref_type($crate::PinnedRef::new(*self))
+            unsafe fn from_heap(&self) -> $crate::PinnedRef<'a, $storage_type<'a>> {
+                $crate::PinnedRef::new(*self)
             }
         }
 
@@ -55,21 +55,17 @@ macro_rules! gc_ref_type {
             }
         }
 
-        #[allow(raw_pointer_derive)]
-        #[derive(Clone, Debug, PartialEq)]
-        pub struct $ref_type<'a>($crate::PinnedRef<'a, $storage_type<'a>>);
-
-        impl<'a> $ref_type<'a> {
+        impl<'a> $crate::PinnedRef<'a, $storage_type<'a>> {
             $(
                 pub fn $field_name(&self) -> $field_type {
-                    let ptr = self.0.get_ptr();
+                    let ptr = self.as_ptr();
                     unsafe {
                         InHeap::from_heap(&(*ptr).$field_name)
                     }
                 }
 
                 pub fn $field_setter_name(&self, v: $field_type) {
-                    let ptr = self.0.get_ptr();
+                    let ptr = self.as_ptr();
                     unsafe {
                         (*ptr).$field_name = ToHeap::to_heap(v);
                     }
@@ -77,25 +73,18 @@ macro_rules! gc_ref_type {
             )*
         }
 
-        unsafe impl<'a> $crate::ToHeap<'a> for $ref_type<'a> {
+        unsafe impl<'a> $crate::ToHeap<'a> for $crate::PinnedRef<'a, $storage_type<'a>> {
             type Storage = *mut $storage_type<'a>;
 
-            fn to_heap(self) -> Self::Storage {
-                self.0.get_ptr()
+            fn to_heap(self) -> *mut $storage_type<'a> {
+                self.as_ptr()
             }
         }
 
-        impl<'a> $crate::GCRef<'a> for $ref_type<'a> {
-            type Target = $fields_type<'a>;
-            type TargetStorage = $storage_type<'a>;
-
-            fn from_pinned_ref(r: PinnedRef<'a, $storage_type<'a>>) -> $ref_type<'a> {
-                $ref_type(r)
-            }
-
+        impl<'a> $crate::PinnedRef<'a, $storage_type<'a>> {
             #[cfg(test)]
             fn address(&self) -> usize {
-                unsafe { ::std::mem::transmute(self.0.get_ptr()) }
+                self.as_ptr() as usize
             }
         }
     }

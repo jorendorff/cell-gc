@@ -1,5 +1,3 @@
-use refs::PinnedRef;
-
 /// Trait implemented by all types that can be stored directly in the GC heap:
 /// the `Storage` types associated with any `ToHeap` type.
 ///
@@ -61,16 +59,6 @@ pub unsafe trait ToHeap<'a>: Sized {
 
 pub fn heap_type_id<'a, T: InHeap<'a>>() -> usize {
     mark_entry_point::<T> as *const () as usize
-}
-
-pub trait GCRef<'a>: ToHeap<'a> {
-    type Target: ToHeap<'a, Storage=Self::TargetStorage>;
-    type TargetStorage: InHeap<'a, Out=Self::Target>;
-
-    fn from_pinned_ref(r: PinnedRef<'a, Self::TargetStorage>) -> Self;
-
-    #[cfg(test)]
-    fn address(&self) -> usize;
 }
 
 macro_rules! gc_trivial_impl {
