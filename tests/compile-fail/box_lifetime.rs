@@ -22,4 +22,3 @@ fn main() {
         let thing_1_revived = (*thing_2.boxed_ref()).unwrap();  // bad
     });
 }
-
