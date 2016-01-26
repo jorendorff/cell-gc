@@ -156,6 +156,31 @@ gc_generic_trivial_impl!([T: Clone + 'static] Box<T>);
 use std::rc::Rc;
 gc_generic_trivial_impl!([T: Clone + 'static] Rc<T>);
 
+unsafe impl<'a, U: InHeap<'a>> InHeap<'a> for Option<U> {
+    type Out = Option<U::Out>;
+
+    unsafe fn mark(ptr: *mut Option<U>) {
+        match *ptr {
+            None => (),
+            Some(ref mut u) => InHeap::mark(u as *mut U)
+        }
+    }
+
+    unsafe fn from_heap(&self) -> Option<U::Out> {
+        match self {
+            &None => None,
+            &Some(ref u) => Some(u.from_heap())
+        }
+    }
+}
+
+unsafe impl<'a, T: IntoHeap<'a>> IntoHeap<'a> for Option<T> {
+    type In = Option<T::In>;
+    fn into_heap(self) -> Option<T::In> {
+        self.map(|t| t.into_heap())
+    }
+}
+
 /*
 // 'static types are heap-safe because ref types are never 'static.
 // Unfortunately I can't make the compiler understand this: the rules

@@ -30,7 +30,7 @@ macro_rules! gc_ref_type {
         }
 
         // === $fields_type: A safe version of the struct
-        #[derive(Clone, Debug, PartialEq)]
+        #[derive(Clone, Debug)]
         pub struct $fields_type<'a> {
             $(pub $field_name: $field_type),*
         }
