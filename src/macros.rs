@@ -13,11 +13,11 @@ macro_rules! gc_ref_type {
         unsafe impl<'a> $crate::traits::InHeap<'a> for $storage_type<'a> {
             type Out = $fields_type<'a>;
 
-            unsafe fn mark(ptr: *mut $storage_type<'a>) {
-                if !$crate::Heap::get_mark_bit(ptr) {
-                    $crate::Heap::set_mark_bit(ptr);
+            unsafe fn mark(&self) {
+                if !$crate::Heap::get_mark_bit(self) {
+                    $crate::Heap::set_mark_bit(self);
                     $(
-                        $crate::traits::InHeap::mark(&mut (*ptr).$field_name);
+                        $crate::traits::InHeap::mark(&self.$field_name);
                     )*
                 }
             }
@@ -60,10 +60,10 @@ macro_rules! gc_ref_type {
         unsafe impl<'a> $crate::traits::InHeap<'a> for $ref_storage_type<'a> {
             type Out = $ref_type<'a>;
 
-            unsafe fn mark(ptr_to_ptr: *mut $ref_storage_type<'a>) {
-                let $ref_storage_type(ptr) = *ptr_to_ptr;
+            unsafe fn mark(&self) {
+                let ptr = self.0;
                 if !ptr.is_null() {
-                    $crate::traits::InHeap::mark(ptr);
+                    $crate::traits::InHeap::mark(&*ptr);
                 }
             }
 
@@ -216,11 +216,11 @@ macro_rules! gc_inline_enum {
     };
 
     {
-        MARK DONE { $($accumulated_output:tt)* } $ptr:ident, $_storage_type:ty
+        MARK DONE { $($accumulated_output:tt)* } $self_ref:ident, $_storage_type:ty
     } => {
         gc_inline_enum! {
             AS_EXPR
-            match *$ptr {
+            match *$self_ref {
                 $($accumulated_output)*
             }
         }
@@ -230,14 +230,14 @@ macro_rules! gc_inline_enum {
         MARK VARIANT $name:ident NO_FIELDS
         $more_variants:tt
         { $($accumulated_output:tt)* }
-        $ptr:ident, $storage_type:ident
+        $self_ref:ident, $storage_type:ident
     } => {
         gc_inline_enum! {
             PARSE_VARIANTS MARK $more_variants {
                 $($accumulated_output)*
                 $storage_type::$name => (),
             }
-            $ptr, $storage_type
+            $self_ref, $storage_type
         }
     };
 
@@ -255,18 +255,17 @@ macro_rules! gc_inline_enum {
         MARK CONTINUE_VARIANT $name:ident
         $more_variants:tt
         { $($accumulated_output:tt)* }
-        $ptr:ident, $storage_type:ident
+        $self_ref:ident, $storage_type:ident
         ( $(($binding:ident : $field_type:ty))* )
     } => {
         gc_inline_enum! {
             PARSE_VARIANTS MARK $more_variants {
                 $($accumulated_output)*
-                $storage_type::$name ( $(ref mut $binding),* ) => {
-                    $( $crate::traits::InHeap::mark(
-                        $binding as *mut <$field_type as $crate::traits::IntoHeap<'a>>::In); )*
+                $storage_type::$name ( $(ref $binding),* ) => {
+                    $( $crate::traits::InHeap::mark($binding); )*
                 }
             }
-            $ptr, $storage_type
+            $self_ref, $storage_type
         }
     };
 
@@ -416,10 +415,10 @@ macro_rules! gc_inline_enum {
         unsafe impl<'a> $crate::traits::InHeap<'a> for $storage_type<'a> {
             type Out = $stack_type<'a>;
 
-            unsafe fn mark(ptr: *mut $storage_type<'a>) {
+            unsafe fn mark(&self) {
                 gc_inline_enum! {
                     PARSE_VARIANTS MARK $variants {}
-                    ptr, $storage_type
+                    self, $storage_type
                 }
             }
 

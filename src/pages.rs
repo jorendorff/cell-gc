@@ -7,8 +7,8 @@ use heap::Heap;
 
 /// Non-inlined function that serves as an entry point to marking. This is used
 /// for marking root set entries.
-unsafe fn mark_entry_point<'a, T: InHeap<'a>>(addr: *mut ()) {
-    InHeap::mark(addr as *mut T);
+unsafe fn mark_entry_point<'a, T: InHeap<'a>>(addr: *const ()) {
+    InHeap::mark(&*(addr as *const T));
 }
 
 pub fn heap_type_id<'a, T: InHeap<'a>>() -> usize {
@@ -37,7 +37,7 @@ pub struct PageHeader<'a> {
     pub heap: *mut Heap<'a>,
     mark_bits: BitVec,
     allocated_bits: BitVec,
-    mark_fn: unsafe fn(*mut ()),
+    mark_fn: unsafe fn(*const ()),
     sweep_fn: unsafe fn(&mut PageHeader<'a>),
     freelist: *mut ()
 }
@@ -57,7 +57,7 @@ impl<'a> PageHeader<'a> {
         self.allocated_bits.none()
     }
 
-    pub unsafe fn mark(&self, ptr: *mut ()) {
+    pub unsafe fn mark(&self, ptr: *const ()) {
         (self.mark_fn)(ptr);
     }
 

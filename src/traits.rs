@@ -49,9 +49,9 @@ pub unsafe trait InHeap<'a>: Sized {
     type Out: IntoHeap<'a, In=Self>;
 
     /// Unsafe to call: It is impossible for ordinary users to call this
-    /// safely, because `ptr` must be a raw pointer to a value stored in the GC
-    /// heap, which ordinary users cannot obtain.
-    unsafe fn mark(ptr: *mut Self);
+    /// safely, because `self` must be a direct, unwrapped reference to a value
+    /// stored in the GC heap, which ordinary users cannot obtain.
+    unsafe fn mark(&self);
 
     /// Extract the value from the heap. This turns any raw pointers in the
     /// `InHeap` value into safe references, so while it's an unsafe function,
@@ -106,7 +106,7 @@ macro_rules! gc_trivial_impl {
     ($t:ty) => {
         unsafe impl<'a> InHeap<'a> for $t {
             type Out = $t;
-            unsafe fn mark(_ptr: *mut $t) {}
+            unsafe fn mark(&self) {}
             unsafe fn from_heap(&self) -> $t { self.clone() }
         }
 
@@ -124,7 +124,7 @@ macro_rules! gc_generic_trivial_impl {
             #[as_item]
             unsafe impl<'a, $($x)*> InHeap<'a> for $t {
                 type Out = $t;
-                unsafe fn mark(_ptr: *mut $t) {}
+                unsafe fn mark(&self) {}
                 unsafe fn from_heap(&self) -> $t { self.clone() }
             }
         }
@@ -165,10 +165,10 @@ gc_generic_trivial_impl!([T: Clone + 'static] ::std::rc::Rc<T>);
 unsafe impl<'a, U: InHeap<'a>> InHeap<'a> for Option<U> {
     type Out = Option<U::Out>;
 
-    unsafe fn mark(ptr: *mut Option<U>) {
-        match *ptr {
-            None => (),
-            Some(ref mut u) => InHeap::mark(u as *mut U)
+    unsafe fn mark(&self) {
+        match self {
+            &None => (),
+            &Some(ref u) => u.mark()
         }
     }
 
@@ -196,14 +196,14 @@ macro_rules! gc_trivial_tuple_impl {
                 type Out = ($($t::Out,)*);
 
                 #[allow(non_snake_case)]  // because we use the type names as variable names (!)
-                unsafe fn mark(ptr: *mut Self) {
-                    let ($(ref mut $t,)*) = *ptr;
-                    $(InHeap::mark($t as *mut $t);)*
+                unsafe fn mark(&self) {
+                    let &($(ref $t,)*) = self;
+                    $( $t.mark(); )*
                 }
 
                 #[allow(non_snake_case)]
                 unsafe fn from_heap(&self) -> Self::Out {
-                    let ($(ref $t,)*) = *self;
+                    let &($(ref $t,)*) = self;
                     ($($t.from_heap(),)*)
                 }
             }
