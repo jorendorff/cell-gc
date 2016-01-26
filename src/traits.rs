@@ -151,6 +151,7 @@ gc_trivial_impl!(usize);
 gc_trivial_impl!(f32);
 gc_trivial_impl!(f64);
 
+gc_generic_trivial_impl!([T: ?Sized] &'static T);
 gc_generic_trivial_impl!([T: Clone + 'static] Box<T>);
 
 use std::rc::Rc;
