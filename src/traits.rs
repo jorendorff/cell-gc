@@ -23,12 +23,12 @@ use gcref::GCRef;
 ///     the `InHeap` type are `InHeap`, and fields of the `IntoHeap` type are
 ///     `IntoHeap`.
 ///
-/// Unsafe to implement: `from_heap` receives a non-mut reference to a heap
-/// value. There may exist gc-references to that value, in which case
-/// `from_heap` (or other code it calls) could *without using any unsafe code*
-/// modify the value while this direct, non-mut reference exists. This breaks
-/// Rust's aliasing rules and could cause crashes due to changing enums, if
-/// nothing else.
+/// Unsafe to implement: `from_heap` is incredibly dangerous. It receives a
+/// non-mut reference to a heap value. That value may contain gc-references to
+/// itself, directly or indirectly, in which case `from_heap` (or other code it
+/// calls) could *without using any unsafe code* modify the heap while this
+/// direct, non-mut reference exists. This breaks Rust's aliasing rules and
+/// could cause crashes.
 ///
 pub unsafe trait InHeap<'a>: Sized {
     type Out: IntoHeap<'a, In=Self>;
