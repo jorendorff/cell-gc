@@ -38,7 +38,6 @@ But here is how you would, if you figure all that out:
 
 ```rust
 #[macro_use] extern crate toy_gc;
-use toy_gc::*;
 
 /// A linked list of numbers that lives in the GC heap.
 gc_ref_type! {
@@ -52,7 +51,7 @@ gc_ref_type! {
 
 fn main() {
     // Create a heap (you'll only do this once in your whole program)
-    with_heap(|heap| {
+    toy_gc::with_heap(|heap| {
         // Allocate an object (returns a RefIntList)
         let obj1 = heap.alloc(IntList { head: 17, tail: None });
         assert_eq!(obj1.head(), 17);

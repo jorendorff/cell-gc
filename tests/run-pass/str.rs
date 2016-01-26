@@ -1,7 +1,6 @@
 //! Static strings can be stored in the heap.
 
 #[macro_use] extern crate toy_gc;
-use toy_gc::*;
 
 gc_ref_type! {
     pub struct Philosopher / RefPhilosopher / InHeapPhilosopher / InHeapRefPhilosopher <'a> {
@@ -11,7 +10,7 @@ gc_ref_type! {
 }
 
 fn main() {
-    with_heap(|heap| {
+    toy_gc::with_heap(|heap| {
         let s = heap.alloc(Philosopher {
             name: "Socrates",
             teacher: None

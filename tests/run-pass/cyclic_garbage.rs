@@ -2,11 +2,10 @@
 
 #[macro_use] extern crate toy_gc;
 mod pairs_aux;
-use toy_gc::*;
 use pairs_aux::*;
 
 fn main() {
-    with_heap(|heap| {
+    toy_gc::with_heap(|heap| {
         // Make a cycle.
         let (p1, p2);
         {
@@ -22,7 +21,7 @@ fn main() {
         let mut recycled1 = 0;
         let mut recycled2 = 0;
         let mut root = Value::Null;
-        for _ in 0 .. HEAP_SIZE {
+        for _ in 0 .. toy_gc::HEAP_SIZE {
             let p = alloc_pair(heap, Value::Null, root);
             root = Value::Pair(p.clone());
             if p.as_mut_ptr() == p1 {

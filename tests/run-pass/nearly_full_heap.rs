@@ -2,14 +2,13 @@
 
 #[macro_use] extern crate toy_gc;
 mod pairs_aux;
-use toy_gc::*;
 use pairs_aux::*;
 
 fn main() {
-    with_heap(|heap| {
+    toy_gc::with_heap(|heap| {
         // Make the heap nearly full by allocating (HEAP_SIZE - 1) objects.
         let mut v = Value::Null;
-        for _ in 0 .. HEAP_SIZE - 1 {
+        for _ in 0 .. toy_gc::HEAP_SIZE - 1 {
             v = Value::Pair(alloc_pair(heap, Value::Null, v));
         }
 

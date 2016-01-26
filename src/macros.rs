@@ -48,7 +48,7 @@ macro_rules! gc_ref_type {
         impl<'a> $crate::IntoHeapAllocation<'a> for $fields_type<'a> {
             type Ref = $ref_type<'a>;
 
-            fn wrap_gcref(gcref: GCRef<'a, $storage_type<'a>>) -> $ref_type<'a> {
+            fn wrap_gcref(gcref: $crate::GCRef<'a, $storage_type<'a>>) -> $ref_type<'a> {
                 $ref_type(gcref)
             }
         }
@@ -63,7 +63,7 @@ macro_rules! gc_ref_type {
             unsafe fn mark(ptr_to_ptr: *mut $ref_storage_type<'a>) {
                 let $ref_storage_type(ptr) = *ptr_to_ptr;
                 if !ptr.is_null() {
-                    InHeap::mark(ptr);
+                    $crate::InHeap::mark(ptr);
                 }
             }
 
@@ -90,14 +90,14 @@ macro_rules! gc_ref_type {
                 pub fn $field_name(&self) -> $field_type {
                     let ptr = self.0.as_ptr();
                     unsafe {
-                        InHeap::from_heap(&(*ptr).$field_name)
+                        $crate::InHeap::from_heap(&(*ptr).$field_name)
                     }
                 }
 
                 pub fn $field_setter_name(&self, v: $field_type) {
                     let ptr = self.0.as_mut_ptr();
                     unsafe {
-                        (*ptr).$field_name = IntoHeap::into_heap(v);
+                        (*ptr).$field_name = $crate::IntoHeap::into_heap(v);
                     }
                 }
             )*
@@ -261,7 +261,7 @@ macro_rules! gc_inline_enum {
             PARSE_VARIANTS MARK $more_variants {
                 $($accumulated_output)*
                 $storage_type::$name ( $(ref mut $binding),* ) => {
-                    $( $crate::InHeap::mark($binding as *mut <$field_type as IntoHeap<'a>>::In); )*
+                    $( $crate::InHeap::mark($binding as *mut <$field_type as $crate::IntoHeap<'a>>::In); )*
                 }
             }
             $ptr, $storage_type
@@ -335,7 +335,7 @@ macro_rules! gc_inline_enum {
             PARSE_VARIANTS TO_HEAP $more_variants {
                 $($accumulated_output)*
                 $stack_type::$name ( $($binding),* ) =>
-                    $storage_type::$name( $(IntoHeap::into_heap($binding)),* ),
+                    $storage_type::$name( $($crate::IntoHeap::into_heap($binding)),* ),
             }
             $self_, $stack_type / $storage_type
         }

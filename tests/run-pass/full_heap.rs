@@ -3,7 +3,6 @@
 
 #[macro_use] extern crate toy_gc;
 mod pairs_aux;
-use toy_gc::*;
 use pairs_aux::*;
 
 fn null_pair<'a>() -> Pair<'a> {
@@ -11,10 +10,10 @@ fn null_pair<'a>() -> Pair<'a> {
 }
 
 fn main() {
-    with_heap(|heap| {
+    toy_gc::with_heap(|heap| {
         // Fill up the heap by allocating HEAP_SIZE objects.
         let mut v = Value::Null;
-        for _ in 0 .. HEAP_SIZE {
+        for _ in 0 .. toy_gc::HEAP_SIZE {
             v = Value::Pair(alloc_pair(heap, Value::Null, v));
         }
 

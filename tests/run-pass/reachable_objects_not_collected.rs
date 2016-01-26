@@ -3,11 +3,10 @@
 
 #[macro_use] extern crate toy_gc;
 mod pairs_aux;
-use toy_gc::*;
 use pairs_aux::*;
 
 fn main() {
-    with_heap(|heap| {
+    toy_gc::with_heap(|heap| {
         let obj1 = alloc_null_pair(heap);
         let (p2, p3, p4, p5);
         {

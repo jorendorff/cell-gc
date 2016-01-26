@@ -1,10 +1,11 @@
 //! The mini-example from README.md actually works.
 
 #[macro_use] extern crate toy_gc;
-use toy_gc::*;
 
 /// A linked list of numbers that lives in the GC heap.
 gc_ref_type! {
+    // This declares four different related structs, but the last two are
+    // for the GC's internal use. Read on to see the first two in action.
     pub struct IntList / RefIntList / InHeapIntList / InHeapRefIntList <'a> {
         head / set_head: i64,
         tail / set_tail: Option<RefIntList<'a>>
@@ -13,7 +14,7 @@ gc_ref_type! {
 
 fn main() {
     // Create a heap (you'll only do this once in your whole program)
-    with_heap(|heap| {
+    toy_gc::with_heap(|heap| {
         // Allocate an object (returns a RefIntList)
         let obj1 = heap.alloc(IntList { head: 17, tail: None });
         assert_eq!(obj1.head(), 17);

@@ -2,11 +2,10 @@
 
 #[macro_use] extern crate toy_gc;
 mod pairs_aux;
-use toy_gc::*;
 use pairs_aux::*;
 
 fn main() {
-    with_heap(|heap| {
+    toy_gc::with_heap(|heap| {
         // Set up obj1 and obj2 to point to each other.
         let obj1 = alloc_null_pair(heap);
         let obj2 = alloc_pair(heap,
