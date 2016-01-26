@@ -152,6 +152,12 @@ impl<'a> Heap<'a> {
     }
 
     pub fn try_alloc<T: IntoHeapAllocation<'a>>(&mut self, value: T) -> Option<T::Ref> {
+        // For now, this is done very early, so that if it panics, the heap is
+        // left in an OK state. Better wrapping of raw pointers would make it
+        // possible to do this later, closer to the `ptr::write()` call. (And
+        // the compiler might optimize away this temporary if we do it that
+        // way.) Looking forward to placement new!
+        let u = value.into_heap();
         unsafe {
             let alloc = self.get_page::<T::In>().try_alloc();
             alloc
@@ -160,7 +166,7 @@ impl<'a> Heap<'a> {
                     self.get_page::<T::In>().try_alloc()
                 })
                 .map(move |p| {
-                    ptr::write(p, value.into_heap());
+                    ptr::write(p, u);
                     T::wrap_gcref(GCRef::new(p))
                 })
         }

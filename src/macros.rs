@@ -96,8 +96,9 @@ macro_rules! gc_ref_type {
 
                 pub fn $field_setter_name(&self, v: $field_type) {
                     let ptr = self.0.as_mut_ptr();
+                    let u = $crate::IntoHeap::into_heap(v);
                     unsafe {
-                        (*ptr).$field_name = $crate::IntoHeap::into_heap(v);
+                        (*ptr).$field_name = u;
                     }
                 }
             )*
