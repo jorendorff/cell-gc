@@ -1,10 +1,12 @@
+//! The traits defined here are implementation details of toy_gc.
+//!
+//! Application code does not need to use these traits. They are public only so
+//! that the public macros can use it. Use the friendly macros!
+
 use gcref::GCRef;
 
 /// `InHeap` types can be stored directly in the GC heap. All primitive types
 /// and many standard types implement `InHeap`.
-///
-/// Application code does not need to use this trait. It is only public so that
-/// the public macros can use it. Use the friendly macros!
 ///
 /// GC types come in pairs: an `InHeap` type, which is stored physically inside
 /// the heap, and may be packed with pointer fields and unsafe methods; and an
@@ -43,10 +45,12 @@ use gcref::GCRef;
 /// but alas, Rust thinks those impls conflict with almost all others, making
 /// it impossible to get the macros to work. So instead we `impl InHeap for` a
 /// lot of individual types by hand.
-///
 pub unsafe trait InHeap<'a>: Sized {
     type Out: IntoHeap<'a, In=Self>;
 
+    /// Unsafe to call: It is impossible for ordinary users to call this
+    /// safely, because `ptr` must be a raw pointer to a value stored in the GC
+    /// heap, which ordinary users cannot obtain.
     unsafe fn mark(ptr: *mut Self);
 
     /// Extract the value from the heap. This turns any raw pointers in the
@@ -56,7 +60,6 @@ pub unsafe trait InHeap<'a>: Sized {
     /// Unsafe to call: It is impossible for ordinary users to call this
     /// safely, because `self` must be a direct, unwrapped reference to a value
     /// stored in the GC heap, which ordinary users cannot obtain.
-    ///
     unsafe fn from_heap(&self) -> Self::Out;
 }
 
@@ -71,9 +74,6 @@ pub unsafe fn mark_entry_point<'a, T: InHeap<'a>>(addr: *mut ()) {
 /// use `gc_ref_type!` to declare a new GC struct or enum, `IntoHeap` types are
 /// the types you use for fields.
 ///
-/// Application code does not need to use this trait. It is only public so that
-/// the public macros can use it. Use the friendly macros!
-///
 /// "Safe to use" means they don't expose pointers or references to GC memory;
 /// and they obey Rust's safety and aliasing rules. If an `IntoHeap` value
 /// contains a pointer to a GC allocation, then that allocation (and everything
@@ -84,13 +84,16 @@ pub unsafe fn mark_entry_point<'a, T: InHeap<'a>>(addr: *mut ()) {
 ///
 /// Unsafe to implement: `InHeap` objects are full of pointers; if `into_heap`
 /// puts garbage into them, GC will crash.
-///
 pub unsafe trait IntoHeap<'a>: Sized {
     /// The type of the value when it is physically stored in the heap.
     type In: InHeap<'a, Out=Self>;
 
     /// Convert the value to the form it should have in the heap.
     /// This is for macro-generated code to call.
+    ///
+    /// This method must not be called while any direct Rust references to
+    /// heap objects exist. (However, user code never runs while such
+    /// references exist, so the method is not marked `unsafe`.)
     fn into_heap(self) -> Self::In;
 }
 
@@ -99,10 +102,6 @@ pub fn heap_type_id<'a, T: InHeap<'a>>() -> usize {
 }
 
 /// Relate an `IntoHeap` type to the corresponding safe reference type.
-///
-/// Application code does not need to use this trait. It is only public so that
-/// the public macros can use it. Use the friendly macros!
-///
 pub trait IntoHeapAllocation<'a>: IntoHeap<'a>
 {
     type Ref: IntoHeap<'a>;
