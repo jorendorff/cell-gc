@@ -1,6 +1,7 @@
 use gcref::GCRef;
 
-/// `InHeap` types can be stored directly in the GC heap.
+/// `InHeap` types can be stored directly in the GC heap. All primitive types
+/// and many standard types implement `InHeap`.
 ///
 /// Application code does not need to use this trait. It is only public so that
 /// the public macros can use it. Use the friendly macros!
@@ -29,6 +30,19 @@ use gcref::GCRef;
 /// calls) could *without using any unsafe code* modify the heap while this
 /// direct, non-mut reference exists. This breaks Rust's aliasing rules and
 /// could cause crashes.
+///
+/// Implementation note: every type with `'static` lifetime should be safe to
+/// store in the heap, because ref types are never `'static`. Unfortunately I
+/// can't make rustc understand this. It would be *legal* to write this:
+///
+/// ```ignore
+/// unsafe impl<'a, T: Clone + 'static> InHeap<'a> for T { ...trivial... }
+/// unsafe impl<'a, T: Clone + 'static> IntoHeap<'a> for T { ...trivial... }
+/// ```
+///
+/// but alas, Rust thinks those impls conflict with almost all others, making
+/// it impossible to get the macros to work. So instead we `impl InHeap for` a
+/// lot of individual types by hand.
 ///
 pub unsafe trait InHeap<'a>: Sized {
     type Out: IntoHeap<'a, In=Self>;
@@ -115,10 +129,10 @@ macro_rules! gc_trivial_impl {
 }
 
 macro_rules! gc_generic_trivial_impl {
-    (#[AS_ITEM] $it:item) => { $it};
+    (#[as_item] $it:item) => { $it};
     ([$($x:tt)*] $t:ty) => {
         gc_generic_trivial_impl! {
-            #[AS_ITEM]
+            #[as_item]
             unsafe impl<'a, $($x)*> InHeap<'a> for $t {
                 type Out = $t;
                 unsafe fn mark(_ptr: *mut $t) {}
@@ -127,7 +141,7 @@ macro_rules! gc_generic_trivial_impl {
         }
 
         gc_generic_trivial_impl! {
-            #[AS_ITEM]
+            #[as_item]
             unsafe impl<'a, $($x)*> IntoHeap<'a> for $t {
                 type In = $t;
                 fn into_heap(self) -> $t { self }
@@ -153,9 +167,11 @@ gc_trivial_impl!(f64);
 
 gc_generic_trivial_impl!([T: ?Sized] &'static T);
 gc_generic_trivial_impl!([T: Clone + 'static] Box<T>);
+gc_generic_trivial_impl!([T: Clone + 'static] ::std::rc::Rc<T>);
 
-use std::rc::Rc;
-gc_generic_trivial_impl!([T: Clone + 'static] Rc<T>);
+
+// Transitive implementations ("this particular kind of struct/enum is InHeap
+// if all its fields are") are slightly less trivial.
 
 unsafe impl<'a, U: InHeap<'a>> InHeap<'a> for Option<U> {
     type Out = Option<U::Out>;
@@ -182,11 +198,48 @@ unsafe impl<'a, T: IntoHeap<'a>> IntoHeap<'a> for Option<T> {
     }
 }
 
-/*
-// 'static types are heap-safe because ref types are never 'static.
-// Unfortunately I can't make the compiler understand this: the rules
-// to prevent conflicting trait impls make this conflict with almost
-// everything.
-unsafe impl<'a, T: Clone + 'static> InHeap<'a> for T { ...trivial... }
-unsafe impl<'a, T: Clone + 'static> IntoHeap<'a> for T { ...trivial... }
-*/
+macro_rules! gc_trivial_tuple_impl {
+    (#[as_item] $it:item) => { $it };
+    ($($t:ident),*) => {
+        gc_trivial_tuple_impl! {
+            #[as_item]
+            unsafe impl<'a $(, $t: InHeap<'a>)*> InHeap<'a> for ($($t,)*) {
+                type Out = ($($t::Out,)*);
+
+                #[allow(non_snake_case)]  // because we use the type names as variable names (!)
+                unsafe fn mark(ptr: *mut Self) {
+                    let ($(ref mut $t,)*) = *ptr;
+                    $(InHeap::mark($t as *mut $t);)*
+                }
+
+                #[allow(non_snake_case)]
+                unsafe fn from_heap(&self) -> Self::Out {
+                    let ($(ref $t,)*) = *self;
+                    ($($t.from_heap(),)*)
+                }
+            }
+        }
+
+        gc_trivial_tuple_impl! {
+            #[as_item]
+            unsafe impl<'a, $($t: IntoHeap<'a>,)*> IntoHeap<'a> for ($($t,)*) {
+                type In = ($($t::In,)*);
+
+                #[allow(non_snake_case)]
+                fn into_heap(self) -> Self::In {
+                    let ($($t,)*) = self;
+                    ($($t.into_heap(),)*)
+                }
+            }
+        }
+    }
+}
+
+gc_trivial_tuple_impl!();
+gc_trivial_tuple_impl!(T);
+gc_trivial_tuple_impl!(T, U);
+gc_trivial_tuple_impl!(T, U, V);
+gc_trivial_tuple_impl!(T, U, V, W);
+gc_trivial_tuple_impl!(T, U, V, W, X);
+gc_trivial_tuple_impl!(T, U, V, W, X, Y);
+gc_trivial_tuple_impl!(T, U, V, W, X, Y, Z);
