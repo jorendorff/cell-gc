@@ -2,8 +2,18 @@
 
 use std::{mem, ptr};
 use bit_vec::BitVec;
-use traits::{mark_entry_point, InHeap, heap_type_id};
+use traits::InHeap;
 use heap::Heap;
+
+/// Non-inlined function that serves as an entry point to marking. This is used
+/// for marking root set entries.
+unsafe fn mark_entry_point<'a, T: InHeap<'a>>(addr: *mut ()) {
+    InHeap::mark(addr as *mut T);
+}
+
+pub fn heap_type_id<'a, T: InHeap<'a>>() -> usize {
+    mark_entry_point::<T> as *const () as usize
+}
 
 /// Total number of objects that can be allocated in a single page at once.
 ///

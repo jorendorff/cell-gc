@@ -63,12 +63,6 @@ pub unsafe trait InHeap<'a>: Sized {
     unsafe fn from_heap(&self) -> Self::Out;
 }
 
-/// Non-inlined function that serves as an entry point to marking. This is used
-/// for marking root set entries.
-pub unsafe fn mark_entry_point<'a, T: InHeap<'a>>(addr: *mut ()) {
-    InHeap::mark(addr as *mut T);
-}
-
 /// `IntoHeap` types live on the stack, in application code. They are the
 /// safe, user-friendly analogues to pointer-filled `InHeap` types. When you
 /// use `gc_ref_type!` to declare a new GC struct or enum, `IntoHeap` types are
@@ -95,10 +89,6 @@ pub unsafe trait IntoHeap<'a>: Sized {
     /// heap objects exist. (However, user code never runs while such
     /// references exist, so the method is not marked `unsafe`.)
     fn into_heap(self) -> Self::In;
-}
-
-pub fn heap_type_id<'a, T: InHeap<'a>>() -> usize {
-    mark_entry_point::<T> as *const () as usize
 }
 
 /// Relate an `IntoHeap` type to the corresponding safe reference type.

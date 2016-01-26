@@ -7,24 +7,24 @@ macro_rules! gc_ref_type {
     } => {
         // === $storage_type: the InHeap representation of the struct
         pub struct $storage_type<'a> {
-            $($field_name: <$field_type as $crate::IntoHeap<'a>>::In),*
+            $($field_name: <$field_type as $crate::traits::IntoHeap<'a>>::In),*
         }
 
-        unsafe impl<'a> $crate::InHeap<'a> for $storage_type<'a> {
+        unsafe impl<'a> $crate::traits::InHeap<'a> for $storage_type<'a> {
             type Out = $fields_type<'a>;
 
             unsafe fn mark(ptr: *mut $storage_type<'a>) {
                 if !$crate::Heap::get_mark_bit(ptr) {
                     $crate::Heap::set_mark_bit(ptr);
                     $(
-                        $crate::InHeap::mark(&mut (*ptr).$field_name);
+                        $crate::traits::InHeap::mark(&mut (*ptr).$field_name);
                     )*
                 }
             }
 
             unsafe fn from_heap(&self) -> $fields_type<'a> {
                 $fields_type {
-                    $( $field_name: $crate::InHeap::from_heap(&self.$field_name) ),*
+                    $( $field_name: $crate::traits::InHeap::from_heap(&self.$field_name) ),*
                 }
             }
         }
@@ -35,17 +35,17 @@ macro_rules! gc_ref_type {
             $(pub $field_name: $field_type),*
         }
 
-        unsafe impl<'a> $crate::IntoHeap<'a> for $fields_type<'a> {
+        unsafe impl<'a> $crate::traits::IntoHeap<'a> for $fields_type<'a> {
             type In = $storage_type<'a>;
 
             fn into_heap(self) -> $storage_type<'a> {
                 $storage_type {
-                    $( $field_name: $crate::IntoHeap::into_heap(self.$field_name) ),*
+                    $( $field_name: $crate::traits::IntoHeap::into_heap(self.$field_name) ),*
                 }
             }
         }
 
-        impl<'a> $crate::IntoHeapAllocation<'a> for $fields_type<'a> {
+        impl<'a> $crate::traits::IntoHeapAllocation<'a> for $fields_type<'a> {
             type Ref = $ref_type<'a>;
 
             fn wrap_gcref(gcref: $crate::GCRef<'a, $storage_type<'a>>) -> $ref_type<'a> {
@@ -57,13 +57,13 @@ macro_rules! gc_ref_type {
         #[derive(Clone, Copy, Debug, PartialEq, Eq)]
         pub struct $ref_storage_type<'a>(*mut $storage_type<'a>);
 
-        unsafe impl<'a> $crate::InHeap<'a> for $ref_storage_type<'a> {
+        unsafe impl<'a> $crate::traits::InHeap<'a> for $ref_storage_type<'a> {
             type Out = $ref_type<'a>;
 
             unsafe fn mark(ptr_to_ptr: *mut $ref_storage_type<'a>) {
                 let $ref_storage_type(ptr) = *ptr_to_ptr;
                 if !ptr.is_null() {
-                    $crate::InHeap::mark(ptr);
+                    $crate::traits::InHeap::mark(ptr);
                 }
             }
 
@@ -76,7 +76,7 @@ macro_rules! gc_ref_type {
         #[derive(Clone, Debug, PartialEq, Eq)]
         pub struct $ref_type<'a>($crate::GCRef<'a, $storage_type<'a>>);
 
-        unsafe impl<'a> $crate::IntoHeap<'a> for $ref_type<'a> {
+        unsafe impl<'a> $crate::traits::IntoHeap<'a> for $ref_type<'a> {
             type In = $ref_storage_type<'a>;
 
             fn into_heap(self) -> $ref_storage_type<'a> {
@@ -90,13 +90,13 @@ macro_rules! gc_ref_type {
                 pub fn $field_name(&self) -> $field_type {
                     let ptr = self.0.as_ptr();
                     unsafe {
-                        $crate::InHeap::from_heap(&(*ptr).$field_name)
+                        $crate::traits::InHeap::from_heap(&(*ptr).$field_name)
                     }
                 }
 
                 pub fn $field_setter_name(&self, v: $field_type) {
                     let ptr = self.0.as_mut_ptr();
-                    let u = $crate::IntoHeap::into_heap(v);
+                    let u = $crate::traits::IntoHeap::into_heap(v);
                     unsafe {
                         (*ptr).$field_name = u;
                     }
@@ -209,7 +209,7 @@ macro_rules! gc_inline_enum {
         gc_inline_enum! {
             PARSE_VARIANTS DECLARE_STORAGE_TYPE $more_variants {
                 $($accumulated_output)*
-                $variant_name($(<$field_type as $crate::IntoHeap<'a>>::In),*),
+                $variant_name($(<$field_type as $crate::traits::IntoHeap<'a>>::In),*),
             }
             $storage_type
         }
@@ -262,7 +262,8 @@ macro_rules! gc_inline_enum {
             PARSE_VARIANTS MARK $more_variants {
                 $($accumulated_output)*
                 $storage_type::$name ( $(ref mut $binding),* ) => {
-                    $( $crate::InHeap::mark($binding as *mut <$field_type as $crate::IntoHeap<'a>>::In); )*
+                    $( $crate::traits::InHeap::mark(
+                        $binding as *mut <$field_type as $crate::traits::IntoHeap<'a>>::In); )*
                 }
             }
             $ptr, $storage_type
@@ -336,7 +337,7 @@ macro_rules! gc_inline_enum {
             PARSE_VARIANTS TO_HEAP $more_variants {
                 $($accumulated_output)*
                 $stack_type::$name ( $($binding),* ) =>
-                    $storage_type::$name( $($crate::IntoHeap::into_heap($binding)),* ),
+                    $storage_type::$name( $($crate::traits::IntoHeap::into_heap($binding)),* ),
             }
             $self_, $stack_type / $storage_type
         }
@@ -390,7 +391,7 @@ macro_rules! gc_inline_enum {
             PARSE_VARIANTS FROM_HEAP $more_variants {
                 $($accumulated_output)*
                 &$storage_type::$name ( ref $($binding),* ) =>
-                    $stack_type::$name( $($crate::InHeap::from_heap($binding)),* ),
+                    $stack_type::$name( $($crate::traits::InHeap::from_heap($binding)),* ),
             }
             $self_ref, $stack_type / $storage_type
         }
@@ -412,7 +413,7 @@ macro_rules! gc_inline_enum {
                 $variants
         }
 
-        unsafe impl<'a> $crate::InHeap<'a> for $storage_type<'a> {
+        unsafe impl<'a> $crate::traits::InHeap<'a> for $storage_type<'a> {
             type Out = $stack_type<'a>;
 
             unsafe fn mark(ptr: *mut $storage_type<'a>) {
@@ -430,7 +431,7 @@ macro_rules! gc_inline_enum {
             }
         }
 
-        unsafe impl<'a> $crate::IntoHeap<'a> for $stack_type<'a> {
+        unsafe impl<'a> $crate::traits::IntoHeap<'a> for $stack_type<'a> {
             type In = $storage_type<'a>;
 
             fn into_heap(self) -> $storage_type<'a> {
