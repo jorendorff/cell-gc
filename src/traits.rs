@@ -114,6 +114,28 @@ macro_rules! gc_trivial_impl {
     }
 }
 
+macro_rules! gc_generic_trivial_impl {
+    (#[AS_ITEM] $it:item) => { $it};
+    ([$($x:tt)*] $t:ty) => {
+        gc_generic_trivial_impl! {
+            #[AS_ITEM]
+            unsafe impl<'a, $($x)*> InHeap<'a> for $t {
+                type Out = $t;
+                unsafe fn mark(_ptr: *mut $t) {}
+                unsafe fn from_heap(&self) -> $t { self.clone() }
+            }
+        }
+
+        gc_generic_trivial_impl! {
+            #[AS_ITEM]
+            unsafe impl<'a, $($x)*> IntoHeap<'a> for $t {
+                type In = $t;
+                fn into_heap(self) -> $t { self }
+            }
+        }
+    }
+}
+
 gc_trivial_impl!(bool);
 gc_trivial_impl!(char);
 gc_trivial_impl!(i8);
@@ -129,8 +151,10 @@ gc_trivial_impl!(usize);
 gc_trivial_impl!(f32);
 gc_trivial_impl!(f64);
 
+gc_generic_trivial_impl!([T: Clone + 'static] Box<T>);
+
 use std::rc::Rc;
-gc_trivial_impl!(Rc<String>);
+gc_generic_trivial_impl!([T: Clone + 'static] Rc<T>);
 
 /*
 // 'static types are heap-safe because ref types are never 'static.
