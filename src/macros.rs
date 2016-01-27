@@ -1,13 +1,34 @@
 #[macro_export]
 macro_rules! gc_ref_type {
+    { @as_item $it:item } => { $it };
+
     {
-        pub struct $fields_type:ident / $ref_type:ident / $storage_type:ident / $ref_storage_type:ident <'a> {
+        pub $($x:tt)*
+    } => {
+        gc_ref_type! {
+            @gc_heap_struct (pub) $($x)*
+        }
+    };
+    {
+        struct $($x:tt)*
+    } => {
+        gc_ref_type! {
+            @gc_heap_struct () struct $($x)*
+        }
+    };
+
+    {
+        @gc_heap_struct ( $($maybe_pub:tt)* )
+        struct $fields_type:ident / $ref_type:ident / $storage_type:ident / $ref_storage_type:ident <'a> {
             $($field_name:ident / $field_setter_name:ident : $field_type: ty),*
         }
     } => {
         // === $storage_type: the InHeap representation of the struct
-        pub struct $storage_type<'a> {
-            $($field_name: <$field_type as $crate::traits::IntoHeap<'a>>::In),*
+        gc_ref_type! {
+            @as_item
+            $($maybe_pub)* struct $storage_type<'a> {
+                $( pub $field_name: <$field_type as $crate::traits::IntoHeap<'a>>::In ),*
+            }
         }
 
         unsafe impl<'a> $crate::traits::InHeap<'a> for $storage_type<'a> {
@@ -30,9 +51,12 @@ macro_rules! gc_ref_type {
         }
 
         // === $fields_type: A safe version of the struct
-        #[derive(Clone, Debug)]
-        pub struct $fields_type<'a> {
-            $(pub $field_name: $field_type),*
+        gc_ref_type! {
+            @as_item
+            #[derive(Clone, Debug)]
+            $($maybe_pub)* struct $fields_type<'a> {
+                $( pub $field_name: $field_type ),*
+            }
         }
 
         unsafe impl<'a> $crate::traits::IntoHeap<'a> for $fields_type<'a> {
@@ -54,8 +78,11 @@ macro_rules! gc_ref_type {
         }
 
         // === $ref_storage_type: The InHeap representation of a reference to the struct
-        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-        pub struct $ref_storage_type<'a>(*mut $storage_type<'a>);
+        gc_ref_type! {
+            @as_item
+            #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+            $($maybe_pub)* struct $ref_storage_type<'a>(*mut $storage_type<'a>);
+        }
 
         unsafe impl<'a> $crate::traits::InHeap<'a> for $ref_storage_type<'a> {
             type Out = $ref_type<'a>;
@@ -73,8 +100,11 @@ macro_rules! gc_ref_type {
         }
 
         // === $ref_type: A safe reference to the struct
-        #[derive(Clone, Debug, PartialEq, Eq)]
-        pub struct $ref_type<'a>($crate::GCRef<'a, $storage_type<'a>>);
+        gc_ref_type! {
+            @as_item
+            #[derive(Clone, Debug, PartialEq, Eq)]
+            $($maybe_pub)* struct $ref_type<'a>($crate::GCRef<'a, $storage_type<'a>>);
+        }
 
         unsafe impl<'a> $crate::traits::IntoHeap<'a> for $ref_type<'a> {
             type In = $ref_storage_type<'a>;
@@ -175,11 +205,13 @@ macro_rules! gc_inline_enum {
     };
 
     {
-        DECLARE_STORAGE_TYPE DONE { $($accumulated_output:tt)* } $storage_type:ident
+        DECLARE_STORAGE_TYPE DONE { $($accumulated_output:tt)* }
+        ( $($maybe_pub:tt)* ) $storage_type:ident
     } => {
         gc_inline_enum! {
             AS_ITEM
-            pub enum $storage_type<'a> {
+            $($maybe_pub)*
+            enum $storage_type<'a> {
                 $($accumulated_output)*
             }
         }
@@ -189,14 +221,14 @@ macro_rules! gc_inline_enum {
         DECLARE_STORAGE_TYPE VARIANT $variant_name:ident NO_FIELDS
         $more_variants:tt
         { $($accumulated_output:tt)* }
-        $storage_type:ident
+        ( $($maybe_pub:tt)* ) $storage_type:ident
     } => {
         gc_inline_enum! {
             PARSE_VARIANTS DECLARE_STORAGE_TYPE $more_variants {
                 $($accumulated_output)*
                 $variant_name,
             }
-            $storage_type
+            ( $($maybe_pub)* ) $storage_type
         }
     };
 
@@ -204,14 +236,14 @@ macro_rules! gc_inline_enum {
         DECLARE_STORAGE_TYPE VARIANT $variant_name:ident ( $($field_type:ty),* )
         $more_variants:tt
         { $($accumulated_output:tt)* }
-        $storage_type:ident
+        ( $($maybe_pub:tt)* ) $storage_type:ident
     } => {
         gc_inline_enum! {
             PARSE_VARIANTS DECLARE_STORAGE_TYPE $more_variants {
                 $($accumulated_output)*
                 $variant_name($(<$field_type as $crate::traits::IntoHeap<'a>>::In),*),
             }
-            $storage_type
+            ( $($maybe_pub)* ) $storage_type
         }
     };
 
@@ -397,18 +429,37 @@ macro_rules! gc_inline_enum {
     };
 
     {
-        pub enum $stack_type:ident / $storage_type:ident <'a>
-            $variants:tt
+        pub $($x:tt)*
+    } => {
+        gc_inline_enum! {
+            @gc_heap_enum (pub) $($x)*
+        }
+    };
+
+    {
+        enum $($x:tt)*
+    } => {
+        gc_inline_enum! {
+            @gc_heap_enum () enum $($x)*
+        }
+    };
+
+    {
+        @gc_heap_enum
+        ($($maybe_pub:tt)*)
+        enum $stack_type:ident / $storage_type:ident <'a>
+        $variants:tt
     } => {
         gc_inline_enum! {
             PARSE_VARIANTS DECLARE_STORAGE_TYPE $variants {}
-            $storage_type
+            ( $($maybe_pub)* ) $storage_type
         }
 
         gc_inline_enum! {
             AS_ITEM
             #[derive(Debug, Clone, PartialEq)]
-            pub enum $stack_type<'a>
+            $($maybe_pub)*
+            enum $stack_type<'a>
                 $variants
         }
 
