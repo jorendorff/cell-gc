@@ -66,11 +66,15 @@ macro_rules! lisp {
             Cons($heap.alloc(Pair { car: h, cdr: t }))
         }
     };
-    ( {$v:expr} , $_heap:expr) => {  // lame, but nothing else matches after an `ident` match fails
-        Int($v)
-    };
-    { $s:ident , $_heap:expr } => {
-        Symbol(Rc::new(stringify!($s).to_string()))
+    { $s:tt , $_heap:expr } => {
+        {
+            let s = stringify!($s);  // lame, but nothing else matches after an `ident` match fails
+            if s.starts_with(|c: char| c.is_digit(10)) {
+                Int(s.parse().expect("invalid numeric literal in `lisp!`"))
+            } else {
+                Symbol(Rc::new(s.to_string()))
+            }
+        }
     };
 }
 
@@ -194,9 +198,9 @@ const add_ptr: &'static BuiltinFnTrait = &(add as BuiltinFnTrait);
 fn main() {
     with_heap(|heap| {
         let mut env = Nil;
-        env.push_env(heap, Rc::new("add".to_string()), Builtin(Box::new(BuiltinFnPtr(add_ptr))));
+        env.push_env(heap, Rc::new("+".to_string()), Builtin(Box::new(BuiltinFnPtr(add_ptr))));
         let program = lisp!(
-            ((lambda (x y z) (add x (add y z))) {3} {4} {5})
+            ((lambda (x y z) (+ x (+ y z))) 3 4 5)
             , heap);
         let result = eval(heap, program, &env);
         assert_eq!(result, Ok(Int(12)));
