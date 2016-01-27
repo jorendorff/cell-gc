@@ -3,14 +3,14 @@
 #[macro_use] extern crate toy_gc;
 
 gc_ref_type! {
-    pub struct Dropper / DropperRef / DropperStorage / DropperRefStorage <'a> {
+    struct Dropper / DropperRef / DropperStorage / DropperRefStorage <'a> {
         addr / set_addr: usize,
         ignore / set_ignore: SomethingWithLifetime<'a>
     }
 }
 
 gc_inline_enum! {
-    pub enum SomethingWithLifetime / SomethingWithLifetimeStorage <'a> {
+    enum SomethingWithLifetime / SomethingWithLifetimeStorage <'a> {
         Another(DropperRef<'a>),
         Nothing
     }

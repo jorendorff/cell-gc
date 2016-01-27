@@ -5,14 +5,14 @@ use toy_gc::{Heap, with_heap};
 use std::rc::Rc;
 
 gc_ref_type! {
-    pub struct Pair / PairRef / PairStorage / PairRefStorage <'a> {
+    struct Pair / PairRef / PairStorage / PairRefStorage <'a> {
         car / set_car: Value<'a>,
         cdr / set_cdr: Value<'a>
     }
 }
 
 gc_inline_enum! {
-    pub enum Value / ValueStorage <'a> {
+    enum Value / ValueStorage <'a> {
         Nil,
         Int(i32),
         Symbol(Rc<String>),
@@ -27,7 +27,7 @@ use Value::*;
 type BuiltinFnTrait = for<'b> fn (Vec<Value<'b>>) -> Result<Value<'b>, String>;
 
 #[derive(Clone)]
-pub struct BuiltinFnPtr(&'static BuiltinFnTrait);
+struct BuiltinFnPtr(&'static BuiltinFnTrait);
 
 impl PartialEq for BuiltinFnPtr {
     fn eq(&self, other: &BuiltinFnPtr) -> bool {

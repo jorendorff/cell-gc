@@ -3,7 +3,7 @@
 #[macro_use] extern crate toy_gc;
 
 gc_ref_type! {
-    pub struct Philosopher / RefPhilosopher / InHeapPhilosopher / InHeapRefPhilosopher <'a> {
+    struct Philosopher / RefPhilosopher / InHeapPhilosopher / InHeapRefPhilosopher <'a> {
         name / set_name: &'static str,
         teacher / set_teacher: Option<RefPhilosopher<'a>>
     }

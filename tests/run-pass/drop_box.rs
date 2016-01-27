@@ -3,7 +3,7 @@
 #[macro_use] extern crate toy_gc;
 
 #[derive(Clone, Debug)]
-pub struct Dropper {
+struct Dropper {
     addr: *mut i32,
 }
 
@@ -14,7 +14,7 @@ impl Drop for Dropper {
 }
 
 gc_ref_type! {
-    pub struct Obj / ObjRef / ObjStorage / ObjRefStorage <'a> {
+    struct Obj / ObjRef / ObjStorage / ObjRefStorage <'a> {
         frob / set_frob: Box<Dropper>,
         more / set_more: Option<ObjRef<'a>>
     }

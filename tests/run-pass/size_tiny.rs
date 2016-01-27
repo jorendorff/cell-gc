@@ -4,7 +4,7 @@
 use std::marker::PhantomData;
 
 gc_ref_type! {
-    pub struct Tiny / TinyRef / TinyStorage / TinyRefStorage <'a> {
+    struct Tiny / TinyRef / TinyStorage / TinyRefStorage <'a> {
         bit / set_bit: bool,
         phantom / set_phantom: PhantomData<&'a u8>
     }

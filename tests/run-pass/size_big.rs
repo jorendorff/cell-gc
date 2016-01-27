@@ -2,13 +2,13 @@
 
 #[macro_use] extern crate toy_gc;
 
-pub type Big32 = (u64, u64, u64, u64);
-pub type Big128 = (Big32, Big32, Big32, Big32);
-pub type Big512 = (Big128, Big128, Big128, Big128);
-pub type Big2560 = (Big512, Big512, Big512, Big512, Big512);
+type Big32 = (u64, u64, u64, u64);
+type Big128 = (Big32, Big32, Big32, Big32);
+type Big512 = (Big128, Big128, Big128, Big128);
+type Big2560 = (Big512, Big512, Big512, Big512, Big512);
 
 gc_ref_type! {
-    pub struct Big / BigRef / BigStorage / BigRefStorage <'a> {
+    struct Big / BigRef / BigStorage / BigRefStorage <'a> {
         bits / set_bits: Big2560,
         next / set_next: Option<BigRef<'a>>
     }

@@ -6,7 +6,7 @@
 gc_ref_type! {
     // This declares four different related structs, but the last two are
     // for the GC's internal use. Read on to see the first two in action.
-    pub struct IntList / RefIntList / InHeapIntList / InHeapRefIntList <'a> {
+    struct IntList / RefIntList / InHeapIntList / InHeapRefIntList <'a> {
         head / set_head: i64,
         tail / set_tail: Option<RefIntList<'a>>
     }

@@ -8,7 +8,7 @@ use toy_gc::*;
 use pairs_aux::*;
 
 gc_ref_type! {
-    pub struct Thing / ThingRef / ThingStorage / ThingRefStorage <'a> {
+    struct Thing / ThingRef / ThingStorage / ThingRefStorage <'a> {
         boxed_ref / set_boxed_ref: Box<Option<ThingRef<'a>>>
     }
 }

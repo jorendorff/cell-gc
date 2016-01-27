@@ -5,7 +5,7 @@ use toy_gc::with_heap;
 
 /// A linked list of numbers that lives in the GC heap.
 gc_ref_type! {
-    pub struct List / RefList / InHeapList / InHeapRefList <'a> {
+    struct List / RefList / InHeapList / InHeapRefList <'a> {
         tail / set_tail: Option<RefList<'a>>
     }
 }

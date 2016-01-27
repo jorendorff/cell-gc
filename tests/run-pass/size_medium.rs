@@ -3,7 +3,7 @@
 #[macro_use] extern crate toy_gc;
 
 gc_ref_type! {
-    pub struct Chunk / ChunkRef / ChunkStorage / ChunkRefStorage <'a> {
+    struct Chunk / ChunkRef / ChunkStorage / ChunkRefStorage <'a> {
         field_0 / set_field_0: (u64, u64, u64, u64),
         field_32 / set_field_32: (u64, u64, u64, u64),
         field_64 / set_field_64: (u64, u64, u64, u64),
