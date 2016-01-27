@@ -8,7 +8,7 @@ fn main() {
     toy_gc::with_heap(|heap| {
         // Make the heap nearly full by allocating (HEAP_SIZE - 1) objects.
         let mut v = Value::Null;
-        for _ in 0 .. toy_gc::HEAP_SIZE - 1 {
+        for _ in 0 .. toy_gc::page_capacity::<Pair>() - 1 {
             v = Value::Pair(alloc_pair(heap, Value::Null, v));
         }
 

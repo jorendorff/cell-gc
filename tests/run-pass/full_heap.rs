@@ -13,7 +13,7 @@ fn main() {
     toy_gc::with_heap(|heap| {
         // Fill up the heap by allocating HEAP_SIZE objects.
         let mut v = Value::Null;
-        for _ in 0 .. toy_gc::HEAP_SIZE {
+        for _ in 0 .. toy_gc::page_capacity::<Pair>() {
             v = Value::Pair(alloc_pair(heap, Value::Null, v));
         }
 

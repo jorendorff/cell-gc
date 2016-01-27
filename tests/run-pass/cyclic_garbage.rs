@@ -21,7 +21,7 @@ fn main() {
         let mut recycled1 = 0;
         let mut recycled2 = 0;
         let mut root = Value::Null;
-        for _ in 0 .. toy_gc::HEAP_SIZE {
+        for _ in 0 .. toy_gc::page_capacity::<Pair>() {
             let p = alloc_pair(heap, Value::Null, root);
             root = Value::Pair(p.clone());
             if p.as_mut_ptr() == p1 {

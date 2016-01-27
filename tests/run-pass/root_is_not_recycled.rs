@@ -11,7 +11,7 @@ fn main() {
         let root = alloc_pair(heap, Value::Int(1), Value::Str(Rc::new("hello world".to_string())));
 
         // Subsequent allocations never return root.
-        for _ in 0 .. toy_gc::HEAP_SIZE * 2 {
+        for _ in 0 .. toy_gc::page_capacity::<Pair>() * 2 {
             let tmp = alloc_null_pair(heap);
             assert!(tmp != root);
         }
