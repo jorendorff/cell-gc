@@ -16,8 +16,10 @@ So this GC is designed for:
 
 ## Caveats
 
-**toy_gc isn't really usable at present.**
-[See the issues for more info.](https://github.com/jorendorff/rust-toy-gc/issues)
+**toy_gc only works for toy-sized programs at present.**
+[See issue #4.](https://github.com/jorendorff/rust-toy-gc/issues/4)
+
+toy_gc isn't on crates.io yet. The API is completely unstable.
 
 toy_gc is not designed to support multithread access to a single heap (like Java).
 Instead, you can create one heap per thread (like JavaScript).
@@ -29,12 +31,6 @@ but I have some ideas on how to get there.
 ## How to use it
 
 Good luck!
-
-*   It's not on crates.io yet.
-
-*   The API is completely unstable.
-
-But here is how you would, if you figure all that out:
 
 ```rust
 #[macro_use] extern crate toy_gc;
