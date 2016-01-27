@@ -155,9 +155,9 @@ gc_trivial_impl!(f32);
 gc_trivial_impl!(f64);
 
 gc_generic_trivial_impl!([T: ?Sized] &'static T);
+gc_generic_trivial_impl!([T: ?Sized] ::std::marker::PhantomData<T>);
 gc_generic_trivial_impl!([T: Clone + 'static] Box<T>);
 gc_generic_trivial_impl!([T: Clone + 'static] ::std::rc::Rc<T>);
-
 
 // Transitive implementations ("this particular kind of struct/enum is InHeap
 // if all its fields are") are slightly less trivial.
