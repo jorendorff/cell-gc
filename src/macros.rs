@@ -329,8 +329,9 @@ macro_rules! gc_inline_enum {
             $name:ident ( $($field_type:ty),* ) $ctn:tt
     } => {
         gc_inline_enum! {
-            @zip_idents_with_types ( $($field_type),*, ) () (a b c d e f g h i j k l m n o p q r s t u v w x y z)
-            (@mark_variant_continued $storage_type $name $ctn)
+            @zip_idents_with_types (a b c d e f g h i j k l m n o p q r s t u v w x y z)
+                ( $($field_type),*, ) ()
+                (@mark_variant_continued $storage_type $name $ctn)
         }
     };
 
@@ -394,37 +395,36 @@ macro_rules! gc_inline_enum {
             $ctn:tt
     } => {
         gc_inline_enum! {
-            @zip_idents_with_types ( $($field_type),*, ) () (a b c d e f g h i j k l m n o p q r s t u v w x y z)
-            (@variant_into_heap_continued $stack_type $storage_type $name $ctn)
+            @zip_idents_with_types (a b c d e f g h i j k l m n o p q r s t u v w x y z)
+                ( $($field_type),*, ) ()
+                (@variant_into_heap_continued $stack_type $storage_type $name $ctn)
         }
     };
 
     {
-        @zip_idents_with_types () ($(($binding:ident : $btype:ty))*) $_leftovers:tt ($($ctn:tt)*)
+        @zip_idents_with_types $_leftovers:tt () ($(($binding:ident : $btype:ty))*) ($($ctn:tt)*)
     } => {
         gc_inline_enum! { $($ctn)* ($(($binding : $btype))*) }
     };
     {
         @zip_idents_with_types
+        ($id:ident $($ids:tt)*)
         ($t:ty, $($ts:ty),*)
         ($($acc:tt)*)
-        ($id:ident $($ids:tt)*)
         $ctn:tt
     } => {
         gc_inline_enum! {
             @zip_idents_with_types
+            ($($ids)*)
             ($($ts),*)
             ($($acc)* ($id : $t))
-            ($($ids)*)
             $ctn
         }
     };
 
     {
-        @variant_into_heap_continued
-        $stack_type:ident $storage_type:ident $name:ident
-        ( $($ctn:tt)* )
-        ( $(($binding:ident : $field_type:ty))* )
+        @variant_into_heap_continued $stack_type:ident $storage_type:ident $name:ident ($($ctn:tt)*)
+            ( $(($binding:ident : $field_type:ty))* )
     } => {
         gc_inline_enum! {
             $($ctn)* {
@@ -435,64 +435,53 @@ macro_rules! gc_inline_enum {
     };
 
     {
-        FROM_HEAP DONE { $($accumulated_output:tt)* }
-        $self_ref:expr, $_stack_type:ident / $_storage_type:ident
+        @from_heap_expr ($self_ref:expr) { $($arms:tt)* }
     } => {
         gc_inline_enum! {
             @as_expr
             match $self_ref {
-                $($accumulated_output)*
+                $($arms)*
             }
         }
     };
 
     {
-        FROM_HEAP VARIANT $name:ident NO_FIELDS
-        $more_variants:tt
-        { $($accumulated_output:tt)* }
-        $self_ref:expr, $stack_type:ident / $storage_type:ident
+        @from_heap_variant $stack_type:ident $storage_type:ident
+            $name:ident NO_FIELDS ($($ctn:tt)*)
     } => {
         gc_inline_enum! {
-            @parse_variants FROM_HEAP $more_variants {
-                $($accumulated_output)*
-                &$storage_type::$name => $stack_type::$name,
-            }
-            $self_ref, $stack_type / $storage_type
+            $($ctn)* { &$storage_type::$name => $stack_type::$name, }
         }
     };
 
     {
-        FROM_HEAP VARIANT $name:ident ( $($field_type:ty),* )
-        $($etc:tt)*
+        @from_heap_variant $stack_type:ident $storage_type:ident
+            $name:ident ( $($field_type:ty),* ) $ctn:tt
     } => {
         gc_inline_enum! {
-            TYPES_TO_IDENTS ( $($field_type),*, ) () (a b c d e f g h i j k l m n o p q r s t u v w x y z)
-            (FROM_HEAP CONTINUE_VARIANT $name $($etc)*)
+            @zip_idents_with_types (a b c d e f g h i j k l m n o p q r s t u v w x y z)
+                ( $($field_type),*, ) ()
+                (@from_heap_variant_continued $stack_type $storage_type $name $ctn)
         }
     };
 
     {
-        FROM_HEAP CONTINUE_VARIANT $name:ident
-        $more_variants:tt
-        { $($accumulated_output:tt)* }
-        $self_ref:expr, $stack_type:ident / $storage_type:ident
-        ( $(($binding:ident : $field_type:ty))* )
+        @from_heap_variant_continued $stack_type:ident $storage_type:ident $name:ident ($($ctn:tt)*)
+            ( $(($binding:ident : $field_type:ty))* )
     } => {
         gc_inline_enum! {
-            @parse_variants FROM_HEAP $more_variants {
-                $($accumulated_output)*
+            $($ctn)* {
                 &$storage_type::$name ( ref $($binding),* ) =>
                     $stack_type::$name( $($crate::traits::InHeap::from_heap($binding)),* ),
             }
-            $self_ref, $stack_type / $storage_type
         }
     };
 
     {
-        pub $($x:tt)*
+        pub enum $($x:tt)*
     } => {
         gc_inline_enum! {
-            @gc_heap_enum (pub) $($x)*
+            @gc_heap_enum (pub) enum $($x)*
         }
     };
 
@@ -535,8 +524,8 @@ macro_rules! gc_inline_enum {
 
             unsafe fn from_heap(&self) -> $stack_type<'a> {
                 gc_inline_enum! {
-                    @parse_variants FROM_HEAP $variants {}
-                    self, $stack_type / $storage_type
+                    @for_each_variant (@from_heap_variant $stack_type $storage_type) $variants {}
+                    (@from_heap_expr (self))
                 }
             }
         }
