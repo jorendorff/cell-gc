@@ -1,4 +1,4 @@
-# cell-gc
+# cell-gc [![Build Status](https://travis-ci.org/jorendorff/cell-gc.svg?branch=master)](https://travis-ci.org/jorendorff/cell-gc)
 
 A simple garbage collector for use in Rust.
 
