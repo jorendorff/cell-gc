@@ -78,13 +78,12 @@ unsafe impl<'a, T: IntoHeap<'a>> IntoHeap<'a> for VecRef<'a, T> {
 }
 
 impl<'a, T: IntoHeap<'a>> VecRef<'a, T> {
-    // BUG: this should not let the borrow escape the closure.
     /// Unsafe to call: During the lifetime of the reference passed to the
     /// callback, the caller must ensure that the vector is not modified.
     /// Destructors and `from_heap` methods are presumed safe. Avoid
     /// `to_heap`.
-    fn unsafe_deref<'b, R, F>(&'b self, f: F) -> R
-        where F: FnOnce(&'b Vec<T::In>) -> R
+    fn unsafe_deref<R, F>(&self, f: F) -> R
+        where F: for <'b> FnOnce(&'b Vec<T::In>) -> R
     {
         // NOTE: the signature above is overly restrictive.
         // I should be able to figure out a better one when I have a little time.
@@ -97,8 +96,8 @@ impl<'a, T: IntoHeap<'a>> VecRef<'a, T> {
     /// callback, the caller must ensure that no other references exist to the
     /// vector.  Destructors and `from_heap` methods are presumed safe. Avoid
     /// `to_heap`.
-    fn unsafe_deref_mut<'b, R, F>(&'b self, f: F) -> R
-        where F: FnOnce(&'b mut Vec<T::In>) -> R
+    fn unsafe_deref_mut<R, F>(&self, f: F) -> R
+        where F: for <'b> FnOnce(&'b mut Vec<T::In>) -> R
     {
         // TODO should assert here, like unsafe_deref
         f(unsafe { &mut (*self.0.as_mut_ptr()).0 })
