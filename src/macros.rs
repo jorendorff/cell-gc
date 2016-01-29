@@ -348,25 +348,6 @@ macro_rules! gc_inline_enum {
         }
     };
 
-    { TYPES_TO_IDENTS () ($(($binding:ident : $btype:ty))*) $_leftovers:tt ($($ctn:tt)*) } => {
-        gc_inline_enum! { $($ctn)* ($(($binding : $btype))*) }
-    };
-    {
-        TYPES_TO_IDENTS
-        ($t:ty, $($ts:ty),*)
-        ($(($binding:ident : $btype:ty))*)
-        ($id:ident $($ids:tt)*)
-        ($($ctn:tt)*)
-    } => {
-        gc_inline_enum! {
-            TYPES_TO_IDENTS
-            ($($ts),*)
-            ($(($binding : $btype))* ($id : $t))
-            ($($ids)*)
-            ($($ctn)*)
-        }
-    };
-
     {
         @into_heap_expr ($self_:expr)
         { $($accumulated_output:tt)* }
