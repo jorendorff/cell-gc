@@ -36,8 +36,8 @@ macro_rules! gc_heap_type {
             type Out = $fields_type<'a>;
 
             unsafe fn mark(&self) {
-                if !$crate::Heap::get_mark_bit(self) {
-                    $crate::Heap::set_mark_bit(self);
+                if !$crate::Heap::get_mark_bit::<Self::Out>(self) {
+                    $crate::Heap::set_mark_bit::<Self::Out>(self);
                     $(
                         $crate::traits::InHeap::mark(&self.$field_name);
                     )*
@@ -73,7 +73,7 @@ macro_rules! gc_heap_type {
         impl<'a> $crate::traits::IntoHeapAllocation<'a> for $fields_type<'a> {
             type Ref = $ref_type<'a>;
 
-            fn wrap_gcref(gcref: $crate::GCRef<'a, $storage_type<'a>>) -> $ref_type<'a> {
+            fn wrap_gcref(gcref: $crate::GCRef<'a, $fields_type<'a>>) -> $ref_type<'a> {
                 $ref_type(gcref)
             }
         }
@@ -104,7 +104,7 @@ macro_rules! gc_heap_type {
         gc_heap_type! {
             @as_item
             #[derive(Clone, Debug, PartialEq, Eq)]
-            $($maybe_pub)* struct $ref_type<'a>($crate::GCRef<'a, $storage_type<'a>>);
+            $($maybe_pub)* struct $ref_type<'a>($crate::GCRef<'a, $fields_type<'a>>);
         }
 
         unsafe impl<'a> $crate::traits::IntoHeap<'a> for $ref_type<'a> {

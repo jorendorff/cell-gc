@@ -8,10 +8,10 @@ use std::mem;
 use std::cmp::Ordering;
 
 /// An implementation detail.
-pub struct VecStorage<'a, U: InHeap<'a>>(Vec<U>, HeapId<'a>);
+pub struct VecStorage<'a, T: IntoHeap<'a>>(Vec<T::In>, HeapId<'a>);
 
-unsafe impl<'a, U: InHeap<'a>> InHeap<'a> for VecStorage<'a, U> {
-    type Out = Vec<U::Out>;
+unsafe impl<'a, T: IntoHeap<'a>> InHeap<'a> for VecStorage<'a, T> {
+    type Out = Vec<T>;
 
     unsafe fn mark(&self) {
         for r in &self.0 {
@@ -19,15 +19,15 @@ unsafe impl<'a, U: InHeap<'a>> InHeap<'a> for VecStorage<'a, U> {
         }
     }
 
-    unsafe fn from_heap(&self) -> Vec<U::Out> {
+    unsafe fn from_heap(&self) -> Vec<T> {
         self.0.iter().map(|x| x.from_heap()).collect()
     }
 }
 
 unsafe impl<'a, T: IntoHeap<'a>> IntoHeap<'a> for Vec<T> {
-    type In = VecStorage<'a, T::In>;
+    type In = VecStorage<'a, T>;
 
-    fn into_heap(self) -> VecStorage<'a, T::In> {
+    fn into_heap(self) -> VecStorage<'a, T> {
         VecStorage(self.into_iter().map(|x| x.into_heap()).collect(), PhantomData)
     }
 }
@@ -35,7 +35,7 @@ unsafe impl<'a, T: IntoHeap<'a>> IntoHeap<'a> for Vec<T> {
 impl<'a, T: IntoHeap<'a>> IntoHeapAllocation<'a> for Vec<T> {
     type Ref = VecRef<'a, T>;
 
-    fn wrap_gcref(gcref: GCRef<'a, VecStorage<'a, T::In>>) -> VecRef<'a, T> {
+    fn wrap_gcref(gcref: GCRef<'a, Vec<T>>) -> VecRef<'a, T> {
         VecRef(gcref)
     }
 }
@@ -59,10 +59,10 @@ impl<'a, T: IntoHeap<'a>> IntoHeapAllocation<'a> for Vec<T> {
 /// });
 /// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct VecRef<'a, T: IntoHeap<'a>>(GCRef<'a, VecStorage<'a, T::In>>);
+pub struct VecRef<'a, T: IntoHeap<'a>>(GCRef<'a, Vec<T>>);
 
-unsafe impl<'a, U: InHeap<'a>> InHeap<'a> for *mut VecStorage<'a, U> {
-    type Out = VecRef<'a, U::Out>;
+unsafe impl<'a, T: IntoHeap<'a>> InHeap<'a> for *mut VecStorage<'a, T> {
+    type Out = VecRef<'a, T>;
 
     unsafe fn mark(&self) {
         for r in &(**self).0 {
@@ -70,15 +70,15 @@ unsafe impl<'a, U: InHeap<'a>> InHeap<'a> for *mut VecStorage<'a, U> {
         }
     }
 
-    unsafe fn from_heap(&self) -> VecRef<'a, U::Out> {
+    unsafe fn from_heap(&self) -> VecRef<'a, T> {
         VecRef(GCRef::new(*self))
     }
 }
 
 unsafe impl<'a, T: IntoHeap<'a>> IntoHeap<'a> for VecRef<'a, T> {
-    type In = *mut VecStorage<'a, T::In>;
+    type In = *mut VecStorage<'a, T>;
 
-    fn into_heap(self) -> *mut VecStorage<'a, T::In> {
+    fn into_heap(self) -> *mut VecStorage<'a, T> {
         self.0.as_mut_ptr()
     }
 }

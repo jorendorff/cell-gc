@@ -127,7 +127,7 @@ impl<'a> Heap<'a> {
     ///
     /// (Unsafe because if the argument is garbage, a later GC will
     /// crash. Called only from `impl GCRef`.)
-    pub unsafe fn pin<U: InHeap<'a>>(&self, p: *mut U) {
+    pub unsafe fn pin<T: IntoHeap<'a>>(&self, p: *mut T::In) {
         let p = p as *mut ();
         let mut pins = self.pins.borrow_mut();
         let entry = pins.entry(p).or_insert(0);
@@ -138,7 +138,7 @@ impl<'a> Heap<'a> {
     ///
     /// (Unsafe because unpinning an object that other code is still using
     /// causes dangling pointers. Called only from `impl GCRef`.)
-    pub unsafe fn unpin<U: InHeap<'a>>(&self, p: *mut U) {
+    pub unsafe fn unpin<T: IntoHeap<'a>>(&self, p: *mut T::In) {
         let p = p as *mut ();
         let mut pins = self.pins.borrow_mut();
         if {
@@ -172,16 +172,16 @@ impl<'a> Heap<'a> {
         }
     }
 
-    pub unsafe fn from_allocation<U: InHeap<'a>>(ptr: *const U) -> *const Heap<'a> {
-        (*TypedPage::<'a, U::Out>::find(ptr)).header.heap
+    pub unsafe fn from_allocation<T: IntoHeap<'a>>(ptr: *const T::In) -> *const Heap<'a> {
+        (*TypedPage::<'a, T>::find(ptr)).header.heap
     }
 
-    pub unsafe fn get_mark_bit<U: InHeap<'a>>(ptr: *const U) -> bool {
-        (*TypedPage::<'a, U::Out>::find(ptr)).get_mark_bit(ptr)
+    pub unsafe fn get_mark_bit<T: IntoHeap<'a>>(ptr: *const T::In) -> bool {
+        (*TypedPage::<'a, T>::find(ptr)).get_mark_bit(ptr)
     }
 
-    pub unsafe fn set_mark_bit<U: InHeap<'a>>(ptr: *const U) {
-        (*TypedPage::<'a, U::Out>::find(ptr)).set_mark_bit(ptr);
+    pub unsafe fn set_mark_bit<T: IntoHeap<'a>>(ptr: *const T::In) {
+        (*TypedPage::<'a, T>::find(ptr)).set_mark_bit(ptr);
     }
 
     pub fn alloc<T: IntoHeapAllocation<'a>>(&mut self, value: T) -> T::Ref {

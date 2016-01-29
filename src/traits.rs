@@ -98,7 +98,7 @@ pub trait IntoHeapAllocation<'a>: IntoHeap<'a>
 {
     type Ref: IntoHeap<'a>;
 
-    fn wrap_gcref(gcref: GCRef<'a, Self::In>) -> Self::Ref;
+    fn wrap_gcref(gcref: GCRef<'a, Self>) -> Self::Ref;
 }
 
 
