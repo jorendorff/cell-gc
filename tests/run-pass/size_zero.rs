@@ -1,6 +1,6 @@
 //! The GC can allocate objects that are zero-size.
 
-#[macro_use] extern crate toy_gc;
+#[macro_use] extern crate cellgc;
 use std::marker::PhantomData;
 
 gc_ref_type! {
@@ -12,8 +12,8 @@ gc_ref_type! {
 fn main () {
     assert_eq!(std::mem::size_of::<UnitStorage>(), 0);
 
-    toy_gc::with_heap(|heap| {
-        let n = toy_gc::page_capacity::<Unit>();
+    cellgc::with_heap(|heap| {
+        let n = cellgc::page_capacity::<Unit>();
 
         // see comment in size_medium.rs
         assert!(n >= 500);

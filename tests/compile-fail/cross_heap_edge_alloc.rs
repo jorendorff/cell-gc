@@ -1,8 +1,8 @@
 //! You can't pass an object from one heap to another heap's `alloc` method.
 
-#[macro_use] extern crate toy_gc;
+#[macro_use] extern crate cellgc;
 mod pairs_aux;
-use toy_gc::*;
+use cellgc::*;
 use pairs_aux::*;
 
 fn main() {

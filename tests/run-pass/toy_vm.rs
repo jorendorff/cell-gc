@@ -1,7 +1,7 @@
 //! If you use enough force, you can actually use this GC to implement a toy VM.
 
-#[macro_use] extern crate toy_gc;
-use toy_gc::{Heap, with_heap};
+#[macro_use] extern crate cellgc;
+use cellgc::{Heap, with_heap};
 use std::rc::Rc;
 
 gc_ref_type! {

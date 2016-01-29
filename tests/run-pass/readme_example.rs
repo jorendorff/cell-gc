@@ -1,6 +1,6 @@
 //! The mini-example from README.md actually works.
 
-#[macro_use] extern crate toy_gc;
+#[macro_use] extern crate cellgc;
 
 /// A linked list of numbers that lives in the GC heap.
 gc_ref_type! {
@@ -14,7 +14,7 @@ gc_ref_type! {
 
 fn main() {
     // Create a heap (you'll only do this once in your whole program)
-    toy_gc::with_heap(|heap| {
+    cellgc::with_heap(|heap| {
         // Allocate an object (returns a RefIntList)
         let obj1 = heap.alloc(IntList { head: 17, tail: None });
         assert_eq!(obj1.head(), 17);

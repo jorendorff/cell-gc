@@ -1,6 +1,6 @@
 //! The GC can work with objects that are a few hundred bytes big.
 
-#[macro_use] extern crate toy_gc;
+#[macro_use] extern crate cellgc;
 
 gc_ref_type! {
     struct Chunk / ChunkRef / ChunkStorage / ChunkRefStorage <'a> {
@@ -17,8 +17,8 @@ gc_ref_type! {
 }
 
 fn main() {
-    toy_gc::with_heap(|heap| {
-        let n = toy_gc::page_capacity::<Chunk>();
+    cellgc::with_heap(|heap| {
+        let n = cellgc::page_capacity::<Chunk>();
 
         // Users don't care about the exact value here, but test it anyway
         // since it would be weird if it changed (or turned out to be different

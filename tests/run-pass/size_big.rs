@@ -1,6 +1,6 @@
 //! The GC can work with objects that take up most of a page.
 
-#[macro_use] extern crate toy_gc;
+#[macro_use] extern crate cellgc;
 
 type Big32 = (u64, u64, u64, u64);
 type Big128 = (Big32, Big32, Big32, Big32);
@@ -15,8 +15,8 @@ gc_ref_type! {
 }
 
 fn main () {
-    toy_gc::with_heap(|heap| {
-        let n = toy_gc::page_capacity::<Big>();
+    cellgc::with_heap(|heap| {
+        let n = cellgc::page_capacity::<Big>();
         assert_eq!(n, 1);  // see comment in size_medium.rs
 
         let a = (5, 6, 7, 8);

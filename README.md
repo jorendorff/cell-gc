@@ -1,4 +1,4 @@
-# toy_gc
+# cellgc
 
 This crate contains a simple garbage collector for use in Rust.
 The goal is to help you quickly build a VM in Rust.
@@ -9,19 +9,19 @@ So this GC is designed for:
 *   No dependency on linters or compiler plugins
 
 *   An API that's consistent with a high-performance implementation
-    (though right now toy_gc is not speedy)
+    (though right now cellgc is not speedy)
 
 *   Fun
 
 
 ## Caveats
 
-**toy_gc only works for toy-sized programs at present.**
+**cellgc only works for toy-sized programs at present.**
 [See issue #4.](https://github.com/jorendorff/rust-toy-gc/issues/4)
 
-toy_gc isn't on crates.io yet. The API is completely unstable.
+cellgc isn't on crates.io yet. The API is completely unstable.
 
-toy_gc is not designed to support multithread access to a single heap (like Java).
+cellgc is not designed to support multithread access to a single heap (like Java).
 Instead, you can create one heap per thread (like JavaScript).
 
 Currently it does not support lots of small heaps with random lifetimes (like Erlang),
@@ -33,7 +33,7 @@ but I have some ideas on how to get there.
 Good luck!
 
 ```rust
-#[macro_use] extern crate toy_gc;
+#[macro_use] extern crate cellgc;
 
 /// A linked list of numbers that lives in the GC heap.
 gc_ref_type! {
@@ -47,7 +47,7 @@ gc_ref_type! {
 
 fn main() {
     // Create a heap (you'll only do this once in your whole program)
-    toy_gc::with_heap(|heap| {
+    cellgc::with_heap(|heap| {
         // Allocate an object (returns a RefIntList)
         let obj1 = heap.alloc(IntList { head: 17, tail: None });
         assert_eq!(obj1.head(), 17);

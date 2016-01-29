@@ -3,9 +3,9 @@
 
 // error-pattern: cannot infer an appropriate lifetime
 
-#[macro_use] extern crate toy_gc;
+#[macro_use] extern crate cellgc;
 mod pairs_aux;
-use toy_gc::*;
+use cellgc::*;
 use pairs_aux::*;
 
 fn main() {

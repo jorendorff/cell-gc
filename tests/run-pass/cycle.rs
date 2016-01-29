@@ -1,11 +1,11 @@
 //! Test that the GC is not confused by cycles in the reachable object graph.
 
-#[macro_use] extern crate toy_gc;
+#[macro_use] extern crate cellgc;
 mod pairs_aux;
 use pairs_aux::*;
 
 fn main() {
-    toy_gc::with_heap(|heap| {
+    cellgc::with_heap(|heap| {
         // Set up obj1 and obj2 to point to each other.
         let obj1 = alloc_null_pair(heap);
         let obj2 = alloc_pair(heap,

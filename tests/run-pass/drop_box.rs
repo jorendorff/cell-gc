@@ -1,6 +1,6 @@
 //! Destructors are called when a heap struct with a Box field is dropped.
 
-#[macro_use] extern crate toy_gc;
+#[macro_use] extern crate cellgc;
 
 #[derive(Clone, Debug)]
 struct Dropper {
@@ -21,7 +21,7 @@ gc_ref_type! {
 }
 
 fn main() {
-    toy_gc::with_heap(|heap| {
+    cellgc::with_heap(|heap| {
         let mut drop_count: i32 = 0;
         let ptr: *mut i32 = &mut drop_count;
 

@@ -45,11 +45,11 @@ impl<'a, T: IntoHeap<'a>> IntoHeapAllocation<'a> for Vec<T> {
 /// It will return a `VecRef` object which has many of the familiar `Vec` methods,
 /// as well as element accessors `get_at` and `set_at`.
 ///
-///     #[macro_use] extern crate toy_gc;
-///     use toy_gc::collections::VecRef;
+///     #[macro_use] extern crate cellgc;
+///     use cellgc::collections::VecRef;
 ///
 ///     fn main() {
-///         toy_gc::with_heap(|heap| {
+///         cellgc::with_heap(|heap| {
 ///             let r: VecRef<i32> = heap.alloc(vec![20, 10, 40, 30]);
 ///             assert_eq!(r.length(), 4);
 ///             assert_eq!(r.get(0), 20);
