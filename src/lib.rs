@@ -5,6 +5,7 @@ pub mod traits;
 mod pages;
 mod heap;
 mod gcref;
+pub mod collections;
 
 pub use heap::{Heap, with_heap};
 pub use gcref::GCRef;
