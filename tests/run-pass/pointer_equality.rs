@@ -1,7 +1,7 @@
 //! Test equality properties of GCRef values.
 
-#[macro_use] extern crate cellgc;
-use cellgc::with_heap;
+#[macro_use] extern crate cell_gc;
+use cell_gc::with_heap;
 
 /// A linked list of numbers that lives in the GC heap.
 gc_ref_type! {
@@ -12,7 +12,7 @@ gc_ref_type! {
 
 fn main() {
     // Create a heap (do this only once)
-    cellgc::with_heap(|heap| {
+    cell_gc::with_heap(|heap| {
         let a = heap.alloc(List { tail: None });
         // Two clones of a ref are equal.
         assert_eq!(a.clone(), a.clone());

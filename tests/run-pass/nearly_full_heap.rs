@@ -1,14 +1,14 @@
 //! Test allocate()'s behavior when the heap is only *almost* full.
 
-#[macro_use] extern crate cellgc;
+#[macro_use] extern crate cell_gc;
 mod pairs_aux;
 use pairs_aux::*;
 
 fn main() {
-    cellgc::with_heap(|heap| {
+    cell_gc::with_heap(|heap| {
         // Make the heap nearly full by allocating (HEAP_SIZE - 1) objects.
         let mut v = Value::Null;
-        for _ in 0 .. cellgc::page_capacity::<Pair>() - 1 {
+        for _ in 0 .. cell_gc::page_capacity::<Pair>() - 1 {
             v = Value::Pair(alloc_pair(heap, Value::Null, v));
         }
 

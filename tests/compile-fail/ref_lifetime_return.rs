@@ -1,9 +1,9 @@
 //! A GCRef must not outlive the Heap it points into, so it can't be returned
 //! from the `with_heap` callback.
 
-#[macro_use] extern crate cellgc;
+#[macro_use] extern crate cell_gc;
 mod pairs_aux;
-use cellgc::*;
+use cell_gc::*;
 use pairs_aux::*;
 
 fn main() {

@@ -3,7 +3,7 @@
 #![allow(dead_code)]  // Tests don't ordinarily use every feature and every accessor.
 
 use std::rc::Rc;
-use cellgc::*;
+use cell_gc::*;
 
 gc_ref_type! {
     pub struct Pair / PairRef / PairStorage / PairRefStorage <'a> {

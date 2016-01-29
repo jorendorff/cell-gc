@@ -1,11 +1,11 @@
 //! Test that the GC is not confused by cycles that are garbage.
 
-#[macro_use] extern crate cellgc;
+#[macro_use] extern crate cell_gc;
 mod pairs_aux;
 use pairs_aux::*;
 
 fn main() {
-    cellgc::with_heap(|heap| {
+    cell_gc::with_heap(|heap| {
         // Make a cycle.
         let (p1, p2);
         {
@@ -21,7 +21,7 @@ fn main() {
         let mut recycled1 = 0;
         let mut recycled2 = 0;
         let mut root = Value::Null;
-        for _ in 0 .. cellgc::page_capacity::<Pair>() {
+        for _ in 0 .. cell_gc::page_capacity::<Pair>() {
             let p = alloc_pair(heap, Value::Null, root);
             root = Value::Pair(p.clone());
             if p.as_mut_ptr() == p1 {

@@ -1,5 +1,7 @@
 [package]
-name = "cellgc"
+name = "cell-gc"
+description = "A fun garbage collector for that virtual machine you're writing in Rust"
+repository = "https://github.com/jorendorff/cell-gc/"
 version = "0.1.0"
 authors = ["Jason Orendorff <jason.orendorff@gmail.com>"]
 

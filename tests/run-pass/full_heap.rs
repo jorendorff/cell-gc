@@ -1,7 +1,7 @@
 //! Test try_alloc()'s behavior when the heap is full and every Object is
 //! reachable.
 
-#[macro_use] extern crate cellgc;
+#[macro_use] extern crate cell_gc;
 mod pairs_aux;
 use pairs_aux::*;
 
@@ -10,10 +10,10 @@ fn null_pair<'a>() -> Pair<'a> {
 }
 
 fn main() {
-    cellgc::with_heap(|heap| {
+    cell_gc::with_heap(|heap| {
         // Fill up the heap by allocating HEAP_SIZE objects.
         let mut v = Value::Null;
-        for _ in 0 .. cellgc::page_capacity::<Pair>() {
+        for _ in 0 .. cell_gc::page_capacity::<Pair>() {
             v = Value::Pair(alloc_pair(heap, Value::Null, v));
         }
 

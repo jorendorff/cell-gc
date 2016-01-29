@@ -1,12 +1,12 @@
 //! Test that objects reachable from a root's `.head` or `.tail` are not
 //! collected.
 
-#[macro_use] extern crate cellgc;
+#[macro_use] extern crate cell_gc;
 mod pairs_aux;
 use pairs_aux::*;
 
 fn main() {
-    cellgc::with_heap(|heap| {
+    cell_gc::with_heap(|heap| {
         let obj1 = alloc_null_pair(heap);
         let (p2, p3, p4, p5);
         {

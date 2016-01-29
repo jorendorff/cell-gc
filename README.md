@@ -1,4 +1,4 @@
-# cellgc
+# cell-gc
 
 This crate contains a simple garbage collector for use in Rust.
 The goal is to help you quickly build a VM in Rust.
@@ -16,17 +16,18 @@ So this GC is designed for:
 
 ## Caveats
 
-**cellgc only works for toy-sized programs at present.**
+**cell-gc only works for toy-sized programs at present.**
 [See issue #4.](https://github.com/jorendorff/rust-toy-gc/issues/4)
 
-**cellgc is for use in VMs.** So the assumption is that the data the GC is
+**cell-gc is for use in VMs.** So the assumption is that the data the GC is
 managing is not really *your* data; it's your end user's data. If you don't
-want every field of every GC-managed object to be public and mutable, cellgc
+want every field of every GC-managed object to be public and mutable, cell-gc
 is not the GC for your project!
 
-cellgc isn't on crates.io yet. **The API is completely unstable.**
+**The API is completely unstable.** I promise I will change it in ways
+that will break code; you'll just have to keep up until things stabilize.
 
-cellgc is not designed to support multithread access to a single heap (like Java).
+cell-gc is not designed to support multithread access to a single heap (like Java).
 Instead, you can create one heap per thread (like JavaScript).
 
 Currently it does not support lots of small heaps with random lifetimes (like Erlang),
@@ -38,7 +39,7 @@ but I have some ideas on how to get there.
 Good luck!
 
 ```rust
-#[macro_use] extern crate cellgc;
+#[macro_use] extern crate cell_gc;
 
 /// A linked list of numbers that lives in the GC heap.
 gc_ref_type! {
@@ -52,7 +53,7 @@ gc_ref_type! {
 
 fn main() {
     // Create a heap (you'll only do this once in your whole program)
-    cellgc::with_heap(|heap| {
+    cell_gc::with_heap(|heap| {
         // Allocate an object (returns a RefIntList)
         let obj1 = heap.alloc(IntList { head: 17, tail: None });
         assert_eq!(obj1.head(), 17);
@@ -113,8 +114,8 @@ The safe alternative is to put a `Box` or `Rc` around your value
 (the one that implements `Drop` or `Clone`)
 and use that as a field of a GC heap struct.
 
-## Why is it called `cellgc`?
+## Why is it called "cell-gc"?
 
-In cellgc, every field of every GC-managed object is public and mutable.
+In cell-gc, every field of every GC-managed object is public and mutable.
 
 It's as though every field were a [Cell](http://doc.rust-lang.org/std/cell/struct.Cell.html).

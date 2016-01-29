@@ -1,6 +1,6 @@
 //! The GC can work with objects that only take up one byte.
 
-#[macro_use] extern crate cellgc;
+#[macro_use] extern crate cell_gc;
 use std::marker::PhantomData;
 
 gc_ref_type! {
@@ -11,8 +11,8 @@ gc_ref_type! {
 }
 
 fn main () {
-    cellgc::with_heap(|heap| {
-        let n = cellgc::page_capacity::<Tiny>();
+    cell_gc::with_heap(|heap| {
+        let n = cell_gc::page_capacity::<Tiny>();
 
         // see comment in size_medium.rs
         assert!(n >= 500);

@@ -1,4 +1,4 @@
-//! The traits defined here are implementation details of cellgc.
+//! The traits defined here are implementation details of cell_gc.
 //!
 //! Application code does not need to use these traits. They are public only so
 //! that the public macros can use it. Use the friendly macros!
