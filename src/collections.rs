@@ -1,6 +1,6 @@
 //! Collections for use with GC references.
 
-use traits::{InHeap, IntoHeap, IntoHeapAllocation};
+use traits::{IntoHeap, IntoHeapAllocation};
 use gcref::GCRef;
 use heap::HeapId;
 use std::marker::PhantomData;
@@ -10,25 +10,21 @@ use std::cmp::Ordering;
 /// An implementation detail.
 pub struct VecStorage<'a, T: IntoHeap<'a>>(Vec<T::In>, HeapId<'a>);
 
-unsafe impl<'a, T: IntoHeap<'a>> InHeap<'a> for VecStorage<'a, T> {
-    type Out = Vec<T>;
-
-    unsafe fn mark(&self) {
-        for r in &self.0 {
-            r.mark();
-        }
-    }
-
-    unsafe fn from_heap(&self) -> Vec<T> {
-        self.0.iter().map(|x| x.from_heap()).collect()
-    }
-}
-
 unsafe impl<'a, T: IntoHeap<'a>> IntoHeap<'a> for Vec<T> {
     type In = VecStorage<'a, T>;
 
     fn into_heap(self) -> VecStorage<'a, T> {
         VecStorage(self.into_iter().map(|x| x.into_heap()).collect(), PhantomData)
+    }
+
+    unsafe fn from_heap(storage: &VecStorage<'a, T>) -> Vec<T> {
+        storage.0.iter().map(|x| T::from_heap(x)).collect()
+    }
+
+    unsafe fn mark(storage: &VecStorage<'a, T>) {
+        for r in &storage.0 {
+            T::mark(r);
+        }
     }
 }
 
@@ -61,29 +57,28 @@ impl<'a, T: IntoHeap<'a>> IntoHeapAllocation<'a> for Vec<T> {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VecRef<'a, T: IntoHeap<'a>>(GCRef<'a, Vec<T>>);
 
-unsafe impl<'a, T: IntoHeap<'a>> InHeap<'a> for *mut VecStorage<'a, T> {
-    type Out = VecRef<'a, T>;
-
-    unsafe fn mark(&self) {
-        for r in &(**self).0 {
-            r.mark();
-        }
-    }
-
-    unsafe fn from_heap(&self) -> VecRef<'a, T> {
-        VecRef(GCRef::new(*self))
-    }
-}
-
 unsafe impl<'a, T: IntoHeap<'a>> IntoHeap<'a> for VecRef<'a, T> {
     type In = *mut VecStorage<'a, T>;
 
     fn into_heap(self) -> *mut VecStorage<'a, T> {
         self.0.as_mut_ptr()
     }
+
+    unsafe fn from_heap(storage: &*mut VecStorage<'a, T>) -> VecRef<'a, T> {
+        VecRef(GCRef::new(*storage))
+    }
+
+    unsafe fn mark(storage: &*mut VecStorage<'a, T>) {
+        // BUG - should call a method mark_ref that checks the mark bit before
+        // doing anything
+        for r in &(**storage).0 {
+            T::mark(r);
+        }
+    }
 }
 
 impl<'a, T: IntoHeap<'a>> VecRef<'a, T> {
+    // BUG: this should not let the borrow escape the closure.
     /// Unsafe to call: During the lifetime of the reference passed to the
     /// callback, the caller must ensure that the vector is not modified.
     /// Destructors and `from_heap` methods are presumed safe. Avoid
@@ -119,7 +114,7 @@ impl<'a, T: IntoHeap<'a>> VecRef<'a, T> {
     ///
     /// Panics if `index` is out of bounds.
     pub fn get(&self, index: usize) -> T {
-        self.unsafe_deref(|v| unsafe { v[index].from_heap() })
+        self.unsafe_deref(|v| unsafe { IntoHeap::from_heap(&v[index]) })
     }
 
     /// Copy the vector out of the GC-managed heap. This returns an ordinary,
@@ -139,7 +134,7 @@ impl<'a, T: IntoHeap<'a>> VecRef<'a, T> {
     /// # });
     /// ```
     pub fn get_all(&self) -> Vec<T> {
-        unsafe { (*self.0.as_ptr()).from_heap() }
+        unsafe { IntoHeap::from_heap(&*self.0.as_ptr()) }
     }
 
     /// Set element `index` of the vector to `value`.
@@ -174,7 +169,7 @@ impl<'a, T: IntoHeap<'a>> VecRef<'a, T> {
 
     pub fn swap_remove(&self, index: usize) -> T {
         let u = self.unsafe_deref_mut(|v| v.swap_remove(index));
-        unsafe { u.from_heap() }
+        unsafe { IntoHeap::from_heap(&u) }
     }
 
     pub fn insert(&self, index: usize, element: T) {
@@ -184,7 +179,7 @@ impl<'a, T: IntoHeap<'a>> VecRef<'a, T> {
 
     pub fn remove(&self, index: usize) -> T {
         let u = self.unsafe_deref_mut(|v| v.remove(index));
-        unsafe { u.from_heap() }
+        unsafe { IntoHeap::from_heap(&u) }
     }
 
     pub fn push(&self, value: T) {
@@ -193,7 +188,7 @@ impl<'a, T: IntoHeap<'a>> VecRef<'a, T> {
     }
 
     pub fn pop(&self) -> Option<T> {
-        self.unsafe_deref_mut(|v| v.pop()).map(|u| unsafe { u.from_heap() })
+        self.unsafe_deref_mut(|v| v.pop().map(|u| unsafe { IntoHeap::from_heap(&u) }))
     }
 
     pub fn append(&self, other: &VecRef<'a, T>) {
@@ -220,16 +215,14 @@ impl<'a, T: IntoHeap<'a>> VecRef<'a, T> {
     /// but cell-gc never hands out Rust references to heap values. Instead
     /// this returns a clone of the value.
     pub fn first(&self) -> Option<T> {
-        let r = self.unsafe_deref(|v| v.first());
-        r.map(|u| unsafe { u.from_heap() })
+        self.unsafe_deref(|v| v.first().map(|u| unsafe { IntoHeap::from_heap(u) }))
     }
 
     /// Get the last element of the vector, or `None` if the vector is empty.
     ///
     /// Like `first()`, this clones the value.
     pub fn last(&self) -> Option<T> {
-        let r = self.unsafe_deref(|v| v.last());
-        r.map(|u| unsafe { u.from_heap() })
+        self.unsafe_deref(|v| v.last().map(|u| unsafe { IntoHeap::from_heap(u) }))
     }
 
     /// Sort the vector in place.
@@ -244,8 +237,8 @@ impl<'a, T: IntoHeap<'a>> VecRef<'a, T> {
         let mut tmp = vec![];
         self.unsafe_deref_mut(|v| mem::swap(&mut tmp, v));
         tmp.sort_by(|ru1, ru2| {
-            let t1 = unsafe { ru1.from_heap() };
-            let t2 = unsafe { ru2.from_heap() };
+            let t1 = unsafe { IntoHeap::from_heap(ru1) };
+            let t2 = unsafe { IntoHeap::from_heap(ru2) };
             compare(&t1, &t2)
         });
         self.unsafe_deref_mut(|v| mem::swap(&mut tmp, v));

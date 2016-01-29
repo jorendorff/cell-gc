@@ -77,7 +77,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::ptr;
-use traits::{InHeap, IntoHeap, IntoHeapAllocation};
+use traits::{IntoHeap, IntoHeapAllocation};
 use pages::{heap_type_id, PageHeader, TypedPage, PageBox};
 use gcref::GCRef;
 
