@@ -44,9 +44,9 @@ Good luck!
 
 /// A linked list of numbers that lives in the GC heap.
 gc_heap_type! {
-    // This declares four different related structs, but the last two are
-    // for the GC's internal use. Read on to see the first two in action.
-    struct IntList / RefIntList / InHeapIntList / InHeapRefIntList <'a> {
+    // This declares three different related structs, but the last one is
+    // for the GC's internal use. Read on to see the other two in action.
+    struct IntList / RefIntList / InHeapIntList <'a> {
         head / set_head: i64,
         tail / set_tail: Option<RefIntList<'a>>
     }
