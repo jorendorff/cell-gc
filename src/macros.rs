@@ -142,8 +142,8 @@ macro_rules! gc_ref_type {
 
 #[macro_export]
 macro_rules! gc_inline_enum {
-    { AS_ITEM $x:item } => { $x };
-    { AS_EXPR $x:expr } => { $x };
+    { @as_item $x:item } => { $x };
+    { @as_expr $x:expr } => { $x };
 
     {
         PARSE_VARIANTS $helper_name:ident
@@ -209,7 +209,7 @@ macro_rules! gc_inline_enum {
         ( $($maybe_pub:tt)* ) $storage_type:ident
     } => {
         gc_inline_enum! {
-            AS_ITEM
+            @as_item
             $($maybe_pub)*
             enum $storage_type<'a> {
                 $($accumulated_output)*
@@ -251,7 +251,7 @@ macro_rules! gc_inline_enum {
         MARK DONE { $($accumulated_output:tt)* } $self_ref:ident, $_storage_type:ty
     } => {
         gc_inline_enum! {
-            AS_EXPR
+            @as_expr
             match *$self_ref {
                 $($accumulated_output)*
             }
@@ -325,7 +325,7 @@ macro_rules! gc_inline_enum {
         $self_:expr, $_stack_type:ident / $_storage_type:ident
     } => {
         gc_inline_enum! {
-            AS_EXPR
+            @as_expr
             match $self_ {
                 $($accumulated_output)*
             }
@@ -379,7 +379,7 @@ macro_rules! gc_inline_enum {
         $self_ref:expr, $_stack_type:ident / $_storage_type:ident
     } => {
         gc_inline_enum! {
-            AS_EXPR
+            @as_expr
             match $self_ref {
                 $($accumulated_output)*
             }
@@ -456,7 +456,7 @@ macro_rules! gc_inline_enum {
         }
 
         gc_inline_enum! {
-            AS_ITEM
+            @as_item
             #[derive(Debug, Clone, PartialEq)]
             $($maybe_pub)*
             enum $stack_type<'a>
