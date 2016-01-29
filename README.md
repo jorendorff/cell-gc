@@ -1,6 +1,7 @@
 # cell-gc
 
-This crate contains a simple garbage collector for use in Rust.
+A simple garbage collector for use in Rust.
+
 The goal is to help you quickly build a VM in Rust.
 So this GC is designed for:
 
@@ -76,7 +77,7 @@ and eventually it'll be recycled.
 and calling `.clone()` copies the Ref, not the object it points to.
 
 
-# Heap types
+## Heap types
 
 Right now, there is a separate macro for declaring enums: `heap_inline_enum!{}`.
 (But I hope to merge these two macros, so this will go away.)
@@ -113,6 +114,7 @@ So don't do that!
 The safe alternative is to put a `Box` or `Rc` around your value
 (the one that implements `Drop` or `Clone`)
 and use that as a field of a GC heap struct.
+
 
 ## Why is it called "cell-gc"?
 
