@@ -146,65 +146,6 @@ macro_rules! gc_inline_enum {
     { @as_expr $x:expr } => { $x };
 
     {
-        @parse_variants $helper_name:ident
-        {}
-        $( $etc:tt )*
-    } => {
-        gc_inline_enum! {
-            $helper_name DONE
-            $($etc)*
-        }
-    };
-
-    {
-        @parse_variants $helper_name:ident
-        { $variant_name:ident }
-        $( $etc:tt )*
-    } => {
-        gc_inline_enum! {
-            $helper_name VARIANT $variant_name NO_FIELDS
-            {}
-            $($etc)*
-        }
-    };
-
-    {
-        @parse_variants $helper_name:ident
-        { $variant_name:ident , $($more_variants:tt)* }
-        $( $etc:tt )*
-    } => {
-        gc_inline_enum! {
-            $helper_name VARIANT $variant_name NO_FIELDS
-            { $($more_variants)* }
-            $($etc)*
-        }
-    };
-
-    {
-        @parse_variants $helper_name:ident
-        { $variant_name:ident ( $($field_types:tt)* ) }
-        $( $etc:tt )*
-    } => {
-        gc_inline_enum! {
-            $helper_name VARIANT $variant_name ( $($field_types)* )
-            { }
-            $($etc)*
-        }
-    };
-
-    {
-        @parse_variants $helper_name:ident
-        { $variant_name:ident ( $($field_types:tt)* ), $($more_variants:tt)* }
-        $( $etc:tt )*
-    } => {
-        gc_inline_enum! {
-            $helper_name VARIANT $variant_name ( $($field_types)* )
-            { $($more_variants)* }
-            $($etc)*
-        }
-    };
-
-    {
         @for_each_variant $_helper:tt {} $all_results:tt ($($ctn:tt)*)
     } => {
         gc_inline_enum! { $($ctn)* $all_results }
