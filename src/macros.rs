@@ -305,56 +305,45 @@ macro_rules! gc_inline_enum {
     };
 
     {
-        MARK DONE { $($accumulated_output:tt)* } $self_ref:ident, $_storage_type:ty
+        @mark_expr ($self_ref:expr) { $($arms:tt)* }
     } => {
         gc_inline_enum! {
             @as_expr
             match *$self_ref {
-                $($accumulated_output)*
+                $($arms)*
             }
         }
     };
 
     {
-        MARK VARIANT $name:ident NO_FIELDS
-        $more_variants:tt
-        { $($accumulated_output:tt)* }
-        $self_ref:ident, $storage_type:ident
+        @mark_variant $storage_type:ident
+            $name:ident NO_FIELDS ($($ctn:tt)*)
     } => {
         gc_inline_enum! {
-            @parse_variants MARK $more_variants {
-                $($accumulated_output)*
-                $storage_type::$name => (),
-            }
-            $self_ref, $storage_type
+            $($ctn)* { $storage_type::$name => (), }
         }
     };
 
     {
-        MARK VARIANT $name:ident ( $($field_type:ty),* )
-        $($etc:tt)*
+        @mark_variant $storage_type:ident
+            $name:ident ( $($field_type:ty),* ) $ctn:tt
     } => {
         gc_inline_enum! {
-            TYPES_TO_IDENTS ( $($field_type),*, ) () (a b c d e f g h i j k l m n o p q r s t u v w x y z)
-            (MARK CONTINUE_VARIANT $name $($etc)*)
+            @zip_idents_with_types ( $($field_type),*, ) () (a b c d e f g h i j k l m n o p q r s t u v w x y z)
+            (@mark_variant_continued $storage_type $name $ctn)
         }
     };
 
     {
-        MARK CONTINUE_VARIANT $name:ident
-        $more_variants:tt
-        { $($accumulated_output:tt)* }
-        $self_ref:ident, $storage_type:ident
-        ( $(($binding:ident : $field_type:ty))* )
+        @mark_variant_continued $storage_type:ident $name:ident ($($ctn:tt)*)
+            ( $(($binding:ident : $field_type:ty))* )
     } => {
         gc_inline_enum! {
-            @parse_variants MARK $more_variants {
-                $($accumulated_output)*
+            $($ctn)* {
                 $storage_type::$name ( $(ref $binding),* ) => {
                     $( $crate::traits::InHeap::mark($binding); )*
-                }
+                },
             }
-            $self_ref, $storage_type
         }
     };
 
@@ -539,8 +528,8 @@ macro_rules! gc_inline_enum {
 
             unsafe fn mark(&self) {
                 gc_inline_enum! {
-                    @parse_variants MARK $variants {}
-                    self, $storage_type
+                    @for_each_variant (@mark_variant $storage_type) $variants {}
+                    (@mark_expr (self))
                 }
             }
 
