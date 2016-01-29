@@ -146,7 +146,7 @@ macro_rules! gc_inline_enum {
     { @as_expr $x:expr } => { $x };
 
     {
-        PARSE_VARIANTS $helper_name:ident
+        @parse_variants $helper_name:ident
         {}
         $( $etc:tt )*
     } => {
@@ -157,7 +157,7 @@ macro_rules! gc_inline_enum {
     };
 
     {
-        PARSE_VARIANTS $helper_name:ident
+        @parse_variants $helper_name:ident
         { $variant_name:ident }
         $( $etc:tt )*
     } => {
@@ -169,7 +169,7 @@ macro_rules! gc_inline_enum {
     };
 
     {
-        PARSE_VARIANTS $helper_name:ident
+        @parse_variants $helper_name:ident
         { $variant_name:ident , $($more_variants:tt)* }
         $( $etc:tt )*
     } => {
@@ -181,7 +181,7 @@ macro_rules! gc_inline_enum {
     };
 
     {
-        PARSE_VARIANTS $helper_name:ident
+        @parse_variants $helper_name:ident
         { $variant_name:ident ( $($field_types:tt)* ) }
         $( $etc:tt )*
     } => {
@@ -193,7 +193,7 @@ macro_rules! gc_inline_enum {
     };
 
     {
-        PARSE_VARIANTS $helper_name:ident
+        @parse_variants $helper_name:ident
         { $variant_name:ident ( $($field_types:tt)* ), $($more_variants:tt)* }
         $( $etc:tt )*
     } => {
@@ -224,7 +224,7 @@ macro_rules! gc_inline_enum {
         ( $($maybe_pub:tt)* ) $storage_type:ident
     } => {
         gc_inline_enum! {
-            PARSE_VARIANTS DECLARE_STORAGE_TYPE $more_variants {
+            @parse_variants DECLARE_STORAGE_TYPE $more_variants {
                 $($accumulated_output)*
                 $variant_name,
             }
@@ -239,7 +239,7 @@ macro_rules! gc_inline_enum {
         ( $($maybe_pub:tt)* ) $storage_type:ident
     } => {
         gc_inline_enum! {
-            PARSE_VARIANTS DECLARE_STORAGE_TYPE $more_variants {
+            @parse_variants DECLARE_STORAGE_TYPE $more_variants {
                 $($accumulated_output)*
                 $variant_name($(<$field_type as $crate::traits::IntoHeap<'a>>::In),*),
             }
@@ -265,7 +265,7 @@ macro_rules! gc_inline_enum {
         $self_ref:ident, $storage_type:ident
     } => {
         gc_inline_enum! {
-            PARSE_VARIANTS MARK $more_variants {
+            @parse_variants MARK $more_variants {
                 $($accumulated_output)*
                 $storage_type::$name => (),
             }
@@ -291,7 +291,7 @@ macro_rules! gc_inline_enum {
         ( $(($binding:ident : $field_type:ty))* )
     } => {
         gc_inline_enum! {
-            PARSE_VARIANTS MARK $more_variants {
+            @parse_variants MARK $more_variants {
                 $($accumulated_output)*
                 $storage_type::$name ( $(ref $binding),* ) => {
                     $( $crate::traits::InHeap::mark($binding); )*
@@ -339,7 +339,7 @@ macro_rules! gc_inline_enum {
         $self_:expr, $stack_type:ident / $storage_type:ident
     } => {
         gc_inline_enum! {
-            PARSE_VARIANTS TO_HEAP $more_variants {
+            @parse_variants TO_HEAP $more_variants {
                 $($accumulated_output)*
                 $stack_type::$name => $storage_type::$name,
             }
@@ -365,7 +365,7 @@ macro_rules! gc_inline_enum {
         ( $(($binding:ident : $field_type:ty))* )
     } => {
         gc_inline_enum! {
-            PARSE_VARIANTS TO_HEAP $more_variants {
+            @parse_variants TO_HEAP $more_variants {
                 $($accumulated_output)*
                 $stack_type::$name ( $($binding),* ) =>
                     $storage_type::$name( $($crate::traits::IntoHeap::into_heap($binding)),* ),
@@ -393,7 +393,7 @@ macro_rules! gc_inline_enum {
         $self_ref:expr, $stack_type:ident / $storage_type:ident
     } => {
         gc_inline_enum! {
-            PARSE_VARIANTS FROM_HEAP $more_variants {
+            @parse_variants FROM_HEAP $more_variants {
                 $($accumulated_output)*
                 &$storage_type::$name => $stack_type::$name,
             }
@@ -419,7 +419,7 @@ macro_rules! gc_inline_enum {
         ( $(($binding:ident : $field_type:ty))* )
     } => {
         gc_inline_enum! {
-            PARSE_VARIANTS FROM_HEAP $more_variants {
+            @parse_variants FROM_HEAP $more_variants {
                 $($accumulated_output)*
                 &$storage_type::$name ( ref $($binding),* ) =>
                     $stack_type::$name( $($crate::traits::InHeap::from_heap($binding)),* ),
@@ -451,7 +451,7 @@ macro_rules! gc_inline_enum {
         $variants:tt
     } => {
         gc_inline_enum! {
-            PARSE_VARIANTS DECLARE_STORAGE_TYPE $variants {}
+            @parse_variants DECLARE_STORAGE_TYPE $variants {}
             ( $($maybe_pub)* ) $storage_type
         }
 
@@ -468,14 +468,14 @@ macro_rules! gc_inline_enum {
 
             unsafe fn mark(&self) {
                 gc_inline_enum! {
-                    PARSE_VARIANTS MARK $variants {}
+                    @parse_variants MARK $variants {}
                     self, $storage_type
                 }
             }
 
             unsafe fn from_heap(&self) -> $stack_type<'a> {
                 gc_inline_enum! {
-                    PARSE_VARIANTS FROM_HEAP $variants {}
+                    @parse_variants FROM_HEAP $variants {}
                     self, $stack_type / $storage_type
                 }
             }
@@ -486,7 +486,7 @@ macro_rules! gc_inline_enum {
 
             fn into_heap(self) -> $storage_type<'a> {
                 gc_inline_enum! {
-                    PARSE_VARIANTS TO_HEAP $variants {}
+                    @parse_variants TO_HEAP $variants {}
                     self, $stack_type / $storage_type
                 }
             }
