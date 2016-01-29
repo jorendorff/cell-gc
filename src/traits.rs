@@ -89,6 +89,8 @@ pub unsafe trait IntoHeap<'a>: Sized {
     /// heap objects exist. (However, user code never runs while such
     /// references exist, so the method is not marked `unsafe`.)
     fn into_heap(self) -> Self::In;
+
+    unsafe fn mark(u: &Self::In) { InHeap::mark(u); }
 }
 
 /// Relate an `IntoHeap` type to the corresponding safe reference type.

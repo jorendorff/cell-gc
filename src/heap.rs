@@ -110,7 +110,7 @@ impl<'a> Heap<'a> {
         }
     }
 
-    fn get_page<T: InHeap<'a>>(&mut self) -> &mut TypedPage<'a, T> {
+    fn get_page<T: IntoHeap<'a>>(&mut self) -> &mut TypedPage<'a, T> {
         let key = heap_type_id::<T>();
         let heap_ptr = self as *mut Heap<'a>;
         self.pages
@@ -127,7 +127,7 @@ impl<'a> Heap<'a> {
     ///
     /// (Unsafe because if the argument is garbage, a later GC will
     /// crash. Called only from `impl GCRef`.)
-    pub unsafe fn pin<T: InHeap<'a>>(&self, p: *mut T) {
+    pub unsafe fn pin<U: InHeap<'a>>(&self, p: *mut U) {
         let p = p as *mut ();
         let mut pins = self.pins.borrow_mut();
         let entry = pins.entry(p).or_insert(0);
@@ -138,7 +138,7 @@ impl<'a> Heap<'a> {
     ///
     /// (Unsafe because unpinning an object that other code is still using
     /// causes dangling pointers. Called only from `impl GCRef`.)
-    pub unsafe fn unpin<T: InHeap<'a>>(&self, p: *mut T) {
+    pub unsafe fn unpin<U: InHeap<'a>>(&self, p: *mut U) {
         let p = p as *mut ();
         let mut pins = self.pins.borrow_mut();
         if {
@@ -159,11 +159,11 @@ impl<'a> Heap<'a> {
         // way.) Looking forward to placement new!
         let u = value.into_heap();
         unsafe {
-            let alloc = self.get_page::<T::In>().try_alloc();
+            let alloc = self.get_page::<T>().try_alloc();
             alloc
                 .or_else(|| {
                     self.gc();
-                    self.get_page::<T::In>().try_alloc()
+                    self.get_page::<T>().try_alloc()
                 })
                 .map(move |p| {
                     ptr::write(p, u);
@@ -172,16 +172,16 @@ impl<'a> Heap<'a> {
         }
     }
 
-    pub unsafe fn from_allocation<T: InHeap<'a>>(ptr: *const T) -> *const Heap<'a> {
-        (*TypedPage::find(ptr)).header.heap
+    pub unsafe fn from_allocation<U: InHeap<'a>>(ptr: *const U) -> *const Heap<'a> {
+        (*TypedPage::<'a, U::Out>::find(ptr)).header.heap
     }
 
-    pub unsafe fn get_mark_bit<T: InHeap<'a>>(ptr: *const T) -> bool {
-        (*TypedPage::find(ptr)).get_mark_bit(ptr)
+    pub unsafe fn get_mark_bit<U: InHeap<'a>>(ptr: *const U) -> bool {
+        (*TypedPage::<'a, U::Out>::find(ptr)).get_mark_bit(ptr)
     }
 
-    pub unsafe fn set_mark_bit<T: InHeap<'a>>(ptr: *const T) {
-        (*TypedPage::find(ptr)).set_mark_bit(ptr);
+    pub unsafe fn set_mark_bit<U: InHeap<'a>>(ptr: *const U) {
+        (*TypedPage::<'a, U::Out>::find(ptr)).set_mark_bit(ptr);
     }
 
     pub fn alloc<T: IntoHeapAllocation<'a>>(&mut self, value: T) -> T::Ref {

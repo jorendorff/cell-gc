@@ -3,16 +3,16 @@
 use std::{cmp, mem, ptr};
 use std::marker::PhantomData;
 use bit_vec::BitVec;
-use traits::InHeap;
+use traits::IntoHeap;
 use heap::Heap;
 
 /// Non-inlined function that serves as an entry point to marking. This is used
 /// for marking root set entries.
-unsafe fn mark_entry_point<'a, T: InHeap<'a>>(addr: *const ()) {
-    InHeap::mark(&*(addr as *const T));
+unsafe fn mark_entry_point<'a, T: IntoHeap<'a>>(addr: *const ()) {
+    T::mark(&*(addr as *const T::In));
 }
 
-pub fn heap_type_id<'a, T: InHeap<'a>>() -> usize {
+pub fn heap_type_id<'a, T: IntoHeap<'a>>() -> usize {
     mark_entry_point::<T> as *const () as usize
 }
 
@@ -62,7 +62,7 @@ impl<'a> PageHeader<'a> {
         self.mark_fn as usize
     }
 
-    pub fn downcast_mut<T: InHeap<'a>>(&mut self) -> Option<&mut TypedPage<'a, T>> {
+    pub fn downcast_mut<T: IntoHeap<'a>>(&mut self) -> Option<&mut TypedPage<'a, T>> {
         if heap_type_id::<T>() == self.type_id() {
             let ptr = self as *mut PageHeader<'a> as *mut TypedPage<'a, T>;
             Some(unsafe { &mut *ptr })
@@ -72,9 +72,9 @@ impl<'a> PageHeader<'a> {
     }
 }
 
-pub struct TypedPage<'a, T: InHeap<'a>> {
+pub struct TypedPage<'a, T: IntoHeap<'a>> {
     pub header: PageHeader<'a>,
-    pub allocations: PhantomData<T>
+    pub allocations: PhantomData<T::In>
 }
 
 /// Returns the smallest multiple of `k` that is at least `n`.
@@ -86,16 +86,16 @@ fn round_up(n: usize, k: usize) -> usize {
 }
 
 
-impl<'a, T: InHeap<'a>> TypedPage<'a, T> {
+impl<'a, T: IntoHeap<'a>> TypedPage<'a, T> {
     /// The actual size of an allocation can't be smaller than the size of a
     /// pointer, due to the way we store the freelist by stealing a pointer
     /// from the allocation itself.
     fn allocation_size() -> usize {
-        cmp::max(mem::size_of::<T>(), mem::size_of::<*mut T>())
+        cmp::max(mem::size_of::<T::In>(), mem::size_of::<*mut T::In>())
     }
 
     fn allocation_align() -> usize {
-        cmp::max(mem::align_of::<T>(), mem::align_of::<*mut T>())
+        cmp::max(mem::align_of::<T::In>(), mem::align_of::<*mut T::In>())
     }
 
     /// Offset, in bytes, of the first allocation from the start of the page.
@@ -115,9 +115,9 @@ impl<'a, T: InHeap<'a>> TypedPage<'a, T> {
     unsafe fn init(&mut self) {
         let mut addr = self.first_object_addr();
         for _ in 0 .. Self::capacity() {
-            self.add_to_free_list(addr as *mut T);
+            self.add_to_free_list(addr as *mut T::In);
 
-            // This can't use `ptr = ptr.offset(1)` because if T is smaller
+            // This can't use `ptr = ptr.offset(1)` because if T::In is smaller
             // than a pointer, allocations are padded to pointer size.
             // `.offset(1)` doesn't know about the padding and therefore
             // wouldn't advance to the next allocation.
@@ -125,50 +125,50 @@ impl<'a, T: InHeap<'a>> TypedPage<'a, T> {
         }
     }
 
-    pub fn find(ptr: *const T) -> *mut TypedPage<'a, T> {
+    pub fn find(ptr: *const T::In) -> *mut TypedPage<'a, T> {
         let page_addr = ptr as usize & !(PAGE_ALIGN - 1);
         let page = page_addr as *mut TypedPage<'a, T>;
         assert_eq!(heap_type_id::<T>(), unsafe { (*page).header.type_id() });
         page
     }
 
-    unsafe fn add_to_free_list(&mut self, p: *mut T) {
+    unsafe fn add_to_free_list(&mut self, p: *mut T::In) {
         let listp = p as *mut *mut ();
         *listp = self.header.freelist;
         assert_eq!(*listp, self.header.freelist);
         self.header.freelist = p as *mut ();
     }
 
-    unsafe fn allocation_index(&self, ptr: *const T) -> usize {
+    unsafe fn allocation_index(&self, ptr: *const T::In) -> usize {
         let base = self.first_object_addr();
 
         // Check that ptr is in range.
-        assert!(ptr >= base as *const T);
-        assert!(ptr < (base + (Self::capacity() * Self::allocation_size())) as *const T);
+        assert!(ptr >= base as *const T::In);
+        assert!(ptr < (base + (Self::capacity() * Self::allocation_size())) as *const T::In);
 
         let index = (ptr as usize - base as usize) / Self::allocation_size();
-        assert_eq!((base + index * Self::allocation_size()) as *const T, ptr);
+        assert_eq!((base + index * Self::allocation_size()) as *const T::In, ptr);
         index
     }
 
-    pub unsafe fn get_mark_bit(&mut self, ptr: *const T) -> bool {
+    pub unsafe fn get_mark_bit(&mut self, ptr: *const T::In) -> bool {
         let index = self.allocation_index(ptr);
         self.header.mark_bits[index]
     }
 
-    pub unsafe fn set_mark_bit(&mut self, ptr: *const T) {
+    pub unsafe fn set_mark_bit(&mut self, ptr: *const T::In) {
         let index = self.allocation_index(ptr);
         self.header.mark_bits.set(index, true);
     }
 
-    pub unsafe fn try_alloc(&mut self) -> Option<*mut T> {
+    pub unsafe fn try_alloc(&mut self) -> Option<*mut T::In> {
         let p = self.header.freelist;
         if p.is_null() {
             None
         } else {
             let listp = p as *mut *mut ();
             self.header.freelist = *listp;
-            let ap = p as *mut T;
+            let ap = p as *mut T::In;
             let index = self.allocation_index(ap);
             assert!(!self.header.allocated_bits[index]);
             self.header.allocated_bits.set(index, true);
@@ -181,27 +181,27 @@ impl<'a, T: InHeap<'a>> TypedPage<'a, T> {
         for i in 0 .. Self::capacity() {
             if self.header.allocated_bits[i] && !self.header.mark_bits[i] {
                 // The next statement has the effect of calling th destructor.
-                ptr::read(addr as *const T);
+                ptr::read(addr as *const T::In);
                 self.header.allocated_bits.set(i, false);
-                self.add_to_free_list(addr as *mut T);
+                self.add_to_free_list(addr as *mut T::In);
             }
             addr += Self::allocation_size();
         }
     }
 }
 
-unsafe fn sweep_entry_point<'a, T: InHeap<'a>>(header: &mut PageHeader<'a>) {
+unsafe fn sweep_entry_point<'a, T: IntoHeap<'a>>(header: &mut PageHeader<'a>) {
     header.downcast_mut::<T>().unwrap().sweep();
 }
 
 pub struct PageBox<'a>(*mut PageHeader<'a>);
 
 impl<'a> PageBox<'a> {
-    pub fn new<T: InHeap<'a>>(heap: *mut Heap<'a>) -> PageBox<'a> {
+    pub fn new<T: IntoHeap<'a>>(heap: *mut Heap<'a>) -> PageBox<'a> {
         assert!(mem::size_of::<TypedPage<'a, T>>() <=
                 TypedPage::<'a, T>::first_allocation_offset());
-        assert!(TypedPage::<'a, T>::first_allocation_offset()
-                + TypedPage::<'a, T>::capacity() * TypedPage::<'a, T>::allocation_size()
+        assert!(TypedPage::<'a, T>::first_allocation_offset() + TypedPage::<'a, T>::capacity()
+                * TypedPage::<'a, T>::allocation_size()
                 <= PAGE_SIZE);
         let raw_page: *mut () = {
             let mut vec: Vec<u8> = Vec::with_capacity(PAGE_SIZE);
