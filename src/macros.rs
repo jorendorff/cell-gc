@@ -262,45 +262,33 @@ macro_rules! gc_inline_enum {
     };
 
     {
-        DECLARE_STORAGE_TYPE DONE { $($accumulated_output:tt)* }
-        ( $($maybe_pub:tt)* ) $storage_type:ident
+        @declare_storage_type ( $($maybe_pub:tt)* ) $storage_type:ident
+            { $($variants:tt)* }
     } => {
         gc_inline_enum! {
             @as_item
             $($maybe_pub)*
             enum $storage_type<'a> {
-                $($accumulated_output)*
+                $($variants)*
             }
         }
     };
 
     {
-        DECLARE_STORAGE_TYPE VARIANT $variant_name:ident NO_FIELDS
-        $more_variants:tt
-        { $($accumulated_output:tt)* }
-        ( $($maybe_pub:tt)* ) $storage_type:ident
+        @storage_type_variant $variant_name:ident NO_FIELDS ($($ctn:tt)*)
     } => {
         gc_inline_enum! {
-            @parse_variants DECLARE_STORAGE_TYPE $more_variants {
-                $($accumulated_output)*
-                $variant_name,
-            }
-            ( $($maybe_pub)* ) $storage_type
+            $($ctn)* { $variant_name, }
         }
     };
 
     {
-        DECLARE_STORAGE_TYPE VARIANT $variant_name:ident ( $($field_type:ty),* )
-        $more_variants:tt
-        { $($accumulated_output:tt)* }
-        ( $($maybe_pub:tt)* ) $storage_type:ident
+        @storage_type_variant $variant_name:ident ( $($field_type:ty),* ) ($($ctn:tt)*)
     } => {
         gc_inline_enum! {
-            @parse_variants DECLARE_STORAGE_TYPE $more_variants {
-                $($accumulated_output)*
+            $($ctn)* {
                 $variant_name($(<$field_type as $crate::traits::IntoHeap<'a>>::In),*),
             }
-            ( $($maybe_pub)* ) $storage_type
         }
     };
 
@@ -481,8 +469,8 @@ macro_rules! gc_inline_enum {
         $variants:tt
     } => {
         gc_inline_enum! {
-            @parse_variants DECLARE_STORAGE_TYPE $variants {}
-            ( $($maybe_pub)* ) $storage_type
+            @for_each_variant (@storage_type_variant) $variants {}
+                (@declare_storage_type ( $($maybe_pub)* ) $storage_type)
         }
 
         gc_inline_enum! {
