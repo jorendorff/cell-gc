@@ -8,7 +8,7 @@
 //! *   No dependency on linters or compiler plugins
 //!
 //! *   An API that's consistent with a high-performance implementation
-//!     (though right now cellgc is not speedy)
+//!     (though right now cell-gc is not speedy)
 //!
 //! *   Fun
 //!
