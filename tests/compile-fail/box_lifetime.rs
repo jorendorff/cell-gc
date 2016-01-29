@@ -7,7 +7,7 @@ mod pairs_aux;
 use cell_gc::*;
 use pairs_aux::*;
 
-gc_ref_type! {
+gc_heap_type! {
     struct Thing / ThingRef / ThingStorage / ThingRefStorage <'a> {
         boxed_ref / set_boxed_ref: Box<Option<ThingRef<'a>>>
     }

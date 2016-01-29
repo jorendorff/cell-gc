@@ -2,14 +2,14 @@
 
 #[macro_use] extern crate cell_gc;
 
-gc_ref_type! {
+gc_heap_type! {
     struct Dropper / DropperRef / DropperStorage / DropperRefStorage <'a> {
         addr / set_addr: usize,
         ignore / set_ignore: SomethingWithLifetime<'a>
     }
 }
 
-gc_inline_enum! {
+gc_heap_type! {
     enum SomethingWithLifetime / SomethingWithLifetimeStorage <'a> {
         Another(DropperRef<'a>),
         Nothing

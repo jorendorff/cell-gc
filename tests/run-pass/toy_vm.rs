@@ -4,14 +4,14 @@
 use cell_gc::{Heap, with_heap};
 use std::rc::Rc;
 
-gc_ref_type! {
+gc_heap_type! {
     struct Pair / PairRef / PairStorage / PairRefStorage <'a> {
         car / set_car: Value<'a>,
         cdr / set_cdr: Value<'a>
     }
 }
 
-gc_inline_enum! {
+gc_heap_type! {
     enum Value / ValueStorage <'a> {
         Nil,
         Int(i32),

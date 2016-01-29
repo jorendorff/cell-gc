@@ -2,7 +2,7 @@
 
 #[macro_use] extern crate cell_gc;
 
-gc_ref_type! {
+gc_heap_type! {
     struct Philosopher / RefPhilosopher / InHeapPhilosopher / InHeapRefPhilosopher <'a> {
         name / set_name: &'static str,
         teacher / set_teacher: Option<RefPhilosopher<'a>>

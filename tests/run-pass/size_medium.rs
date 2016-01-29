@@ -2,7 +2,7 @@
 
 #[macro_use] extern crate cell_gc;
 
-gc_ref_type! {
+gc_heap_type! {
     struct Chunk / ChunkRef / ChunkStorage / ChunkRefStorage <'a> {
         field_0 / set_field_0: (u64, u64, u64, u64),
         field_32 / set_field_32: (u64, u64, u64, u64),

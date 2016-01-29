@@ -65,7 +65,7 @@ pub unsafe trait InHeap<'a>: Sized {
 
 /// `IntoHeap` types live on the stack, in application code. They are the
 /// safe, user-friendly analogues to pointer-filled `InHeap` types. When you
-/// use `gc_ref_type!` to declare a new GC struct or enum, `IntoHeap` types are
+/// use `gc_heap_type!` to declare a new GC struct or enum, `IntoHeap` types are
 /// the types you use for fields.
 ///
 /// "Safe to use" means they don't expose pointers or references to GC memory;

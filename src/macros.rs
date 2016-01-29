@@ -1,22 +1,23 @@
 #[macro_export]
-macro_rules! gc_ref_type {
-    { @as_item $it:item } => { $it };
+macro_rules! gc_heap_type {
+    // Top-level macros.
+    { pub enum $($etc:tt)* } =>
+    { gc_heap_type! { @gc_heap_enum (pub) enum $($etc)* } };
 
-    {
-        pub struct $($x:tt)*
-    } => {
-        gc_ref_type! {
-            @gc_heap_struct (pub) struct $($x)*
-        }
-    };
-    {
-        struct $($x:tt)*
-    } => {
-        gc_ref_type! {
-            @gc_heap_struct () struct $($x)*
-        }
-    };
+    { enum $($etc:tt)* } =>
+    { gc_heap_type! { @gc_heap_enum () enum $($etc)* } };
 
+    { pub struct $($etc:tt)* } =>
+    { gc_heap_type! { @gc_heap_struct (pub) struct $($etc)* } };
+
+    { struct $($etc:tt)* } =>
+    { gc_heap_type! { @gc_heap_struct () struct $($etc)* } };
+
+    // Helpers used by almost every macro.
+    { @as_item $x:item } => { $x };
+    { @as_expr $x:expr } => { $x };
+
+    // The main helper macro for expanding a struct.
     {
         @gc_heap_struct ( $($maybe_pub:tt)* )
         struct $fields_type:ident / $ref_type:ident / $storage_type:ident / $ref_storage_type:ident <'a> {
@@ -24,7 +25,7 @@ macro_rules! gc_ref_type {
         }
     } => {
         // === $storage_type: the InHeap representation of the struct
-        gc_ref_type! {
+        gc_heap_type! {
             @as_item
             $($maybe_pub)* struct $storage_type<'a> {
                 $( pub $field_name: <$field_type as $crate::traits::IntoHeap<'a>>::In ),*
@@ -51,7 +52,7 @@ macro_rules! gc_ref_type {
         }
 
         // === $fields_type: A safe version of the struct
-        gc_ref_type! {
+        gc_heap_type! {
             @as_item
             #[derive(Clone, Debug)]
             $($maybe_pub)* struct $fields_type<'a> {
@@ -78,7 +79,7 @@ macro_rules! gc_ref_type {
         }
 
         // === $ref_storage_type: The InHeap representation of a reference to the struct
-        gc_ref_type! {
+        gc_heap_type! {
             @as_item
             #[derive(Clone, Copy, Debug, PartialEq, Eq)]
             $($maybe_pub)* struct $ref_storage_type<'a>(*mut $storage_type<'a>);
@@ -100,7 +101,7 @@ macro_rules! gc_ref_type {
         }
 
         // === $ref_type: A safe reference to the struct
-        gc_ref_type! {
+        gc_heap_type! {
             @as_item
             #[derive(Clone, Debug, PartialEq, Eq)]
             $($maybe_pub)* struct $ref_type<'a>($crate::GCRef<'a, $storage_type<'a>>);
@@ -137,39 +138,33 @@ macro_rules! gc_ref_type {
                 self.0.as_mut_ptr()
             }
         }
-    }
-}
+    };
 
-#[macro_export]
-macro_rules! gc_inline_enum {
-    { @as_item $x:item } => { $x };
-    { @as_expr $x:expr } => { $x };
-
-    // `gc_inline_enum! { @for_each_variant ($helper*) {$variants*} {} ($ctn*) }`
+    // `gc_heap_type! { @for_each_variant ($helper*) {$variants*} {} ($ctn*) }`
     //
     // This helper is like `concatMap` for mapping enum variants through
     // another helper macro. `{$variants*}` should be the body of an enum item.
     //
     // For each variant in $variants, this calls
-    // `gc_inline_enum! { $helper $variant_name $variant_fields ($ctn2*) }`.
+    // `gc_heap_type! { $helper $variant_name $variant_fields ($ctn2*) }`.
     // For variants that have no fields, it passes `NO_FIELDS` to the
     // $variant_fields argument.  The helper must call back:
-    // `gc_inline_enum! { $ctn2* { ...tokens... } }`.
+    // `gc_heap_type! { $ctn2* { ...tokens... } }`.
     //
     // @for_each_variant accumulates all the tokens passed back by the calls to
     // $helper. After the last call to $helper, it passes all the results to
-    // its continuation, calling `gc_inline_enum! { $ctn* { ...all tokens... } }`.
+    // its continuation, calling `gc_heap_type! { $ctn* { ...all tokens... } }`.
     {
         @for_each_variant $_helper:tt {} $all_results:tt ($($ctn:tt)*)
     } => {
-        gc_inline_enum! { $($ctn)* $all_results }
+        gc_heap_type! { $($ctn)* $all_results }
     };
 
     {
         @for_each_variant ($($helper:tt)*)
         { $variant_name:ident } $acc:tt $ctn:tt
     } => {
-        gc_inline_enum! {
+        gc_heap_type! {
             $($helper)* $variant_name NO_FIELDS
                 (@next_variant ($($helper)*) {} $acc $ctn)
         }
@@ -180,7 +175,7 @@ macro_rules! gc_inline_enum {
         { $variant_name:ident , $($more_variants:tt)* }
         $acc:tt $ctn:tt
     } => {
-        gc_inline_enum! {
+        gc_heap_type! {
             $($helper)* $variant_name NO_FIELDS
                 (@next_variant ($($helper)*) { $($more_variants)* } $acc $ctn)
         }
@@ -191,7 +186,7 @@ macro_rules! gc_inline_enum {
         { $variant_name:ident ( $($field_types:tt)* ) }
         $acc:tt $ctn:tt
     } => {
-        gc_inline_enum! {
+        gc_heap_type! {
             $($helper)* $variant_name ( $($field_types)* )
                 (@next_variant ($($helper)*) {} $acc $ctn)
         }
@@ -202,7 +197,7 @@ macro_rules! gc_inline_enum {
         { $variant_name:ident ( $($field_types:tt)* ), $($more_variants:tt)*  }
         $acc:tt $ctn:tt
     } => {
-        gc_inline_enum! {
+        gc_heap_type! {
             $($helper)* $variant_name ( $($field_types)* )
                 (@next_variant ($($helper)*) { $($more_variants)* } $acc $ctn)
         }
@@ -211,12 +206,12 @@ macro_rules! gc_inline_enum {
     {
         @next_variant $helper:tt $more_variants:tt { $($acc:tt)* } $ctn:tt { $($rv:tt)* }
     } => {
-        gc_inline_enum! {
+        gc_heap_type! {
             @for_each_variant $helper $more_variants { $($acc)* $($rv)* } $ctn
         }
     };
 
-    // `gc_inline_enum! { @zip_idents_with_types ($alphabet*) ($types,*) () ($ctn*) }`
+    // `gc_heap_type! { @zip_idents_with_types ($alphabet*) ($types,*) () ($ctn*) }`
     //
     // This helper macro pairs each type in `$types,*` with a letter of the `$alphabet*`.
     // It passes the resulting pairs to `$ctn`. So, for example, this:
@@ -226,7 +221,7 @@ macro_rules! gc_inline_enum {
     {
         @zip_idents_with_types $_leftovers:tt () ($(($binding:ident : $btype:ty))*) ($($ctn:tt)*)
     } => {
-        gc_inline_enum! { $($ctn)* ($(($binding : $btype))*) }
+        gc_heap_type! { $($ctn)* ($(($binding : $btype))*) }
     };
     {
         @zip_idents_with_types
@@ -235,7 +230,7 @@ macro_rules! gc_inline_enum {
         ($($acc:tt)*)
         $ctn:tt
     } => {
-        gc_inline_enum! {
+        gc_heap_type! {
             @zip_idents_with_types
             ($($ids)*)
             ($($ts),*)
@@ -248,7 +243,7 @@ macro_rules! gc_inline_enum {
     {
         @enum_in_heap_variant $variant_name:ident NO_FIELDS ($($ctn:tt)*)
     } => {
-        gc_inline_enum! {
+        gc_heap_type! {
             $($ctn)* { $variant_name, }
         }
     };
@@ -256,7 +251,7 @@ macro_rules! gc_inline_enum {
     {
         @enum_in_heap_variant $variant_name:ident ( $($field_type:ty),* ) ($($ctn:tt)*)
     } => {
-        gc_inline_enum! {
+        gc_heap_type! {
             $($ctn)* {
                 $variant_name($(<$field_type as $crate::traits::IntoHeap<'a>>::In),*),
             }
@@ -267,7 +262,7 @@ macro_rules! gc_inline_enum {
         @enum_declare_in_heap_type ( $($maybe_pub:tt)* ) $storage_type:ident
             { $($variants:tt)* }
     } => {
-        gc_inline_enum! {
+        gc_heap_type! {
             @as_item
             $($maybe_pub)*
             enum $storage_type<'a> {
@@ -281,7 +276,7 @@ macro_rules! gc_inline_enum {
         @enum_mark_variant $storage_type:ident
             $name:ident NO_FIELDS ($($ctn:tt)*)
     } => {
-        gc_inline_enum! {
+        gc_heap_type! {
             $($ctn)* { $storage_type::$name => (), }
         }
     };
@@ -290,7 +285,7 @@ macro_rules! gc_inline_enum {
         @enum_mark_variant $storage_type:ident
             $name:ident ( $($field_type:ty),* ) $ctn:tt
     } => {
-        gc_inline_enum! {
+        gc_heap_type! {
             @zip_idents_with_types (a b c d e f g h i j k l m n o p q r s t u v w x y z)
                 ( $($field_type),*, ) ()
                 (@enum_mark_variant_continued $storage_type $name $ctn)
@@ -301,7 +296,7 @@ macro_rules! gc_inline_enum {
         @enum_mark_variant_continued $storage_type:ident $name:ident ($($ctn:tt)*)
             ( $(($binding:ident : $field_type:ty))* )
     } => {
-        gc_inline_enum! {
+        gc_heap_type! {
             $($ctn)* {
                 $storage_type::$name ( $(ref $binding),* ) => {
                     $( $crate::traits::InHeap::mark($binding); )*
@@ -313,7 +308,7 @@ macro_rules! gc_inline_enum {
     {
         @enum_mark_expr ($self_ref:expr) { $($arms:tt)* }
     } => {
-        gc_inline_enum! {
+        gc_heap_type! {
             @as_expr
             match *$self_ref {
                 $($arms)*
@@ -328,7 +323,7 @@ macro_rules! gc_inline_enum {
             $name:ident NO_FIELDS
             ($($ctn:tt)*)
     } => {
-        gc_inline_enum! {
+        gc_heap_type! {
             $($ctn)* { $stack_type::$name => $storage_type::$name, }
         }
     };
@@ -338,7 +333,7 @@ macro_rules! gc_inline_enum {
             $name:ident ( $($field_type:ty),* )
             $ctn:tt
     } => {
-        gc_inline_enum! {
+        gc_heap_type! {
             @zip_idents_with_types (a b c d e f g h i j k l m n o p q r s t u v w x y z)
                 ( $($field_type),*, ) ()
                 (@enum_into_heap_variant_continued $stack_type $storage_type $name $ctn)
@@ -349,7 +344,7 @@ macro_rules! gc_inline_enum {
         @enum_into_heap_variant_continued $stack_type:ident $storage_type:ident $name:ident ($($ctn:tt)*)
             ( $(($binding:ident : $field_type:ty))* )
     } => {
-        gc_inline_enum! {
+        gc_heap_type! {
             $($ctn)* {
                 $stack_type::$name ( $($binding),* ) =>
                     $storage_type::$name( $($crate::traits::IntoHeap::into_heap($binding)),* ),
@@ -361,7 +356,7 @@ macro_rules! gc_inline_enum {
         @enum_into_heap_expr ($self_:expr)
         { $($accumulated_output:tt)* }
     } => {
-        gc_inline_enum! {
+        gc_heap_type! {
             @as_expr
             match $self_ {
                 $($accumulated_output)*
@@ -374,7 +369,7 @@ macro_rules! gc_inline_enum {
         @enum_from_heap_variant $stack_type:ident $storage_type:ident
             $name:ident NO_FIELDS ($($ctn:tt)*)
     } => {
-        gc_inline_enum! {
+        gc_heap_type! {
             $($ctn)* { &$storage_type::$name => $stack_type::$name, }
         }
     };
@@ -383,7 +378,7 @@ macro_rules! gc_inline_enum {
         @enum_from_heap_variant $stack_type:ident $storage_type:ident
             $name:ident ( $($field_type:ty),* ) $ctn:tt
     } => {
-        gc_inline_enum! {
+        gc_heap_type! {
             @zip_idents_with_types (a b c d e f g h i j k l m n o p q r s t u v w x y z)
                 ( $($field_type),*, ) ()
                 (@enum_from_heap_variant_continued $stack_type $storage_type $name $ctn)
@@ -394,7 +389,7 @@ macro_rules! gc_inline_enum {
         @enum_from_heap_variant_continued $stack_type:ident $storage_type:ident $name:ident ($($ctn:tt)*)
             ( $(($binding:ident : $field_type:ty))* )
     } => {
-        gc_inline_enum! {
+        gc_heap_type! {
             $($ctn)* {
                 &$storage_type::$name ( ref $($binding),* ) =>
                     $stack_type::$name( $($crate::traits::InHeap::from_heap($binding)),* ),
@@ -405,28 +400,11 @@ macro_rules! gc_inline_enum {
     {
         @enum_from_heap_expr ($self_ref:expr) { $($arms:tt)* }
     } => {
-        gc_inline_enum! {
+        gc_heap_type! {
             @as_expr
             match $self_ref {
                 $($arms)*
             }
-        }
-    };
-
-    // Main macros for declaring heap enums.
-    {
-        pub enum $($x:tt)*
-    } => {
-        gc_inline_enum! {
-            @gc_heap_enum (pub) enum $($x)*
-        }
-    };
-
-    {
-        enum $($x:tt)*
-    } => {
-        gc_inline_enum! {
-            @gc_heap_enum () enum $($x)*
         }
     };
 
@@ -436,12 +414,12 @@ macro_rules! gc_inline_enum {
         enum $stack_type:ident / $storage_type:ident <'a>
         $variants:tt
     } => {
-        gc_inline_enum! {
+        gc_heap_type! {
             @for_each_variant (@enum_in_heap_variant) $variants {}
                 (@enum_declare_in_heap_type ( $($maybe_pub)* ) $storage_type)
         }
 
-        gc_inline_enum! {
+        gc_heap_type! {
             @as_item
             #[derive(Debug, Clone, PartialEq)]
             $($maybe_pub)*
@@ -453,14 +431,14 @@ macro_rules! gc_inline_enum {
             type Out = $stack_type<'a>;
 
             unsafe fn mark(&self) {
-                gc_inline_enum! {
+                gc_heap_type! {
                     @for_each_variant (@enum_mark_variant $storage_type) $variants {}
                     (@enum_mark_expr (self))
                 }
             }
 
             unsafe fn from_heap(&self) -> $stack_type<'a> {
-                gc_inline_enum! {
+                gc_heap_type! {
                     @for_each_variant (@enum_from_heap_variant $stack_type $storage_type) $variants {}
                     (@enum_from_heap_expr (self))
                 }
@@ -471,7 +449,7 @@ macro_rules! gc_inline_enum {
             type In = $storage_type<'a>;
 
             fn into_heap(self) -> $storage_type<'a> {
-                gc_inline_enum! {
+                gc_heap_type! {
                     @for_each_variant (@enum_into_heap_variant $stack_type $storage_type) $variants {}
                     (@enum_into_heap_expr (self))
                 }

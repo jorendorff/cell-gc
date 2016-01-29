@@ -41,7 +41,7 @@
 //! #[macro_use] extern crate cell_gc;
 //!
 //! /// A linked list of numbers that lives in the GC heap.
-//! gc_ref_type! {
+//! gc_heap_type! {
 //!     // This declares four different related structs, but the last two are
 //!     // for the GC's internal use. Read on to see the first two in action.
 //!     struct IntList / RefIntList / InHeapIntList / InHeapRefIntList <'a> {

@@ -3,7 +3,7 @@
 #[macro_use] extern crate cell_gc;
 use std::marker::PhantomData;
 
-gc_ref_type! {
+gc_heap_type! {
     struct Unit / UnitRef / UnitStorage / UnitRefStorage <'a> {
         phantom / set_phantom: PhantomData<&'a u8>
     }
