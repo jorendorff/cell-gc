@@ -145,6 +145,20 @@ macro_rules! gc_inline_enum {
     { @as_item $x:item } => { $x };
     { @as_expr $x:expr } => { $x };
 
+    // `gc_inline_enum! { @for_each_variant ($helper*) {$variants*} {} ($ctn*) }`
+    //
+    // This helper is like `concatMap` for mapping enum variants through
+    // another helper macro. `{$variants*}` should be the body of an enum item.
+    //
+    // For each variant in $variants, this calls
+    // `gc_inline_enum! { $helper $variant_name $variant_fields ($ctn2*) }`.
+    // For variants that have no fields, it passes `NO_FIELDS` to the
+    // $variant_fields argument.  The helper must call back:
+    // `gc_inline_enum! { $ctn2* { ...tokens... } }`.
+    //
+    // @for_each_variant accumulates all the tokens passed back by the calls to
+    // $helper. After the last call to $helper, it passes all the results to
+    // its continuation, calling `gc_inline_enum! { $ctn* { ...all tokens... } }`.
     {
         @for_each_variant $_helper:tt {} $all_results:tt ($($ctn:tt)*)
     } => {
@@ -202,6 +216,35 @@ macro_rules! gc_inline_enum {
         }
     };
 
+    // `gc_inline_enum! { @zip_idents_with_types ($alphabet*) ($types,*) () ($ctn*) }`
+    //
+    // This helper macro pairs each type in `$types,*` with a letter of the `$alphabet*`.
+    // It passes the resulting pairs to `$ctn`. So, for example, this:
+    //     @zip_idents_with_types (a b c d e f g) (i32, String) () (@continue_here)
+    // boils down to this:
+    //     @continue_here ((a: i32) (b: String))
+    {
+        @zip_idents_with_types $_leftovers:tt () ($(($binding:ident : $btype:ty))*) ($($ctn:tt)*)
+    } => {
+        gc_inline_enum! { $($ctn)* ($(($binding : $btype))*) }
+    };
+    {
+        @zip_idents_with_types
+        ($id:ident $($ids:tt)*)
+        ($t:ty, $($ts:ty),*)
+        ($($acc:tt)*)
+        $ctn:tt
+    } => {
+        gc_inline_enum! {
+            @zip_idents_with_types
+            ($($ids)*)
+            ($($ts),*)
+            ($($acc)* ($id : $t))
+            $ctn
+        }
+    };
+
+    // Helper macros for declaring an InHeap enum.
     {
         @storage_type_variant $variant_name:ident NO_FIELDS ($($ctn:tt)*)
     } => {
@@ -233,6 +276,7 @@ macro_rules! gc_inline_enum {
         }
     };
 
+    // Helper macros for implementing the mark() method for an InHeap enum.
     {
         @mark_variant $storage_type:ident
             $name:ident NO_FIELDS ($($ctn:tt)*)
@@ -277,6 +321,8 @@ macro_rules! gc_inline_enum {
         }
     };
 
+    // Helper macros for implementing the into_heap() method for an IntoHeap
+    // enum.
     {
         @into_heap_variant $stack_type:ident $storage_type:ident
             $name:ident NO_FIELDS
@@ -323,38 +369,7 @@ macro_rules! gc_inline_enum {
         }
     };
 
-    {
-        @zip_idents_with_types $_leftovers:tt () ($(($binding:ident : $btype:ty))*) ($($ctn:tt)*)
-    } => {
-        gc_inline_enum! { $($ctn)* ($(($binding : $btype))*) }
-    };
-    {
-        @zip_idents_with_types
-        ($id:ident $($ids:tt)*)
-        ($t:ty, $($ts:ty),*)
-        ($($acc:tt)*)
-        $ctn:tt
-    } => {
-        gc_inline_enum! {
-            @zip_idents_with_types
-            ($($ids)*)
-            ($($ts),*)
-            ($($acc)* ($id : $t))
-            $ctn
-        }
-    };
-
-    {
-        @from_heap_expr ($self_ref:expr) { $($arms:tt)* }
-    } => {
-        gc_inline_enum! {
-            @as_expr
-            match $self_ref {
-                $($arms)*
-            }
-        }
-    };
-
+    // Helper macros for implementing the from_heap() method of an InHeap enum.
     {
         @from_heap_variant $stack_type:ident $storage_type:ident
             $name:ident NO_FIELDS ($($ctn:tt)*)
@@ -387,6 +402,18 @@ macro_rules! gc_inline_enum {
         }
     };
 
+    {
+        @from_heap_expr ($self_ref:expr) { $($arms:tt)* }
+    } => {
+        gc_inline_enum! {
+            @as_expr
+            match $self_ref {
+                $($arms)*
+            }
+        }
+    };
+
+    // Main macros for declaring heap enums.
     {
         pub enum $($x:tt)*
     } => {
