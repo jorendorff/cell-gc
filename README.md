@@ -19,7 +19,12 @@ So this GC is designed for:
 **cellgc only works for toy-sized programs at present.**
 [See issue #4.](https://github.com/jorendorff/rust-toy-gc/issues/4)
 
-cellgc isn't on crates.io yet. The API is completely unstable.
+**cellgc is for use in VMs.** So the assumption is that the data the GC is
+managing is not really *your* data; it's your end user's data. If you don't
+want every field of every GC-managed object to be public and mutable, cellgc
+is not the GC for your project!
+
+cellgc isn't on crates.io yet. **The API is completely unstable.**
 
 cellgc is not designed to support multithread access to a single heap (like Java).
 Instead, you can create one heap per thread (like JavaScript).
@@ -107,3 +112,9 @@ So don't do that!
 The safe alternative is to put a `Box` or `Rc` around your value
 (the one that implements `Drop` or `Clone`)
 and use that as a field of a GC heap struct.
+
+## Why is it called `cellgc`?
+
+In cellgc, every field of every GC-managed object is public and mutable.
+
+It's as though every field were a [Cell](http://doc.rust-lang.org/std/cell/struct.Cell.html).
