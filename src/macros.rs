@@ -3,10 +3,10 @@ macro_rules! gc_ref_type {
     { @as_item $it:item } => { $it };
 
     {
-        pub $($x:tt)*
+        pub struct $($x:tt)*
     } => {
         gc_ref_type! {
-            @gc_heap_struct (pub) $($x)*
+            @gc_heap_struct (pub) struct $($x)*
         }
     };
     {
