@@ -5,7 +5,7 @@ use cell_gc::{Heap, with_heap};
 use std::rc::Rc;
 
 gc_heap_type! {
-    struct Pair / PairRef / PairStorage / PairRefStorage <'a> {
+    struct Pair / PairRef / PairStorage <'a> {
         car / set_car: Value<'a>,
         cdr / set_cdr: Value<'a>
     }

@@ -6,7 +6,7 @@ use std::rc::Rc;
 use cell_gc::*;
 
 gc_heap_type! {
-    pub struct Pair / PairRef / PairStorage / PairRefStorage <'a> {
+    pub struct Pair / PairRef / PairStorage <'a> {
         head / set_head: Value<'a>,
         tail / set_tail: Value<'a>
     }

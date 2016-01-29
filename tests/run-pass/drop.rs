@@ -3,7 +3,7 @@
 #[macro_use] extern crate cell_gc;
 
 gc_heap_type! {
-    struct Dropper / DropperRef / DropperStorage / DropperRefStorage <'a> {
+    struct Dropper / DropperRef / DropperStorage <'a> {
         addr / set_addr: usize,
         ignore / set_ignore: SomethingWithLifetime<'a>
     }

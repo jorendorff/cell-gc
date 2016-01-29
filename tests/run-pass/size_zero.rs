@@ -4,7 +4,7 @@
 use std::marker::PhantomData;
 
 gc_heap_type! {
-    struct Unit / UnitRef / UnitStorage / UnitRefStorage <'a> {
+    struct Unit / UnitRef / UnitStorage <'a> {
         phantom / set_phantom: PhantomData<&'a u8>
     }
 }

@@ -20,7 +20,7 @@ macro_rules! gc_heap_type {
     // The main helper macro for expanding a struct.
     {
         @gc_heap_struct ( $($maybe_pub:tt)* )
-        struct $fields_type:ident / $ref_type:ident / $storage_type:ident / $ref_storage_type:ident <'a> {
+        struct $fields_type:ident / $ref_type:ident / $storage_type:ident <'a> {
             $($field_name:ident / $field_setter_name:ident : $field_type: ty),*
         }
     } => {
@@ -74,13 +74,6 @@ macro_rules! gc_heap_type {
             }
         }
 
-        // === $ref_storage_type: The in-heap representation of a reference to the struct
-        gc_heap_type! {
-            @as_item
-            #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-            $($maybe_pub)* struct $ref_storage_type<'a>(*mut $storage_type<'a>);
-        }
-
         // === $ref_type: A safe reference to the struct
         gc_heap_type! {
             @as_item
@@ -89,18 +82,18 @@ macro_rules! gc_heap_type {
         }
 
         unsafe impl<'a> $crate::traits::IntoHeap<'a> for $ref_type<'a> {
-            type In = $ref_storage_type<'a>;
+            type In = *mut $storage_type<'a>;
 
-            fn into_heap(self) -> $ref_storage_type<'a> {
-                $ref_storage_type(self.0.as_mut_ptr())
+            fn into_heap(self) -> *mut $storage_type<'a> {
+                self.0.as_mut_ptr()
             }
 
-            unsafe fn from_heap(storage: &$ref_storage_type<'a>) -> $ref_type<'a> {
-                $ref_type($crate::GCRef::new(storage.0))
+            unsafe fn from_heap(storage: &*mut $storage_type<'a>) -> $ref_type<'a> {
+                $ref_type($crate::GCRef::new(*storage))
             }
 
-            unsafe fn mark(storage: &$ref_storage_type<'a>) {
-                let ptr = storage.0;
+            unsafe fn mark(storage: &*mut $storage_type<'a>) {
+                let ptr = *storage;
                 if !ptr.is_null() {
                     <$fields_type<'a> as $crate::traits::IntoHeap>::mark(&*ptr);
                 }

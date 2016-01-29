@@ -4,7 +4,7 @@
 use std::marker::PhantomData;
 
 gc_heap_type! {
-    struct Tiny / TinyRef / TinyStorage / TinyRefStorage <'a> {
+    struct Tiny / TinyRef / TinyStorage <'a> {
         bit / set_bit: bool,
         phantom / set_phantom: PhantomData<&'a u8>
     }

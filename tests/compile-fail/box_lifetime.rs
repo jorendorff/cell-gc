@@ -8,7 +8,7 @@ use cell_gc::*;
 use pairs_aux::*;
 
 gc_heap_type! {
-    struct Thing / ThingRef / ThingStorage / ThingRefStorage <'a> {
+    struct Thing / ThingRef / ThingStorage <'a> {
         boxed_ref / set_boxed_ref: Box<Option<ThingRef<'a>>>
     }
 }
