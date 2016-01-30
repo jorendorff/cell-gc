@@ -82,11 +82,11 @@ use pages::{heap_type_id, PageHeader, TypedPage, PageBox};
 use gcref::GCRef;
 
 // What does this do? You'll never guess!
-pub type HeapId<'a> = PhantomData<::std::cell::Cell<&'a mut ()>>;
+pub type HeapId<'h> = PhantomData<::std::cell::Cell<&'h mut ()>>;
 
-pub struct Heap<'a> {
-    id: HeapId<'a>,
-    pages: HashMap<usize, PageBox<'a>>,
+pub struct Heap<'h> {
+    id: HeapId<'h>,
+    pages: HashMap<usize, PageBox<'h>>,
     pins: RefCell<HashMap<*mut (), usize>>
 }
 
@@ -96,13 +96,13 @@ pub struct Heap<'a> {
 /// the API is a little wonky --- but how many heaps were you planning on
 /// creating?)
 pub fn with_heap<F, O>(f: F) -> O
-    where F: for<'a> FnOnce(&mut Heap<'a>) -> O
+    where F: for<'h> FnOnce(&mut Heap<'h>) -> O
 {
     f(&mut Heap::new())
 }
 
-impl<'a> Heap<'a> {
-    fn new() -> Heap<'a> {
+impl<'h> Heap<'h> {
+    fn new() -> Heap<'h> {
         Heap {
             id: PhantomData,
             pages: HashMap::new(),
@@ -110,9 +110,9 @@ impl<'a> Heap<'a> {
         }
     }
 
-    fn get_page<T: IntoHeap<'a>>(&mut self) -> &mut TypedPage<'a, T> {
+    fn get_page<T: IntoHeap<'h>>(&mut self) -> &mut TypedPage<'h, T> {
         let key = heap_type_id::<T>();
-        let heap_ptr = self as *mut Heap<'a>;
+        let heap_ptr = self as *mut Heap<'h>;
         self.pages
             .entry(key)
             .or_insert_with(|| PageBox::new::<T>(heap_ptr))
@@ -127,7 +127,7 @@ impl<'a> Heap<'a> {
     ///
     /// (Unsafe because if the argument is garbage, a later GC will
     /// crash. Called only from `impl GCRef`.)
-    pub unsafe fn pin<T: IntoHeap<'a>>(&self, p: *mut T::In) {
+    pub unsafe fn pin<T: IntoHeap<'h>>(&self, p: *mut T::In) {
         let p = p as *mut ();
         let mut pins = self.pins.borrow_mut();
         let entry = pins.entry(p).or_insert(0);
@@ -138,7 +138,7 @@ impl<'a> Heap<'a> {
     ///
     /// (Unsafe because unpinning an object that other code is still using
     /// causes dangling pointers. Called only from `impl GCRef`.)
-    pub unsafe fn unpin<T: IntoHeap<'a>>(&self, p: *mut T::In) {
+    pub unsafe fn unpin<T: IntoHeap<'h>>(&self, p: *mut T::In) {
         let p = p as *mut ();
         let mut pins = self.pins.borrow_mut();
         if {
@@ -151,7 +151,7 @@ impl<'a> Heap<'a> {
         }
     }
 
-    pub fn try_alloc<T: IntoHeapAllocation<'a>>(&mut self, value: T) -> Option<T::Ref> {
+    pub fn try_alloc<T: IntoHeapAllocation<'h>>(&mut self, value: T) -> Option<T::Ref> {
         // For now, this is done very early, so that if it panics, the heap is
         // left in an OK state. Better wrapping of raw pointers would make it
         // possible to do this later, closer to the `ptr::write()` call. (And
@@ -172,19 +172,19 @@ impl<'a> Heap<'a> {
         }
     }
 
-    pub unsafe fn from_allocation<T: IntoHeap<'a>>(ptr: *const T::In) -> *const Heap<'a> {
-        (*TypedPage::<'a, T>::find(ptr)).header.heap
+    pub unsafe fn from_allocation<T: IntoHeap<'h>>(ptr: *const T::In) -> *const Heap<'h> {
+        (*TypedPage::<'h, T>::find(ptr)).header.heap
     }
 
-    pub unsafe fn get_mark_bit<T: IntoHeap<'a>>(ptr: *const T::In) -> bool {
-        (*TypedPage::<'a, T>::find(ptr)).get_mark_bit(ptr)
+    pub unsafe fn get_mark_bit<T: IntoHeap<'h>>(ptr: *const T::In) -> bool {
+        (*TypedPage::<'h, T>::find(ptr)).get_mark_bit(ptr)
     }
 
-    pub unsafe fn set_mark_bit<T: IntoHeap<'a>>(ptr: *const T::In) {
-        (*TypedPage::<'a, T>::find(ptr)).set_mark_bit(ptr);
+    pub unsafe fn set_mark_bit<T: IntoHeap<'h>>(ptr: *const T::In) {
+        (*TypedPage::<'h, T>::find(ptr)).set_mark_bit(ptr);
     }
 
-    pub fn alloc<T: IntoHeapAllocation<'a>>(&mut self, value: T) -> T::Ref {
+    pub fn alloc<T: IntoHeapAllocation<'h>>(&mut self, value: T) -> T::Ref {
         self.try_alloc(value).expect("out of memory (gc did not collect anything)")
     }
 
@@ -194,7 +194,7 @@ impl<'a> Heap<'a> {
             page.clear_mark_bits();
         }
         for (&ptr, _) in self.pins.borrow().iter() {
-            (*PageHeader::<'a>::find(ptr)).mark(ptr);
+            (*PageHeader::<'h>::find(ptr)).mark(ptr);
         }
 
         // sweep phase
@@ -208,7 +208,7 @@ impl<'a> Heap<'a> {
     }
 }
 
-impl<'a> Drop for Heap<'a> {
+impl<'h> Drop for Heap<'h> {
     fn drop(&mut self) {
         // Perform a final GC to call destructors on any remaining allocations.
         assert!(self.pins.borrow().is_empty());

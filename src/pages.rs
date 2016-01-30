@@ -8,11 +8,11 @@ use heap::Heap;
 
 /// Non-inlined function that serves as an entry point to marking. This is used
 /// for marking root set entries.
-unsafe fn mark_entry_point<'a, T: IntoHeap<'a>>(addr: *const ()) {
+unsafe fn mark_entry_point<'h, T: IntoHeap<'h>>(addr: *const ()) {
     T::mark(&*(addr as *const T::In));
 }
 
-pub fn heap_type_id<'a, T: IntoHeap<'a>>() -> usize {
+pub fn heap_type_id<'h, T: IntoHeap<'h>>() -> usize {
     mark_entry_point::<T> as *const () as usize
 }
 
@@ -26,19 +26,19 @@ fn is_aligned(ptr: *const ()) -> bool {
     ptr as usize & (PAGE_ALIGN - 1) == 0
 }
 
-pub struct PageHeader<'a> {
-    pub heap: *mut Heap<'a>,
+pub struct PageHeader<'h> {
+    pub heap: *mut Heap<'h>,
     mark_bits: BitVec,
     allocated_bits: BitVec,
     mark_fn: unsafe fn(*const ()),
-    sweep_fn: unsafe fn(&mut PageHeader<'a>),
+    sweep_fn: unsafe fn(&mut PageHeader<'h>),
     freelist: *mut ()
 }
 
-impl<'a> PageHeader<'a> {
-    pub fn find(ptr: *mut ()) -> *mut PageHeader<'a> {
+impl<'h> PageHeader<'h> {
+    pub fn find(ptr: *mut ()) -> *mut PageHeader<'h> {
         let header_addr = ptr as usize & !(PAGE_ALIGN - 1);
-        header_addr as *mut PageHeader<'a>
+        header_addr as *mut PageHeader<'h>
     }
 
     pub fn clear_mark_bits(&mut self) {
@@ -62,9 +62,9 @@ impl<'a> PageHeader<'a> {
         self.mark_fn as usize
     }
 
-    pub fn downcast_mut<T: IntoHeap<'a>>(&mut self) -> Option<&mut TypedPage<'a, T>> {
+    pub fn downcast_mut<T: IntoHeap<'h>>(&mut self) -> Option<&mut TypedPage<'h, T>> {
         if heap_type_id::<T>() == self.type_id() {
-            let ptr = self as *mut PageHeader<'a> as *mut TypedPage<'a, T>;
+            let ptr = self as *mut PageHeader<'h> as *mut TypedPage<'h, T>;
             Some(unsafe { &mut *ptr })
         } else {
             None
@@ -72,8 +72,8 @@ impl<'a> PageHeader<'a> {
     }
 }
 
-pub struct TypedPage<'a, T: IntoHeap<'a>> {
-    pub header: PageHeader<'a>,
+pub struct TypedPage<'h, T: IntoHeap<'h>> {
+    pub header: PageHeader<'h>,
     pub allocations: PhantomData<T::In>
 }
 
@@ -86,7 +86,7 @@ fn round_up(n: usize, k: usize) -> usize {
 }
 
 
-impl<'a, T: IntoHeap<'a>> TypedPage<'a, T> {
+impl<'h, T: IntoHeap<'h>> TypedPage<'h, T> {
     /// The actual size of an allocation can't be smaller than the size of a
     /// pointer, due to the way we store the freelist by stealing a pointer
     /// from the allocation itself.
@@ -125,9 +125,9 @@ impl<'a, T: IntoHeap<'a>> TypedPage<'a, T> {
         }
     }
 
-    pub fn find(ptr: *const T::In) -> *mut TypedPage<'a, T> {
+    pub fn find(ptr: *const T::In) -> *mut TypedPage<'h, T> {
         let page_addr = ptr as usize & !(PAGE_ALIGN - 1);
-        let page = page_addr as *mut TypedPage<'a, T>;
+        let page = page_addr as *mut TypedPage<'h, T>;
         assert_eq!(heap_type_id::<T>(), unsafe { (*page).header.type_id() });
         page
     }
@@ -180,7 +180,7 @@ impl<'a, T: IntoHeap<'a>> TypedPage<'a, T> {
         let mut addr = self.first_object_addr();
         for i in 0 .. Self::capacity() {
             if self.header.allocated_bits[i] && !self.header.mark_bits[i] {
-                // The next statement has the effect of calling th destructor.
+                // The next statement has the effect of calling the destructor.
                 ptr::read(addr as *const T::In);
                 self.header.allocated_bits.set(i, false);
                 self.add_to_free_list(addr as *mut T::In);
@@ -190,18 +190,18 @@ impl<'a, T: IntoHeap<'a>> TypedPage<'a, T> {
     }
 }
 
-unsafe fn sweep_entry_point<'a, T: IntoHeap<'a>>(header: &mut PageHeader<'a>) {
+unsafe fn sweep_entry_point<'h, T: IntoHeap<'h>>(header: &mut PageHeader<'h>) {
     header.downcast_mut::<T>().unwrap().sweep();
 }
 
-pub struct PageBox<'a>(*mut PageHeader<'a>);
+pub struct PageBox<'h>(*mut PageHeader<'h>);
 
-impl<'a> PageBox<'a> {
-    pub fn new<T: IntoHeap<'a>>(heap: *mut Heap<'a>) -> PageBox<'a> {
-        assert!(mem::size_of::<TypedPage<'a, T>>() <=
-                TypedPage::<'a, T>::first_allocation_offset());
-        assert!(TypedPage::<'a, T>::first_allocation_offset() + TypedPage::<'a, T>::capacity()
-                * TypedPage::<'a, T>::allocation_size()
+impl<'h> PageBox<'h> {
+    pub fn new<T: IntoHeap<'h>>(heap: *mut Heap<'h>) -> PageBox<'h> {
+        assert!(mem::size_of::<TypedPage<'h, T>>() <=
+                TypedPage::<'h, T>::first_allocation_offset());
+        assert!(TypedPage::<'h, T>::first_allocation_offset() + TypedPage::<'h, T>::capacity()
+                * TypedPage::<'h, T>::allocation_size()
                 <= PAGE_SIZE);
         let raw_page: *mut () = {
             let mut vec: Vec<u8> = Vec::with_capacity(PAGE_SIZE);
@@ -215,8 +215,8 @@ impl<'a> PageBox<'a> {
             page
         };
 
-        let page: *mut TypedPage<'a, T> = raw_page as *mut TypedPage<'a, T>;
-        let capacity = TypedPage::<'a, T>::capacity();
+        let page: *mut TypedPage<'h, T> = raw_page as *mut TypedPage<'h, T>;
+        let capacity = TypedPage::<'h, T>::capacity();
         unsafe {
             ptr::write(page, TypedPage {
                 header: PageHeader {
@@ -229,26 +229,26 @@ impl<'a> PageBox<'a> {
                 },
                 allocations: PhantomData
             });
-            TypedPage::<'a, T>::init(&mut *page);
-            PageBox(&mut (*page).header as *mut PageHeader<'a>)
+            TypedPage::<'h, T>::init(&mut *page);
+            PageBox(&mut (*page).header as *mut PageHeader<'h>)
         }
     }
 }
 
-impl<'a> ::std::ops::Deref for PageBox<'a> {
-    type Target = PageHeader<'a>;
-    fn deref(&self) -> &PageHeader<'a> {
+impl<'h> ::std::ops::Deref for PageBox<'h> {
+    type Target = PageHeader<'h>;
+    fn deref(&self) -> &PageHeader<'h> {
         unsafe { &*self.0 }
     }
 }
 
-impl<'a> ::std::ops::DerefMut for PageBox<'a> {
-    fn deref_mut(&mut self) -> &mut PageHeader<'a> {
+impl<'h> ::std::ops::DerefMut for PageBox<'h> {
+    fn deref_mut(&mut self) -> &mut PageHeader<'h> {
         unsafe { &mut *self.0 }
     }
 }
 
-impl<'a> Drop for PageBox<'a> {
+impl<'h> Drop for PageBox<'h> {
     fn drop(&mut self) {
         unsafe {
             assert!((*self.0).is_empty());

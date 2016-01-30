@@ -14,9 +14,9 @@ impl Drop for Dropper {
 }
 
 gc_heap_type! {
-    struct Obj / ObjRef / ObjStorage <'a> {
+    struct Obj / ObjRef / ObjStorage <'h> {
         frob / set_frob: Box<Dropper>,
-        more / set_more: Option<ObjRef<'a>>
+        more / set_more: Option<ObjRef<'h>>
     }
 }
 

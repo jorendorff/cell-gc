@@ -8,9 +8,9 @@ type Big512 = (Big128, Big128, Big128, Big128);
 type Big2560 = (Big512, Big512, Big512, Big512, Big512);
 
 gc_heap_type! {
-    struct Big / BigRef / BigStorage <'a> {
+    struct Big / BigRef / BigStorage <'h> {
         bits / set_bits: Big2560,
-        next / set_next: Option<BigRef<'a>>
+        next / set_next: Option<BigRef<'h>>
     }
 }
 

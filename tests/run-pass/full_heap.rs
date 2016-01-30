@@ -5,7 +5,7 @@
 mod pairs_aux;
 use pairs_aux::*;
 
-fn null_pair<'a>() -> Pair<'a> {
+fn null_pair<'h>() -> Pair<'h> {
     Pair { head: Value::Null, tail: Value::Null }
 }
 

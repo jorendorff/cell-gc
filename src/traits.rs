@@ -41,7 +41,7 @@ use gcref::GCRef;
 /// can't make rustc understand this. It would be *legal* to write this:
 ///
 /// ```ignore
-/// unsafe impl<'a, T: Clone + 'static> IntoHeap<'a> for T { ...trivial... }
+/// unsafe impl<'h, T: Clone + 'static> IntoHeap<'h> for T { ...trivial... }
 /// ```
 ///
 /// but alas, Rust thinks this impl conflicts with almost all others, making it
@@ -59,7 +59,7 @@ use gcref::GCRef;
 /// Bugs there are very likely to lead to dangling pointers and
 /// hard-to-debug crashes down the road.
 ///
-pub unsafe trait IntoHeap<'a>: Sized {
+pub unsafe trait IntoHeap<'h>: Sized {
     /// The type of the value when it is physically stored in the heap.
     type In;
 
@@ -87,11 +87,11 @@ pub unsafe trait IntoHeap<'a>: Sized {
 }
 
 /// Relate an `IntoHeap` type to the corresponding safe reference type.
-pub trait IntoHeapAllocation<'a>: IntoHeap<'a>
+pub trait IntoHeapAllocation<'h>: IntoHeap<'h>
 {
-    type Ref: IntoHeap<'a>;
+    type Ref: IntoHeap<'h>;
 
-    fn wrap_gcref(gcref: GCRef<'a, Self>) -> Self::Ref;
+    fn wrap_gcref(gcref: GCRef<'h, Self>) -> Self::Ref;
 }
 
 
@@ -99,7 +99,7 @@ pub trait IntoHeapAllocation<'a>: IntoHeap<'a>
 
 macro_rules! gc_trivial_impl {
     ($t:ty) => {
-        unsafe impl<'a> IntoHeap<'a> for $t {
+        unsafe impl<'h> IntoHeap<'h> for $t {
             type In = $t;
             fn into_heap(self) -> $t { self }
             unsafe fn from_heap(storage: &$t) -> $t { storage.clone() }
@@ -130,7 +130,7 @@ macro_rules! gc_generic_trivial_impl {
     ([$($x:tt)*] $t:ty) => {
         gc_generic_trivial_impl! {
             @as_item
-            unsafe impl<'a, $($x)*> IntoHeap<'a> for $t {
+            unsafe impl<'h, $($x)*> IntoHeap<'h> for $t {
                 type In = $t;
                 fn into_heap(self) -> $t { self }
                 unsafe fn from_heap(storage: &$t) -> $t { storage.clone() }
@@ -148,7 +148,7 @@ gc_generic_trivial_impl!([T: Clone + 'static] ::std::rc::Rc<T>);
 // Transitive implementations ("this particular kind of struct/enum is IntoHeap
 // if all its fields are") are slightly less trivial.
 
-unsafe impl<'a, T: IntoHeap<'a>> IntoHeap<'a> for Option<T> {
+unsafe impl<'h, T: IntoHeap<'h>> IntoHeap<'h> for Option<T> {
     type In = Option<T::In>;
 
     fn into_heap(self) -> Option<T::In> {
@@ -175,7 +175,7 @@ macro_rules! gc_trivial_tuple_impl {
     ($($t:ident),*) => {
         gc_trivial_tuple_impl! {
             @as_item
-            unsafe impl<'a, $($t: IntoHeap<'a>,)*> IntoHeap<'a> for ($($t,)*) {
+            unsafe impl<'h, $($t: IntoHeap<'h>,)*> IntoHeap<'h> for ($($t,)*) {
                 type In = ($($t::In,)*);
 
                 #[allow(non_snake_case)]  // because we use the type names as variable names (!)

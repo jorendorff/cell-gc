@@ -44,9 +44,9 @@
 //! gc_heap_type! {
 //!     // This declares three different related structs, but the last one is
 //!     // for the GC's internal use. Read on to see the other two in action.
-//!     struct IntList / RefIntList / InHeapIntList <'a> {
+//!     struct IntList / RefIntList / InHeapIntList <'h> {
 //!         head / set_head: i64,
-//!         tail / set_tail: Option<RefIntList<'a>>
+//!         tail / set_tail: Option<RefIntList<'h>>
 //!     }
 //! }
 //!
@@ -81,7 +81,7 @@
 //! Here are the allowed field types:
 //!
 //! * primitive types, like `i32`
-//! * macro-declared GC types like `IntList<'a>` and `RefIntList<'a>`
+//! * macro-declared GC types like `IntList<'h>` and `RefIntList<'h>`
 //! * macro-declared enum types
 //! * `Box<T>` where `T` has `'static` lifetime
 //! * `Rc<T>` where `T` has `'static` lifetime
@@ -132,6 +132,6 @@ pub use gcref::GCRef;
 
 /// Return the number of allocations of a given type that fit in a "page".
 /// (Unstable. This is a temporary hack for testing.)
-pub fn page_capacity<'a, T: traits::IntoHeapAllocation<'a>>() -> usize {
-    pages::TypedPage::<'a, T>::capacity()
+pub fn page_capacity<'h, T: traits::IntoHeapAllocation<'h>>() -> usize {
+    pages::TypedPage::<'h, T>::capacity()
 }

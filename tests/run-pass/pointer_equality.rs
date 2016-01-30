@@ -5,8 +5,8 @@ use cell_gc::with_heap;
 
 /// A linked list of numbers that lives in the GC heap.
 gc_heap_type! {
-    struct List / RefList / InHeapList <'a> {
-        tail / set_tail: Option<RefList<'a>>
+    struct List / RefList / InHeapList <'h> {
+        tail / set_tail: Option<RefList<'h>>
     }
 }
 

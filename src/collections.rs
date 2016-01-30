@@ -8,30 +8,30 @@ use std::mem;
 use std::cmp::Ordering;
 
 /// An implementation detail.
-pub struct VecStorage<'a, T: IntoHeap<'a>>(Vec<T::In>, HeapId<'a>);
+pub struct VecStorage<'h, T: IntoHeap<'h>>(Vec<T::In>, HeapId<'h>);
 
-unsafe impl<'a, T: IntoHeap<'a>> IntoHeap<'a> for Vec<T> {
-    type In = VecStorage<'a, T>;
+unsafe impl<'h, T: IntoHeap<'h>> IntoHeap<'h> for Vec<T> {
+    type In = VecStorage<'h, T>;
 
-    fn into_heap(self) -> VecStorage<'a, T> {
+    fn into_heap(self) -> VecStorage<'h, T> {
         VecStorage(self.into_iter().map(|x| x.into_heap()).collect(), PhantomData)
     }
 
-    unsafe fn from_heap(storage: &VecStorage<'a, T>) -> Vec<T> {
+    unsafe fn from_heap(storage: &VecStorage<'h, T>) -> Vec<T> {
         storage.0.iter().map(|x| T::from_heap(x)).collect()
     }
 
-    unsafe fn mark(storage: &VecStorage<'a, T>) {
+    unsafe fn mark(storage: &VecStorage<'h, T>) {
         for r in &storage.0 {
             T::mark(r);
         }
     }
 }
 
-impl<'a, T: IntoHeap<'a>> IntoHeapAllocation<'a> for Vec<T> {
-    type Ref = VecRef<'a, T>;
+impl<'h, T: IntoHeap<'h>> IntoHeapAllocation<'h> for Vec<T> {
+    type Ref = VecRef<'h, T>;
 
-    fn wrap_gcref(gcref: GCRef<'a, Vec<T>>) -> VecRef<'a, T> {
+    fn wrap_gcref(gcref: GCRef<'h, Vec<T>>) -> VecRef<'h, T> {
         VecRef(gcref)
     }
 }
@@ -55,20 +55,20 @@ impl<'a, T: IntoHeap<'a>> IntoHeapAllocation<'a> for Vec<T> {
 /// });
 /// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct VecRef<'a, T: IntoHeap<'a>>(GCRef<'a, Vec<T>>);
+pub struct VecRef<'h, T: IntoHeap<'h>>(GCRef<'h, Vec<T>>);
 
-unsafe impl<'a, T: IntoHeap<'a>> IntoHeap<'a> for VecRef<'a, T> {
-    type In = *mut VecStorage<'a, T>;
+unsafe impl<'h, T: IntoHeap<'h>> IntoHeap<'h> for VecRef<'h, T> {
+    type In = *mut VecStorage<'h, T>;
 
-    fn into_heap(self) -> *mut VecStorage<'a, T> {
+    fn into_heap(self) -> *mut VecStorage<'h, T> {
         self.0.as_mut_ptr()
     }
 
-    unsafe fn from_heap(storage: &*mut VecStorage<'a, T>) -> VecRef<'a, T> {
+    unsafe fn from_heap(storage: &*mut VecStorage<'h, T>) -> VecRef<'h, T> {
         VecRef(GCRef::new(*storage))
     }
 
-    unsafe fn mark(storage: &*mut VecStorage<'a, T>) {
+    unsafe fn mark(storage: &*mut VecStorage<'h, T>) {
         // BUG - should call a method mark_ref that checks the mark bit before
         // doing anything
         for r in &(**storage).0 {
@@ -77,7 +77,7 @@ unsafe impl<'a, T: IntoHeap<'a>> IntoHeap<'a> for VecRef<'a, T> {
     }
 }
 
-impl<'a, T: IntoHeap<'a>> VecRef<'a, T> {
+impl<'h, T: IntoHeap<'h>> VecRef<'h, T> {
     /// Unsafe to call: During the lifetime of the reference passed to the
     /// callback, the caller must ensure that the vector is not modified.
     /// Destructors and `from_heap` methods are presumed safe. Avoid
@@ -190,7 +190,7 @@ impl<'a, T: IntoHeap<'a>> VecRef<'a, T> {
         self.unsafe_deref_mut(|v| v.pop().map(|u| unsafe { IntoHeap::from_heap(&u) }))
     }
 
-    pub fn append(&self, other: &VecRef<'a, T>) {
+    pub fn append(&self, other: &VecRef<'h, T>) {
         let mut tmp: Vec<T::In> = vec![];
         other.unsafe_deref_mut(|src| mem::swap(src, &mut tmp));
         self.unsafe_deref_mut(|dest| dest.append(&mut tmp));

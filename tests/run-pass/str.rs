@@ -3,9 +3,9 @@
 #[macro_use] extern crate cell_gc;
 
 gc_heap_type! {
-    struct Philosopher / RefPhilosopher / InHeapPhilosopher <'a> {
+    struct Philosopher / RefPhilosopher / InHeapPhilosopher <'h> {
         name / set_name: &'static str,
-        teacher / set_teacher: Option<RefPhilosopher<'a>>
+        teacher / set_teacher: Option<RefPhilosopher<'h>>
     }
 }
 

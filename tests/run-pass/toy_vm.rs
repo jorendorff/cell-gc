@@ -5,19 +5,19 @@ use cell_gc::{Heap, with_heap};
 use std::rc::Rc;
 
 gc_heap_type! {
-    struct Pair / PairRef / PairStorage <'a> {
-        car / set_car: Value<'a>,
-        cdr / set_cdr: Value<'a>
+    struct Pair / PairRef / PairStorage <'h> {
+        car / set_car: Value<'h>,
+        cdr / set_cdr: Value<'h>
     }
 }
 
 gc_heap_type! {
-    enum Value / ValueStorage <'a> {
+    enum Value / ValueStorage <'h> {
         Nil,
         Int(i32),
         Symbol(Rc<String>),
-        Cons(PairRef<'a>),
-        Lambda(PairRef<'a>),
+        Cons(PairRef<'h>),
+        Lambda(PairRef<'h>),
         Builtin(Box<BuiltinFnPtr>)
     }
 }
@@ -42,8 +42,8 @@ impl std::fmt::Debug for BuiltinFnPtr {
     }
 }
 
-impl<'a> Value<'a> {
-    fn push_env(&mut self, heap: &mut Heap<'a>, key: Rc<String>, value: Value<'a>) {
+impl<'h> Value<'h> {
+    fn push_env(&mut self, heap: &mut Heap<'h>, key: Rc<String>, value: Value<'h>) {
         let pair = Cons(heap.alloc(Pair {
             car: Symbol(key),
             cdr: value
@@ -78,14 +78,14 @@ macro_rules! lisp {
     };
 }
 
-fn parse_pair<'a>(v: Value<'a>, msg: &'static str) -> Result<(Value<'a>, Value<'a>), String> {
+fn parse_pair<'h>(v: Value<'h>, msg: &'static str) -> Result<(Value<'h>, Value<'h>), String> {
     match v {
         Cons(r) => Ok((r.car(), r.cdr())),
         _ => Err(msg.to_string())
     }
 }
 
-fn lookup<'a>(mut env: Value<'a>, name: Rc<String>) -> Result<Value<'a>, String> {
+fn lookup<'h>(mut env: Value<'h>, name: Rc<String>) -> Result<Value<'h>, String> {
     let v = Symbol(name.clone());
     while let Cons(p) = env {
         let (key, value) = try!(parse_pair(p.car(), "internal error: bad environment structure"));
@@ -97,8 +97,8 @@ fn lookup<'a>(mut env: Value<'a>, name: Rc<String>) -> Result<Value<'a>, String>
     Err(format!("undefined symbol: {:?}", *name))
 }
 
-fn map_eval<'a>(heap: &mut Heap<'a>, mut exprs: Value<'a>, env: &Value<'a>)
-    -> Result<Vec<Value<'a>>, String>
+fn map_eval<'h>(heap: &mut Heap<'h>, mut exprs: Value<'h>, env: &Value<'h>)
+    -> Result<Vec<Value<'h>>, String>
 {
     let mut v = vec![];
     while let Cons(pair) = exprs {
@@ -108,7 +108,7 @@ fn map_eval<'a>(heap: &mut Heap<'a>, mut exprs: Value<'a>, env: &Value<'a>)
     Ok(v)
 }
 
-fn apply<'a>(heap: &mut Heap<'a>, fval: Value<'a>, args: Vec<Value<'a>>) -> Result<Value<'a>, String> {
+fn apply<'h>(heap: &mut Heap<'h>, fval: Value<'h>, args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
     match fval {
         Builtin(f) => (*f.0)(args),
         Lambda(pair) => {
@@ -148,7 +148,7 @@ fn apply<'a>(heap: &mut Heap<'a>, fval: Value<'a>, args: Vec<Value<'a>>) -> Resu
     }
 }
 
-fn eval<'a>(heap: &mut Heap<'a>, expr: Value<'a>, env: &Value<'a>) -> Result<Value<'a>, String> {
+fn eval<'h>(heap: &mut Heap<'h>, expr: Value<'h>, env: &Value<'h>) -> Result<Value<'h>, String> {
     match expr {
         Symbol(s) => lookup(env.clone(), s),
         Cons(p) => {
@@ -181,7 +181,7 @@ fn eval<'a>(heap: &mut Heap<'a>, expr: Value<'a>, env: &Value<'a>) -> Result<Val
     }
 }
 
-fn add<'a>(args: Vec<Value<'a>>) -> Result<Value<'a>, String> {
+fn add<'h>(args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
     let mut total = 0;
     for v in args {
         if let Int(n) = v {

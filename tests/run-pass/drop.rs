@@ -3,22 +3,22 @@
 #[macro_use] extern crate cell_gc;
 
 gc_heap_type! {
-    struct Dropper / DropperRef / DropperStorage <'a> {
+    struct Dropper / DropperRef / DropperStorage <'h> {
         addr / set_addr: usize,
-        ignore / set_ignore: SomethingWithLifetime<'a>
+        ignore / set_ignore: SomethingWithLifetime<'h>
     }
 }
 
 gc_heap_type! {
-    enum SomethingWithLifetime / SomethingWithLifetimeStorage <'a> {
-        Another(DropperRef<'a>),
+    enum SomethingWithLifetime / SomethingWithLifetimeStorage <'h> {
+        Another(DropperRef<'h>),
         Nothing
     }
 }
 
 use SomethingWithLifetime::Nothing;
 
-impl<'a> Drop for DropperStorage<'a> {
+impl<'h> Drop for DropperStorage<'h> {
     fn drop(&mut self) {
         unsafe {
             *(self.addr as *mut i32) += 1;

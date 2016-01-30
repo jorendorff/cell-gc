@@ -3,7 +3,7 @@
 #[macro_use] extern crate cell_gc;
 
 gc_heap_type! {
-    struct Chunk / ChunkRef / ChunkStorage <'a> {
+    struct Chunk / ChunkRef / ChunkStorage <'h> {
         field_0 / set_field_0: (u64, u64, u64, u64),
         field_32 / set_field_32: (u64, u64, u64, u64),
         field_64 / set_field_64: (u64, u64, u64, u64),
@@ -12,7 +12,7 @@ gc_heap_type! {
         field_160 / set_field_160: (u64, u64, u64, u64),
         field_192 / set_field_192: (u64, u64, u64, u64),
         field_224 / set_field_224: (u64, u64, u64, u64),
-        next / set_next: Option<ChunkRef<'a>>
+        next / set_next: Option<ChunkRef<'h>>
     }
 }
 
