@@ -123,6 +123,8 @@ gc_trivial_impl!(usize);
 gc_trivial_impl!(f32);
 gc_trivial_impl!(f64);
 
+gc_trivial_impl!(String);
+
 macro_rules! gc_generic_trivial_impl {
     (@as_item $it:item) => { $it };
     ([$($x:tt)*] $t:ty) => {
