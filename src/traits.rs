@@ -1,7 +1,7 @@
 //! The traits defined here are implementation details of cell_gc.
 //!
 //! Application code does not need to use these traits. They are public only so
-//! that the public macros can use it. Use the friendly macros!
+//! that `gc_heap_type!` can use it. Use the friendly macro!
 
 use gcref::GCRef;
 
@@ -45,7 +45,7 @@ use gcref::GCRef;
 /// ```
 ///
 /// but alas, Rust thinks this impl conflicts with almost all others, making it
-/// impossible to get the macros to work. So instead we `impl IntoHeap for` a
+/// impossible to get the macro to work. So instead we `impl IntoHeap for` a
 /// lot of individual types by hand.
 ///
 /// **Liveness.** Some `IntoHeap` types ("Ref" types) are effectively smart

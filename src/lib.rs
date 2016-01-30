@@ -77,9 +77,6 @@
 //!
 //! # Heap types
 //!
-//! Right now, there is a separate macro for declaring enums: `heap_inline_enum!{}`.
-//! (But I hope to merge these two macros, so this will go away.)
-//!
 //! Not every type is safe to use as a field of a heap struct or enum.
 //! Here are the allowed field types:
 //!
@@ -90,7 +87,8 @@
 //! * `Rc<T>` where `T` has `'static` lifetime
 //! * `Option<T>` where `T` is any of these types
 //!
-//! If you try to use anything else, you'll get bizarre `rustc` error messages.
+//! If you try to use anything else, you'll get bizarre error messages
+//! from `rustc`.
 //!
 //!
 //! # Safety
@@ -100,7 +98,7 @@
 //!
 //! Still, there's one weird rule to be aware of:
 //! **Don't implement `Drop` or `Clone`
-//! for any type declared using the `gc` macros.**
+//! for any type declared using `gc_heap_type!`.**
 //! It's safe in the full Rust sense of that word
 //! (it won't cause crashes or undefined behavior,
 //! as long as your `.drop()` or `.clone()` method does nothing `unsafe`),

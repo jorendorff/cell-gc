@@ -38,7 +38,7 @@
 ///     enums in the heap; they can only be fields of heap structs.
 ///
 /// The exact lifetime name `'a` is required. (A bizarre restriction - but
-/// I had little success getting the macros to accept an arbitrary lifetime
+/// I had little success getting the macro to accept an arbitrary lifetime
 /// passed in by the macro caller.)
 ///
 /// Trailing commas are not supported everywhere they should be. (Sorry!)
@@ -108,7 +108,7 @@
 ///
 #[macro_export]
 macro_rules! gc_heap_type {
-    // Top-level macros.
+    // Top-level rules.
     { pub enum $($etc:tt)* } =>
     { gc_heap_type! { @gc_heap_enum (pub) enum $($etc)* } };
 
@@ -332,7 +332,7 @@ macro_rules! gc_heap_type {
         }
     };
 
-    // Helper macros for declaring an in-heap enum.
+    // Helper rules for declaring an in-heap enum.
     {
         @enum_in_heap_variant $variant_name:ident NO_FIELDS ($($ctn:tt)*)
     } => {
@@ -364,7 +364,7 @@ macro_rules! gc_heap_type {
         }
     };
 
-    // Helper macros for implementing the mark() method for an in-heap enum.
+    // Helper rules for implementing the mark() method for an in-heap enum.
     {
         @enum_mark_variant $storage_type:ident
             $name:ident NO_FIELDS ($($ctn:tt)*)
@@ -409,7 +409,7 @@ macro_rules! gc_heap_type {
         }
     };
 
-    // Helper macros for implementing the into_heap() method for an IntoHeap
+    // Helper rules for implementing the into_heap() method for an IntoHeap
     // enum.
     {
         @enum_into_heap_variant $stack_type:ident $storage_type:ident
@@ -457,7 +457,7 @@ macro_rules! gc_heap_type {
         }
     };
 
-    // Helper macros for implementing the from_heap() method of an in-heap enum.
+    // Helper rules for implementing the from_heap() method of an in-heap enum.
     {
         @enum_from_heap_variant $stack_type:ident $storage_type:ident
             $name:ident NO_FIELDS ($($ctn:tt)*)
