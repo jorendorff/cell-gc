@@ -3,7 +3,7 @@ name = "cell-gc"
 description = "A fun garbage collector for that virtual machine you're writing in Rust"
 repository = "https://github.com/jorendorff/cell-gc/"
 license = "MIT"
-version = "0.1.1"
+version = "0.1.2"
 authors = ["Jason Orendorff <jason.orendorff@gmail.com>"]
 
 [dependencies]
