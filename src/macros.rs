@@ -300,6 +300,28 @@ macro_rules! gc_heap_type {
     };
 
     {
+        @for_each_variant ($($helper:tt)*)
+        { $variant_name:ident { $($field_name:ident : $field_type:ty),* } }
+        $acc:tt $ctn:tt
+    } => {
+        gc_heap_type! {
+            $($helper)* $variant_name { $($field_name : $field_type),* }
+                (@next_variant ($($helper)*) {} $acc $ctn)
+        }
+    };
+
+    {
+        @for_each_variant ($($helper:tt)*)
+        { $variant_name:ident { $($field_name:ident : $field_type:ty),* }, $($more_variants:tt)*  }
+        $acc:tt $ctn:tt
+    } => {
+        gc_heap_type! {
+            $($helper)* $variant_name { $($field_name : $field_type),* }
+                (@next_variant ($($helper)*) { $($more_variants)* } $acc $ctn)
+        }
+    };
+
+    {
         @next_variant $helper:tt $more_variants:tt { $($acc:tt)* } $ctn:tt { $($rv:tt)* }
     } => {
         gc_heap_type! {
@@ -356,6 +378,16 @@ macro_rules! gc_heap_type {
     };
 
     {
+        @enum_in_heap_variant $variant_name:ident { $($field_name:ident : $field_type:ty),* } ($($ctn:tt)*)
+    } => {
+        gc_heap_type! {
+            $($ctn)* {
+                $variant_name { $($field_name : <$field_type as $crate::traits::IntoHeap<'h>>::In),* },
+            }
+        }
+    };
+
+    {
         @enum_declare_in_heap_type ( $($maybe_pub:tt)* ) $storage_type:ident
             { $($variants:tt)* }
     } => {
@@ -397,6 +429,19 @@ macro_rules! gc_heap_type {
             $($ctn)* {
                 $storage_type::$name ( $(ref $binding),* ) => {
                     $( <$field_type as $crate::traits::IntoHeap>::mark($binding); )*
+                },
+            }
+        }
+    };
+
+    {
+        @enum_mark_variant $storage_type:ident
+            $name:ident { $($field_name:ident : $field_type:ty),* } ($($ctn:tt)*)
+    } => {
+        gc_heap_type! {
+            $($ctn)* {
+                $storage_type::$name { $(ref $field_name),* } => {
+                    $( <$field_type as $crate::traits::IntoHeap>::mark($field_name); )*
                 },
             }
         }
@@ -450,6 +495,20 @@ macro_rules! gc_heap_type {
     };
 
     {
+        @enum_into_heap_variant $stack_type:ident $storage_type:ident
+            $name:ident { $($field_name:ident : $field_type:ty),* }
+            ($($ctn:tt)*)
+    } => {
+        gc_heap_type! {
+            $($ctn)* {
+                $stack_type::$name { $($field_name),* } => $storage_type::$name {
+                    $( $field_name : $crate::traits::IntoHeap::into_heap($field_name) ),*
+                },
+            }
+        }
+    };
+
+    {
         @enum_into_heap_expr ($self_:expr)
         { $($accumulated_output:tt)* }
     } => {
@@ -490,6 +549,19 @@ macro_rules! gc_heap_type {
             $($ctn)* {
                 &$storage_type::$name ( $(ref $binding),* ) =>
                     $stack_type::$name( $($crate::traits::IntoHeap::from_heap($binding)),* ),
+            }
+        }
+    };
+
+    {
+        @enum_from_heap_variant $stack_type:ident $storage_type:ident
+            $name:ident { $($field_name:ident : $field_type:ty),* } ($($ctn:tt)*)
+    } => {
+        gc_heap_type! {
+            $($ctn)* {
+                &$storage_type::$name { $(ref $field_name),* } => $stack_type::$name {
+                    $( $field_name: $crate::traits::IntoHeap::from_heap($field_name) ),*
+                },
             }
         }
     };
