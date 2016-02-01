@@ -307,11 +307,12 @@ macro_rules! gc_heap_type {
         }
     };
 
-    // `gc_heap_type! { @zip_idents_with_types ($alphabet*) ($types,*) () ($ctn*) }`
+    // `gc_heap_type! { @zip_idents_with_types ($alphabet*) ($parens_types*) () ($ctn*) }`
     //
-    // This helper macro pairs each type in `$types,*` with a letter of the `$alphabet*`.
-    // It passes the resulting pairs to `$ctn`. So, for example, this:
-    //     @zip_idents_with_types (a b c d e f g) (i32, String) () (@continue_here)
+    // This helper macro pairs each parenthesized type in `$parens_types*`
+    // with a letter of the `$alphabet*`. It passes the resulting pairs
+    // to `$ctn`. So, for example, this:
+    //     @zip_idents_with_types (a b c d e f g) ((i32) (String)) () (@continue_here)
     // boils down to this:
     //     @continue_here ((a: i32) (b: String))
     {
@@ -322,14 +323,14 @@ macro_rules! gc_heap_type {
     {
         @zip_idents_with_types
         ($id:ident $($ids:tt)*)
-        ($t:ty, $($ts:ty),*)
+        (($t:ty) $($ts:tt)*)
         ($($acc:tt)*)
         $ctn:tt
     } => {
         gc_heap_type! {
             @zip_idents_with_types
             ($($ids)*)
-            ($($ts),*)
+            ($($ts)*)
             ($($acc)* ($id : $t))
             $ctn
         }
@@ -383,7 +384,7 @@ macro_rules! gc_heap_type {
     } => {
         gc_heap_type! {
             @zip_idents_with_types (a b c d e f g h i j k l m n o p q r s t u v w x y z)
-                ( $($field_type),*, ) ()
+                ( $( ($field_type) )* ) ()
                 (@enum_mark_variant_continued $storage_type $name $ctn)
         }
     };
@@ -431,7 +432,7 @@ macro_rules! gc_heap_type {
     } => {
         gc_heap_type! {
             @zip_idents_with_types (a b c d e f g h i j k l m n o p q r s t u v w x y z)
-                ( $($field_type),*, ) ()
+                ( $( ($field_type) )* ) ()
                 (@enum_into_heap_variant_continued $stack_type $storage_type $name $ctn)
         }
     };
@@ -476,7 +477,7 @@ macro_rules! gc_heap_type {
     } => {
         gc_heap_type! {
             @zip_idents_with_types (a b c d e f g h i j k l m n o p q r s t u v w x y z)
-                ( $($field_type),*, ) ()
+                ( $( ($field_type) )* ) ()
                 (@enum_from_heap_variant_continued $stack_type $storage_type $name $ctn)
         }
     };
@@ -487,7 +488,7 @@ macro_rules! gc_heap_type {
     } => {
         gc_heap_type! {
             $($ctn)* {
-                &$storage_type::$name ( ref $($binding),* ) =>
+                &$storage_type::$name ( $(ref $binding),* ) =>
                     $stack_type::$name( $($crate::traits::IntoHeap::from_heap($binding)),* ),
             }
         }
