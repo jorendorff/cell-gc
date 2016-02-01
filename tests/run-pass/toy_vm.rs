@@ -5,6 +5,7 @@ use cell_gc::{Heap, with_heap};
 use std::rc::Rc;
 
 gc_heap_type! {
+    #[derive(Debug)]
     struct Pair / PairRef / PairStorage <'h> {
         car / set_car: Value<'h>,
         cdr / set_cdr: Value<'h>
@@ -12,6 +13,7 @@ gc_heap_type! {
 }
 
 gc_heap_type! {
+    #[derive(Clone, Debug, PartialEq)]
     enum Value / ValueStorage <'h> {
         Nil,
         Int(i32),

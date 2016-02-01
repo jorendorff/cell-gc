@@ -4,8 +4,11 @@
 ///
 /// ```ignore
 /// heap-type:
-///     heap-struct
-///     heap-enum
+///     attr* heap-struct
+///     attr* heap-enum
+///
+/// attr:
+///     "#" "[" META "]"
 ///
 /// heap-struct:
 ///     "pub"? "struct" IDENT "/" IDENT "/" IDENT "<'h>" "{" heap-struct-field,* "}"
@@ -28,6 +31,8 @@
 /// *   The three names of a struct are: (1) the type you'll use to create instances
 ///     and call `heap.alloc` with; (2) a `Ref` smart pointer type (what `heap.alloc`
 ///     returns; and (3) the in-heap version of the struct, which you can just ignore.
+///     Attributes that appear in your code are applied only to the first of these
+///     three types.
 ///
 /// *   The two names of a struct field are:  (1) the field name, which doubles as
 ///     the name of the getter on the `Ref` struct; (2) the setter name.
@@ -112,17 +117,17 @@
 #[macro_export]
 macro_rules! gc_heap_type {
     // Top-level rules.
-    { pub enum $($etc:tt)* } =>
-    { gc_heap_type! { @gc_heap_enum (pub) enum $($etc)* } };
+    { $(#[$attr:meta])* pub enum $($etc:tt)* } =>
+    { gc_heap_type! { @gc_heap_enum ($(#[$attr])*) (pub) enum $($etc)* } };
 
-    { enum $($etc:tt)* } =>
-    { gc_heap_type! { @gc_heap_enum () enum $($etc)* } };
+    { $(#[$attr:meta])* enum $($etc:tt)* } =>
+    { gc_heap_type! { @gc_heap_enum ($(#[$attr])*) () enum $($etc)* } };
 
-    { pub struct $($etc:tt)* } =>
-    { gc_heap_type! { @gc_heap_struct (pub) struct $($etc)* } };
+    { $(#[$attr:meta])* pub struct $($etc:tt)* } =>
+    { gc_heap_type! { @gc_heap_struct ($(#[$attr])*) (pub) struct $($etc)* } };
 
-    { struct $($etc:tt)* } =>
-    { gc_heap_type! { @gc_heap_struct () struct $($etc)* } };
+    { $(#[$attr:meta])* struct $($etc:tt)* } =>
+    { gc_heap_type! { @gc_heap_struct ($(#[$attr])*) () struct $($etc)* } };
 
     // Helpers used by almost every macro.
     { @as_item $x:item } => { $x };
@@ -130,7 +135,7 @@ macro_rules! gc_heap_type {
 
     // The main helper macro for expanding a struct.
     {
-        @gc_heap_struct ( $($maybe_pub:tt)* )
+        @gc_heap_struct ( $(#[$attr:meta])* ) ( $($maybe_pub:tt)* )
         struct $fields_type:ident / $ref_type:ident / $storage_type:ident <'h> {
             $($field_name:ident / $field_setter_name:ident : $field_type: ty),*
         }
@@ -146,7 +151,7 @@ macro_rules! gc_heap_type {
         // === $fields_type: A safe version of the struct
         gc_heap_type! {
             @as_item
-            #[derive(Clone, Debug)]
+            $(#[$attr])*
             $($maybe_pub)* struct $fields_type<'h> {
                 $( pub $field_name: $field_type ),*
             }
@@ -579,6 +584,7 @@ macro_rules! gc_heap_type {
 
     {
         @gc_heap_enum
+        ($(#[$attr:meta])*)
         ($($maybe_pub:tt)*)
         enum $stack_type:ident / $storage_type:ident <'h>
         $variants:tt
@@ -590,9 +596,8 @@ macro_rules! gc_heap_type {
 
         gc_heap_type! {
             @as_item
-            #[derive(Debug, Clone, PartialEq)]
-            $($maybe_pub)*
-            enum $stack_type<'h>
+            $(#[$attr])*
+            $($maybe_pub)* enum $stack_type<'h>
                 $variants
         }
 
