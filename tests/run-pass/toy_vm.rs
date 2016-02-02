@@ -1,7 +1,7 @@
 //! If you use enough force, you can actually use this GC to implement a toy VM.
 
 #[macro_use] extern crate cell_gc;
-use cell_gc::{Heap, with_heap};
+use cell_gc::{Heap, with_heap, GCLeaf};
 use std::rc::Rc;
 
 gc_heap_type! {
@@ -26,20 +26,23 @@ gc_heap_type! {
 
 use Value::*;
 
-type BuiltinFnTrait = for<'b> fn (Vec<Value<'b>>) -> Result<Value<'b>, String>;
+struct BuiltinFnPtr(for<'b> fn(Vec<Value<'b>>) -> Result<Value<'b>, String>);
 
-#[derive(Clone)]
-struct BuiltinFnPtr(&'static BuiltinFnTrait);
+// This can't be #[derive]d because function pointers aren't Clone.
+// But they are Copy. A very weird thing about Rust.
+impl Clone for BuiltinFnPtr {
+    fn clone(&self) -> BuiltinFnPtr { BuiltinFnPtr(self.0) }
+}
 
 impl PartialEq for BuiltinFnPtr {
     fn eq(&self, other: &BuiltinFnPtr) -> bool {
-        *self.0 as usize == *other.0 as usize
+        self.0 as usize == other.0 as usize
     }
 }
 
 impl std::fmt::Debug for BuiltinFnPtr {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "BuiltinFn({:p})", *self.0 as usize as *const ());
+        write!(f, "BuiltinFn({:p})", self.0 as usize as *mut ());
         Ok(())
     }
 }
@@ -112,7 +115,7 @@ fn map_eval<'h>(heap: &mut Heap<'h>, mut exprs: Value<'h>, env: &Value<'h>)
 
 fn apply<'h>(heap: &mut Heap<'h>, fval: Value<'h>, args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
     match fval {
-        Builtin(f) => (*f.0)(args),
+        Builtin(f) => (f.0)(args),
         Lambda(pair) => {
             let mut env = pair.cdr();
             let (mut params, rest) = try!(parse_pair(pair.car(), "syntax error in lambda"));
@@ -195,12 +198,10 @@ fn add<'h>(args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
     Ok(Int(total))
 }
 
-const add_ptr: &'static BuiltinFnTrait = &(add as BuiltinFnTrait);
-
 fn main() {
     with_heap(|heap| {
         let mut env = Nil;
-        env.push_env(heap, Rc::new("+".to_string()), Builtin(Box::new(BuiltinFnPtr(add_ptr))));
+        env.push_env(heap, Rc::new("+".to_string()), Builtin(Box::new(BuiltinFnPtr(add))));
         let program = lisp!(
             ((lambda (x y z) (+ x (+ y z))) 3 4 5)
             , heap);
