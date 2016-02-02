@@ -125,10 +125,12 @@ pub mod traits;
 mod pages;
 mod heap;
 mod gcref;
+mod gcleaf;
 pub mod collections;
 
 pub use heap::{Heap, with_heap};
 pub use gcref::GCRef;
+pub use gcleaf::GCLeaf;
 
 /// Return the number of allocations of a given type that fit in a "page".
 /// (Unstable. This is a temporary hack for testing.)

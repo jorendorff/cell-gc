@@ -20,7 +20,7 @@ gc_heap_type! {
         Symbol(Rc<String>),
         Cons(PairRef<'h>),
         Lambda(PairRef<'h>),
-        Builtin(Box<BuiltinFnPtr>)
+        Builtin(GCLeaf<BuiltinFnPtr>)
     }
 }
 
@@ -201,7 +201,7 @@ fn add<'h>(args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
 fn main() {
     with_heap(|heap| {
         let mut env = Nil;
-        env.push_env(heap, Rc::new("+".to_string()), Builtin(Box::new(BuiltinFnPtr(add))));
+        env.push_env(heap, Rc::new("+".to_string()), Builtin(GCLeaf::new(BuiltinFnPtr(add))));
         let program = lisp!(
             ((lambda (x y z) (+ x (+ y z))) 3 4 5)
             , heap);
