@@ -1,5 +1,6 @@
 //! You can't pass an object from one heap to another heap's `alloc` method.
 
+#[macro_use] extern crate cell_gc_derive;
 #[macro_use] extern crate cell_gc;
 mod pairs_aux;
 use cell_gc::*;

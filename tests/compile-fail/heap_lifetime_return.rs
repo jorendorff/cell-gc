@@ -3,6 +3,7 @@
 
 // error-pattern: cannot infer an appropriate lifetime
 
+#[macro_use] extern crate cell_gc_derive;
 #[macro_use] extern crate cell_gc;
 mod pairs_aux;
 use cell_gc::*;

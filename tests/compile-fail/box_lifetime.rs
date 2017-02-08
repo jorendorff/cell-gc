@@ -1,7 +1,8 @@
 //! A Box can be a field of a heap struct only if the boxed type has 'static lifetime.
 
-// error-pattern: the type `core::option::Option<ThingRef<'h>>` does not fulfill the required lifetime
+// error-pattern: cannot infer an appropriate lifetime for lifetime parameter `'h` due to conflicting requirements
 
+#[macro_use] extern crate cell_gc_derive;
 #[macro_use] extern crate cell_gc;
 mod pairs_aux;
 use cell_gc::*;
