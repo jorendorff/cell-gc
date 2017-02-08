@@ -66,18 +66,7 @@ fn impl_into_heap_for_struct(ast: &syn::DeriveInput, data: &syn::VariantData) ->
                         ::mark(&storage.#name);
                 }
             }).collect();
-            
-            /*
-            let storage_fields: Vec<_> =
-                fields.iter().map(|f| {
-                    let field_name = &f.ident;
-                    let field_ty = &f.ty;
-                    quote! {
-                        #vis #field_name:
-                            <#field_ty as ::cell_gc::traits::IntoHeap<#heap_lifetime>>::In
-                    }
-                }).collect();
-             */
+
             let output = quote! {
                 // 1. The in-heap representation of the struct.
                 #vis struct #storage_type_name #impl_generics #where_clause {

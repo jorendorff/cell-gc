@@ -1,13 +1,13 @@
 //! Test equality properties of GCRef values.
 
 #[macro_use] extern crate cell_gc;
+#[macro_use] extern crate cell_gc_derive;
 use cell_gc::with_heap;
 
-/// A linked list of numbers that lives in the GC heap.
-gc_heap_type! {
-    struct List / RefList / InHeapList <'h> {
-        tail / set_tail: Option<RefList<'h>>
-    }
+/// A linked list of valueless nodes that lives in the GC heap.
+#[derive(IntoHeap)]
+struct List<'h> {
+    tail: Option<ListRef<'h>>
 }
 
 fn main() {

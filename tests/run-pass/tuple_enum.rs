@@ -1,13 +1,13 @@
 //! Basic tuple-like enum variants are supported.
 
 #[macro_use] extern crate cell_gc;
+#[macro_use] extern crate cell_gc_derive;
 
 use cell_gc::collections::VecRef;
 
-gc_heap_type! {
-    struct ThingBox / ThingBoxRef / ThingBoxInHeap <'h> {
-        thing / set_thing: Thing<'h>
-    }
+#[derive(IntoHeap)]
+struct ThingBox<'h> {
+    thing: Thing<'h>
 }
 
 gc_heap_type! {

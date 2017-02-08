@@ -1,12 +1,12 @@
 //! Destructors are called.
 
 #[macro_use] extern crate cell_gc;
+#[macro_use] extern crate cell_gc_derive;
 
-gc_heap_type! {
-    struct Dropper / DropperRef / DropperStorage <'h> {
-        addr / set_addr: usize,
-        ignore / set_ignore: SomethingWithLifetime<'h>
-    }
+#[derive(IntoHeap)]
+struct Dropper<'h> {
+    addr: usize,
+    ignore: SomethingWithLifetime<'h>
 }
 
 gc_heap_type! {

@@ -1,19 +1,19 @@
 //! The GC can work with objects that are a few hundred bytes big.
 
 #[macro_use] extern crate cell_gc;
+#[macro_use] extern crate cell_gc_derive;
 
-gc_heap_type! {
-    struct Chunk / ChunkRef / ChunkStorage <'h> {
-        field_0 / set_field_0: (u64, u64, u64, u64),
-        field_32 / set_field_32: (u64, u64, u64, u64),
-        field_64 / set_field_64: (u64, u64, u64, u64),
-        field_96 / set_field_96: (u64, u64, u64, u64),
-        field_128 / set_field_128: (u64, u64, u64, u64),
-        field_160 / set_field_160: (u64, u64, u64, u64),
-        field_192 / set_field_192: (u64, u64, u64, u64),
-        field_224 / set_field_224: (u64, u64, u64, u64),
-        next / set_next: Option<ChunkRef<'h>>
-    }
+#[derive(IntoHeap)]
+struct Chunk<'h> {
+    field_0: (u64, u64, u64, u64),
+    field_32: (u64, u64, u64, u64),
+    field_64: (u64, u64, u64, u64),
+    field_96: (u64, u64, u64, u64),
+    field_128: (u64, u64, u64, u64),
+    field_160: (u64, u64, u64, u64),
+    field_192: (u64, u64, u64, u64),
+    field_224: (u64, u64, u64, u64),
+    next: Option<ChunkRef<'h>>
 }
 
 fn main() {

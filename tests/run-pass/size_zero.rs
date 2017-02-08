@@ -1,12 +1,12 @@
 //! The GC can allocate objects that are zero-size.
 
 #[macro_use] extern crate cell_gc;
+#[macro_use] extern crate cell_gc_derive;
 use std::marker::PhantomData;
 
-gc_heap_type! {
-    struct Unit / UnitRef / UnitStorage <'h> {
-        phantom / set_phantom: PhantomData<&'h u8>
-    }
+#[derive(IntoHeap)]
+struct Unit<'h> {
+    phantom: PhantomData<&'h u8>
 }
 
 fn main () {

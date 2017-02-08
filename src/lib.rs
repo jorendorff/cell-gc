@@ -39,21 +39,21 @@
 //!
 //! ```rust
 //! #[macro_use] extern crate cell_gc;
+//! #[macro_use] extern crate cell_gc_derive;
 //!
 //! /// A linked list of numbers that lives in the GC heap.
-//! gc_heap_type! {
-//!     // This declares three different related structs, but the last one is
-//!     // for the GC's internal use. Read on to see the other two in action.
-//!     struct IntList / RefIntList / InHeapIntList <'h> {
-//!         head / set_head: i64,
-//!         tail / set_tail: Option<RefIntList<'h>>
-//!     }
+//! /// The `#[derive(IntoHeap)]` here causes an additional type, `IntListRef`,
+//! /// to be defined.
+//! #[derive(IntoHeap)]
+//! struct IntList<'h> {
+//!     head: i64,
+//!     tail: Option<IntListRef<'h>>
 //! }
 //!
 //! fn main() {
 //!     // Create a heap (you'll only do this once in your whole program)
 //!     cell_gc::with_heap(|heap| {
-//!         // Allocate an object (returns a RefIntList)
+//!         // Allocate an object (returns an IntListRef)
 //!         let obj1 = heap.alloc(IntList { head: 17, tail: None });
 //!         assert_eq!(obj1.head(), 17);
 //!         assert_eq!(obj1.tail(), None);
@@ -66,12 +66,12 @@
 //! }
 //! ```
 //!
-//! `RefIntList` values keep in-heap `IntList` values alive;
-//! once the last `RefIntList` pointing at an object is gone,
+//! `IntListRef` values keep in-heap `IntList` values alive;
+//! once the last `IntListRef` pointing at an object is gone,
 //! it becomes available for garbage collection,
 //! and eventually it'll be recycled.
 //!
-//! `RefIntList` is like `std::rc::Rc`: it's `Clone` but not `Copy`,
+//! `IntListRef` is like `std::rc::Rc`: it's `Clone` but not `Copy`,
 //! and calling `.clone()` copies the Ref, not the object it points to.
 //!
 //!
@@ -81,7 +81,7 @@
 //! Here are the allowed field types:
 //!
 //! * primitive types, like `i32`
-//! * macro-declared GC types like `IntList<'h>` and `RefIntList<'h>`
+//! * IntoHeap types like `IntList<'h>` and `IntListRef<'h>`
 //! * macro-declared enum types
 //! * `Box<T>` where `T` has `'static` lifetime
 //! * `Rc<T>` where `T` has `'static` lifetime

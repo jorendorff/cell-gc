@@ -1,15 +1,14 @@
 //! If you use enough force, you can actually use this GC to implement a toy VM.
 
 #[macro_use] extern crate cell_gc;
+#[macro_use] extern crate cell_gc_derive;
 use cell_gc::{Heap, with_heap, GCLeaf};
 use std::rc::Rc;
 
-gc_heap_type! {
-    #[derive(Debug)]
-    struct Pair / PairRef / PairStorage <'h> {
-        car / set_car: Value<'h>,
-        cdr / set_cdr: Value<'h>
-    }
+#[derive(Debug, IntoHeap)]
+struct Pair<'h> {
+    car: Value<'h>,
+    cdr: Value<'h>
 }
 
 gc_heap_type! {

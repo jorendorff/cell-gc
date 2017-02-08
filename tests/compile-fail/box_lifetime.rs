@@ -2,8 +2,8 @@
 
 // error-pattern: cannot infer an appropriate lifetime for lifetime parameter `'h` due to conflicting requirements
 
-#[macro_use] extern crate cell_gc_derive;
 #[macro_use] extern crate cell_gc;
+#[macro_use] extern crate cell_gc_derive;
 mod pairs_aux;
 use cell_gc::*;
 use pairs_aux::*;

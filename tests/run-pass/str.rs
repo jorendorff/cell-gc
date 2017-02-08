@@ -1,12 +1,12 @@
 //! Static strings can be stored in the heap.
 
 #[macro_use] extern crate cell_gc;
+#[macro_use] extern crate cell_gc_derive;
 
-gc_heap_type! {
-    struct Philosopher / RefPhilosopher / InHeapPhilosopher <'h> {
-        name / set_name: &'static str,
-        teacher / set_teacher: Option<RefPhilosopher<'h>>
-    }
+#[derive(IntoHeap)]
+struct Philosopher<'h> {
+    name: &'static str,
+    teacher: Option<PhilosopherRef<'h>>
 }
 
 fn main() {

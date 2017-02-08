@@ -1,6 +1,7 @@
 //! Destructors are called when a heap struct with a Box field is dropped.
 
 #[macro_use] extern crate cell_gc;
+#[macro_use] extern crate cell_gc_derive;
 
 #[derive(Clone, Debug)]
 struct Dropper {
@@ -13,11 +14,10 @@ impl Drop for Dropper {
     }
 }
 
-gc_heap_type! {
-    struct Obj / ObjRef / ObjStorage <'h> {
-        frob / set_frob: Box<Dropper>,
-        more / set_more: Option<ObjRef<'h>>
-    }
+#[derive(IntoHeap)]
+struct Obj<'h> {
+    frob: Box<Dropper>,
+    more: Option<ObjRef<'h>>
 }
 
 fn main() {

@@ -5,12 +5,10 @@
 use std::rc::Rc;
 use cell_gc::Heap;
 
-gc_heap_type! {
-    #[derive(Clone, Debug)]
-    pub struct Pair / PairRef / PairStorage <'h> {
-        head / set_head: Value<'h>,
-        tail / set_tail: Value<'h>
-    }
+#[derive(Clone, Debug, IntoHeap)]
+pub struct Pair<'h> {
+    pub head: Value<'h>,
+    pub tail: Value<'h>
 }
 
 gc_heap_type! {
