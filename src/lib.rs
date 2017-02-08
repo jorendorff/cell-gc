@@ -218,9 +218,9 @@
 //!
 //! # Why is it called "cell-gc"?
 //!
-//! In cell-gc, every field of every GC-managed object is public and mutable.
-//! You can't get *direct* references to the data; instead you use methods to
-//! get and set values.
+//! In cell-gc, every field of every GC-managed object is mutable.
+//! You can't get *direct* references to the data;
+//! instead you use methods to get and set values.
 //!
 //! It's as though every field were a [Cell](http://doc.rust-lang.org/std/cell/struct.Cell.html).
 

@@ -40,7 +40,7 @@ fn impl_into_heap_for_struct(ast: &syn::DeriveInput, data: &syn::VariantData) ->
 
     match *data {
         syn::VariantData::Struct(ref fields) => {
-            let field_visibilities: Vec<_> = fields.iter().map(|f| &f.vis).collect();
+            let field_vis: &Vec<_>   = &fields.iter().map(|f| &f.vis).collect();
             let field_names: &Vec<_> = &fields.iter().map(|f| &f.ident).collect();
             let field_types: &Vec<_> = &fields.iter().map(|f| &f.ty).collect();
             let field_storage_types: Vec<_> = fields.iter().map(|f| {
@@ -53,7 +53,7 @@ fn impl_into_heap_for_struct(ast: &syn::DeriveInput, data: &syn::VariantData) ->
             // 1. The in-heap representation of the struct.
             let storage_struct = quote! {
                 #vis struct #storage_type_name #impl_generics #where_clause {
-                    #( #field_visibilities #field_names: #field_storage_types ),*
+                    #( #field_vis #field_names: #field_storage_types ),*
                 }
             };
 
@@ -170,7 +170,7 @@ fn impl_into_heap_for_struct(ast: &syn::DeriveInput, data: &syn::VariantData) ->
             let accessors = quote! {
                 impl #impl_generics #ref_type_name #ty_generics #where_clause {
                     #(
-                        pub fn #field_names(&self) -> #field_types {
+                        #field_vis fn #field_names(&self) -> #field_types {
                             let ptr = self.0.as_ptr();
                             unsafe {
                                 ::cell_gc::traits::IntoHeap::from_heap(
@@ -180,7 +180,7 @@ fn impl_into_heap_for_struct(ast: &syn::DeriveInput, data: &syn::VariantData) ->
                     )*
 
                     #(
-                        pub fn #field_setter_names(&self, v: #field_types) {
+                        #field_vis fn #field_setter_names(&self, v: #field_types) {
                             let ptr = self.0.as_mut_ptr();
                             let u = ::cell_gc::traits::IntoHeap::into_heap(v);
                             unsafe {

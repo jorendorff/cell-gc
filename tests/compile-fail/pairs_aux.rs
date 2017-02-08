@@ -7,8 +7,8 @@ use cell_gc::*;
 
 #[derive(IntoHeap)]
 pub struct Pair<'h> {
-    head: Value<'h>,
-    tail: Value<'h>
+    pub head: Value<'h>,
+    pub tail: Value<'h>
 }
 
 #[derive(IntoHeap)]
