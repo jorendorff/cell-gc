@@ -37,25 +37,84 @@ but I have some ideas on how to get there.
 
 ## How to use it
 
-Good luck!
+There are two parts to using `cell_gc`: GC types and GC heaps.
+
+### Declaring GC types
+
+Declaring GC types is actually super easy. Just add `#[derive(IntoHeap)]`
+to any struct:
 
 ```rust
 #[macro_use] extern crate cell_gc;
+#[macro_use] extern crate cell_gc_derive;
 
 /// A linked list of numbers that lives in the GC heap.
-gc_heap_type! {
-    // This declares three different related structs, but the last one is
-    // for the GC's internal use. Read on to see the other two in action.
-    struct IntList / RefIntList / InHeapIntList <'a> {
-        head / set_head: i64,
-        tail / set_tail: Option<RefIntList<'a>>
-    }
+/// The `#[derive(IntoHeap)]` here causes Rust to define an additional
+/// type, `IntListRef`.
+#[derive(IntoHeap)]
+struct IntList<'h> {
+    head: i64,
+    tail: Option<IntListRef<'h>>
 }
+# fn main(){}
+```
 
+`cell_gc` does several things:
+
+*   Behind the scenes, it generates some code used for garbage collection,
+    such as marking code. You never need to worry about that stuff.
+
+*   It checks that `IntList`'s fields are all GC-safe.
+
+    Not every type is safe to use as a field of a heap struct or enum.
+    Here are the allowed field types:
+
+    * primitive types, like `i32`
+    * types declared with `#[derive(IntoHeap)]`, like `IntList<'h>` and `IntListRef<'h>`
+    * `Box<T>` where `T` has `'static` lifetime
+    * `Rc<T>` where `T` has `'static` lifetime
+    * `Option<T>` where `T` is any of these types
+
+    If you try to use anything else, you'll get bizarre error messages
+    from `rustc`.
+
+*   It declare a `Ref` type for you, in this case `IntListRef`.
+    `cell_gc` names this type by gluing `Ref` to the end of the struct
+    name. `IntListRef` is a smart pointer to a GC-managed `IntList`. You
+    need this because `cell_gc` doesn't let you have normal Rust references
+    to stuff in the GC heap.
+
+    `IntListRef` values keep in-heap `IntList` values alive; once the last
+    `IntListRef` pointing at an object is gone, it becomes available for
+    garbage collection, and eventually it'll be recycled.
+
+    `IntListRef` is like `std::rc::Rc`: it's `Clone` but not `Copy`, and
+    calling `.clone()` copies the Ref, not the object it points to.
+
+    `Ref` types have accessor methods for getting and setting each
+    field of the struct. For example, `IntList` has methods `.head()`, `.tail()`,
+    `.set_head(i64)`, and `.set_tail(Option<IntListRef>)`.
+
+You can also derive `IntoHeap` for an enum, but support is incomplete: no
+`Ref` type is generated for enums. Tuple structs are not supported.
+
+### Understanding heaps
+
+This part isn't documented well yet. But here's an example,
+using the `IntList` from above:
+
+```rust
+# #[macro_use] extern crate cell_gc;
+# #[macro_use] extern crate cell_gc_derive;
+# #[derive(IntoHeap)]
+# struct IntList<'h> {
+#     head: i64,
+#     tail: Option<IntListRef<'h>>
+# }
 fn main() {
     // Create a heap (you'll only do this once in your whole program)
     cell_gc::with_heap(|heap| {
-        // Allocate an object (returns a RefIntList)
+        // Allocate an object (returns an IntListRef)
         let obj1 = heap.alloc(IntList { head: 17, tail: None });
         assert_eq!(obj1.head(), 17);
         assert_eq!(obj1.tail(), None);
@@ -68,32 +127,75 @@ fn main() {
 }
 ```
 
-`RefIntList` values keep in-heap `IntList` values alive;
-once the last `RefIntList` pointing at an object is gone,
-it becomes available for garbage collection,
-and eventually it'll be recycled.
+Use `with_heap` in your `main()` function to create a heap.
+Use `heap.alloc(v)` to allocate values in the heap.
 
-`RefIntList` is like `std::rc::Rc`: it's `Clone` but not `Copy`,
-and calling `.clone()` copies the Ref, not the object it points to.
+## Vectors in the GC heap
 
+A very simple "object" type for a text adventure game:
 
-## Heap types
+```rust
+#[macro_use] extern crate cell_gc;
+#[macro_use] extern crate cell_gc_derive;
 
-Right now, there is a separate macro for declaring enums: `heap_inline_enum!{}`.
-(But I hope to merge these two macros, so this will go away.)
+use cell_gc::collections::VecRef;
 
-Not every type is safe to use as a field of a heap struct or enum.
-Here are the allowed field types:
+#[derive(IntoHeap)]
+struct Object<'h> {
+    name: String,
+    description: String,
+    children: VecRef<'h, ObjectRef<'h>>
+}
+# fn main() {}
+```
 
-* primitive types, like `i32`
-* macro-declared GC types like `IntList<'a>` and `RefIntList<'a>`
-* macro-declared enum types
-* `Box<T>` where `T` has `'static` lifetime
-* `Rc<T>` where `T` has `'static` lifetime
-* `Option<T>` where `T` is any of these types
+Note that `children` is a `VecRef<'h, ObjectRef<'h>>`; that is, it is
+a reference to a separately GC-allocated `Vec<ObjectRef<'h>>`, which is
+a vector of references to other objects. In other words, this is exactly
+what you would have in Java for a field declared like this:
 
-If you try to use anything else, you'll get bizarre `rustc` error messages.
+```java
+public ArrayList<Object> children;
+```
 
+The API generated by this macro looks like this:
+
+```rust
+# struct VecRef<'h, T: 'h>(&'h T);  // hack to make this compile
+struct Object<'h> {
+    name: String,
+    description: String,
+    children: VecRef<'h, ObjectRef<'h>>
+}
+
+struct ObjectRef<'h> {
+   /* all fields private */
+#  target: &'h Object<'h>     // hack to make this compile
+}
+
+impl<'h> ObjectRef<'h> {
+    fn name(&self) -> String
+#       { unimplemented!(); }
+    fn set_name(&self, name: String)
+#       { unimplemented!(); }
+    fn description(&self) -> String
+#       { unimplemented!(); }
+    fn set_description(&self, description: String)
+#       { unimplemented!(); }
+    fn children(&self) -> VecRef<'h, ObjectRef<'h>>
+#       { unimplemented!(); }
+    fn set_children(&self, children: VecRef<'h, ObjectRef<'h>>)
+#       { unimplemented!(); }
+}
+```
+
+(You might never actually use that `set_children()` method.
+Instead, you'll initialize the `children` field with a vector when you
+create the object, and then you'll most likely mutate that existing vector
+rather than ever creating a new one.)
+
+You can allocate `Object`s in the heap using `heap.alloc(Object { ... })`,
+and make one `Object` a child of another by using `obj1.children().push(obj2)`.
 
 ## Safety
 
@@ -102,7 +204,7 @@ this GC is safe.<sup>[citation needed]</sup>
 
 Still, there's one weird rule to be aware of:
 **Don't implement `Drop` or `Clone`
-for any type declared using the `gc` macros.**
+for any type declared using `gc_heap_type!`.**
 It's safe in the full Rust sense of that word
 (it won't cause crashes or undefined behavior,
 as long as your `.drop()` or `.clone()` method does nothing `unsafe`),
@@ -118,6 +220,8 @@ and use that as a field of a GC heap struct.
 
 ## Why is it called "cell-gc"?
 
-In cell-gc, every field of every GC-managed object is public and mutable.
+In cell-gc, every field of every GC-managed object is mutable.
+You can't get *direct* references to the data;
+instead you use methods to get and set values.
 
 It's as though every field were a [Cell](http://doc.rust-lang.org/std/cell/struct.Cell.html).
