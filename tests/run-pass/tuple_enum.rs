@@ -10,12 +10,11 @@ struct ThingBox<'h> {
     thing: Thing<'h>
 }
 
-gc_heap_type! {
-    enum Thing / ThingInHeap <'h> {
-        Zero,
-        One(ThingBoxRef<'h>),
-        Two(ThingBoxRef<'h>, ThingBoxRef<'h>)
-    }
+#[derive(IntoHeap)]
+enum Thing<'h> {
+    Zero,
+    One(ThingBoxRef<'h>),
+    Two(ThingBoxRef<'h>, ThingBoxRef<'h>)
 }
 
 fn main() {

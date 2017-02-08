@@ -9,11 +9,10 @@ struct Dropper<'h> {
     ignore: SomethingWithLifetime<'h>
 }
 
-gc_heap_type! {
-    enum SomethingWithLifetime / SomethingWithLifetimeStorage <'h> {
-        Another(DropperRef<'h>),
-        Nothing
-    }
+#[derive(IntoHeap)]
+enum SomethingWithLifetime<'h> {
+    Another(DropperRef<'h>),
+    Nothing
 }
 
 use SomethingWithLifetime::Nothing;

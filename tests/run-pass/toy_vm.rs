@@ -11,16 +11,14 @@ struct Pair<'h> {
     cdr: Value<'h>
 }
 
-gc_heap_type! {
-    #[derive(Clone, Debug, PartialEq)]
-    enum Value / ValueStorage <'h> {
-        Nil,
-        Int(i32),
-        Symbol(Rc<String>),
-        Cons(PairRef<'h>),
-        Lambda(PairRef<'h>),
-        Builtin(GCLeaf<BuiltinFnPtr>)
-    }
+#[derive(Clone, Debug, PartialEq, IntoHeap)]
+enum Value<'h> {
+    Nil,
+    Int(i32),
+    Symbol(Rc<String>),
+    Cons(PairRef<'h>),
+    Lambda(PairRef<'h>),
+    Builtin(GCLeaf<BuiltinFnPtr>)
 }
 
 use Value::*;

@@ -8,10 +8,9 @@ mod pairs_aux;
 use cell_gc::*;
 use pairs_aux::*;
 
-gc_heap_type! {
-    struct Thing / ThingRef / ThingStorage <'h> {
-        boxed_ref / set_boxed_ref: Box<Option<ThingRef<'h>>>
-    }
+#[derive(IntoHeap)]
+struct Thing<'h> {
+    boxed_ref: Box<Option<ThingRef<'h>>>
 }
 
 fn main() {
