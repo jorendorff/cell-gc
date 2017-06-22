@@ -8,7 +8,7 @@ use gcref::GCRef;
 /// Trait for values that can be moved into a GC heap.
 ///
 /// Cell-gc does not support GC allocation of arbitrary values: only values of
-/// types that implement `IntoHeap`. This treat is **not** meant to be
+/// types that implement `IntoHeap`. This trait is **not** meant to be
 /// implemented by hand: use the `gc_heap_type!` macro instead. All primitive
 /// types and many standard types support `IntoHeap`.
 ///
