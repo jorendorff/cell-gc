@@ -15,19 +15,19 @@
 //!     we are accessing gibberish.
 //!
 //!     Another way is if a callback is called while we're in the middle of
-//!     mutating an object, while it's in an invalid state. When you read
+//!     mutating a value, while it's in an invalid state. When you read
 //!     "callback", think of `deref` and `drop` methods, which are called
 //!     implicitly all over the place. These callbacks are normally safe,
-//!     because they simply can't have a reference to the object that's in an
+//!     because they simply can't have a reference to the value that's in an
 //!     intermediate state. But if another reference exists, it might be used
-//!     to try to read from the half-mutated object.
+//!     to try to read from the half-mutated value.
 //!
-//! *   If a data structure contains two paths to an object, under Rust's usual
-//!     rules, you can get two `mut` references to that object.
+//! *   If a data structure contains two paths to a value, under Rust's usual
+//!     rules, you can get two `mut` references to that value.
 //!
 //!     This is why you tend to build ownership trees in Rust and it's why GC
 //!     is particularly challenging in Rust: GCs build an arbitrary graph of
-//!     objects and references.
+//!     values and references.
 //!
 //! This GC takes the following approach to ensure safety.
 //!
@@ -120,13 +120,14 @@ impl<'h> Heap<'h> {
             .unwrap()
     }
 
-    /// Add the object `*p` to the root set, protecting it from GC.
+    /// Add the value `*p` to the root set, protecting it from GC.
     ///
-    /// An object that has been pinned *n* times stays in the root set
+    /// A value that has been pinned *n* times stays in the root set
     /// until it has been unpinned *n* times.
     ///
-    /// (Unsafe because if the argument is garbage, a later GC will
-    /// crash. Called only from `impl GCRef`.)
+    /// # Safety
+    ///
+    /// `p` must point to a live allocation of type `T` in this heap.
     pub unsafe fn pin<T: IntoHeap<'h>>(&self, p: *mut T::In) {
         let p = p as *mut ();
         let mut pins = self.pins.borrow_mut();
@@ -134,10 +135,11 @@ impl<'h> Heap<'h> {
         *entry += 1;
     }
 
-    /// Unpin an object (see `pin`).
+    /// Unpin a heap-allocated value (see `pin`).
     ///
-    /// (Unsafe because unpinning an object that other code is still using
-    /// causes dangling pointers. Called only from `impl GCRef`.)
+    /// # Safety
+    ///
+    /// `p` must point to a pinned allocation of type `T` in this heap.
     pub unsafe fn unpin<T: IntoHeap<'h>>(&self, p: *mut T::In) {
         let p = p as *mut ();
         let mut pins = self.pins.borrow_mut();
