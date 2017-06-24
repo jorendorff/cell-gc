@@ -5,11 +5,13 @@ use std::marker::PhantomData;
 use bit_vec::BitVec;
 use traits::IntoHeap;
 use heap::Heap;
+use marking::MarkingTracer;
 
 /// Non-inlined function that serves as an entry point to marking. This is used
 /// for marking root set entries.
-unsafe fn mark_entry_point<'h, T: IntoHeap<'h>>(addr: *const ()) {
-    T::mark(&*(addr as *const T::In));
+unsafe fn mark_entry_point<'h, T: IntoHeap<'h>>(addr: *const (), tracer: &mut MarkingTracer<'h>) {
+    let addr = addr as *const T::In;
+    T::trace(&*addr, tracer);
 }
 
 pub fn heap_type_id<'h, T: IntoHeap<'h>>() -> usize {
@@ -30,7 +32,7 @@ pub struct PageHeader<'h> {
     pub heap: *mut Heap<'h>,
     mark_bits: BitVec,
     allocated_bits: BitVec,
-    mark_fn: unsafe fn(*const ()),
+    mark_fn: unsafe fn(*const (), &mut MarkingTracer<'h>),
     sweep_fn: unsafe fn(&mut PageHeader<'h>),
     freelist: *mut ()
 }
@@ -50,8 +52,8 @@ impl<'h> PageHeader<'h> {
         self.allocated_bits.none()
     }
 
-    pub unsafe fn mark(&self, ptr: *const ()) {
-        (self.mark_fn)(ptr);
+    pub unsafe fn mark(&self, ptr: *const (), tracer: &mut MarkingTracer<'h>) {
+        (self.mark_fn)(ptr, tracer);
     }
 
     pub unsafe fn sweep(&mut self) {

@@ -78,7 +78,8 @@ use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::ptr;
 use traits::{IntoHeap, IntoHeapAllocation};
-use pages::{heap_type_id, PageHeader, TypedPage, PageBox};
+use marking::{mark, MarkingTracer};
+use pages::{heap_type_id, TypedPage, PageBox};
 use gcref::GCRef;
 
 // What does this do? You'll never guess!
@@ -87,6 +88,7 @@ pub type HeapId<'h> = PhantomData<::std::cell::Cell<&'h mut ()>>;
 pub struct Heap<'h> {
     id: HeapId<'h>,
     pages: HashMap<usize, PageBox<'h>>,
+    marking_tracer: Option<MarkingTracer<'h>>,
     pins: RefCell<HashMap<*mut (), usize>>
 }
 
@@ -106,6 +108,7 @@ impl<'h> Heap<'h> {
         Heap {
             id: PhantomData,
             pages: HashMap::new(),
+            marking_tracer: Some(MarkingTracer::default()),
             pins: RefCell::new(HashMap::new())
         }
     }
@@ -151,6 +154,15 @@ impl<'h> Heap<'h> {
         }
     }
 
+    /// TODO FITZGEN
+    pub fn each_pin<F>(&self, mut f: F)
+        where F: FnMut(*mut ())
+    {
+        for (&ptr, _) in self.pins.borrow().iter() {
+            f(ptr);
+        }
+    }
+
     pub fn try_alloc<T: IntoHeapAllocation<'h>>(&mut self, value: T) -> Option<T::Ref> {
         // For now, this is done very early, so that if it panics, the heap is
         // left in an OK state. Better wrapping of raw pointers would make it
@@ -188,14 +200,34 @@ impl<'h> Heap<'h> {
         self.try_alloc(value).expect("out of memory (gc did not collect anything)")
     }
 
-    unsafe fn gc(&mut self) {
-        // mark phase
+    fn take_marking_tracer(&mut self) -> MarkingTracer<'h> {
+        self.marking_tracer.take().unwrap()
+    }
+
+    fn replace_marking_tracer(&mut self, tracer: MarkingTracer<'h>) {
+        assert!(self.marking_tracer.is_none());
+        // TODO FITZGEN: assert mark stack is empty
+        self.marking_tracer = Some(tracer);
+    }
+
+    /// TODO FITZGEN
+    pub fn with_marking_tracer<F, O>(&mut self, mut f: F) -> O
+        where F: FnMut(&mut Self, &mut MarkingTracer<'h>) -> O
+    {
+        let mut tracer = self.take_marking_tracer();
+        let retval = f(self, &mut tracer);
+        self.replace_marking_tracer(tracer);
+        retval
+    }
+
+    pub fn clear_mark_bits(&mut self) {
         for (_, page) in self.pages.iter_mut() {
             page.clear_mark_bits();
         }
-        for (&ptr, _) in self.pins.borrow().iter() {
-            (*PageHeader::<'h>::find(ptr)).mark(ptr);
-        }
+    }
+
+    unsafe fn gc(&mut self) {
+        mark(self);
 
         // sweep phase
         for (_, page) in self.pages.iter_mut() {
