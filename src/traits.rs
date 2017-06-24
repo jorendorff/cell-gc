@@ -83,7 +83,15 @@ pub unsafe trait IntoHeap<'h>: Sized {
     /// Unsafe to call: It is impossible for ordinary users to call this
     /// safely, because `self` must be a direct, unwrapped reference to a value
     /// stored in the GC heap, which ordinary users cannot obtain.
-    unsafe fn mark(&Self::In);
+    ///
+    /// TODO FITZGEN fix comment
+    unsafe fn trace<R>(&Self::In, tracer: &mut R) where R: Tracer<'h>;
+}
+
+/// TODO FITZGEN
+pub trait Tracer<'h> {
+    /// TODO FITZGEN
+    fn visit<T>(&mut self, thing: &T::In) where T: IntoHeap<'h>;
 }
 
 /// Relate an `IntoHeap` type to the corresponding safe reference type.
@@ -103,7 +111,7 @@ macro_rules! gc_trivial_impl {
             type In = $t;
             fn into_heap(self) -> $t { self }
             unsafe fn from_heap(storage: &$t) -> $t { storage.clone() }
-            unsafe fn mark(_storage: &$t) {}
+            unsafe fn trace<R>(_storage: &$t, _tracer: &mut R) where R: Tracer<'h> {}
         }
     }
 }
@@ -134,7 +142,7 @@ macro_rules! gc_generic_trivial_impl {
                 type In = $t;
                 fn into_heap(self) -> $t { self }
                 unsafe fn from_heap(storage: &$t) -> $t { (*storage).clone() }
-                unsafe fn mark(_storage: &$t) {}
+                unsafe fn trace<R>(_storage: &$t, _tracer: &mut R) where R: Tracer<'h> {}
             }
         }
     }
@@ -156,10 +164,12 @@ unsafe impl<'h, T: IntoHeap<'h>> IntoHeap<'h> for Option<T> {
         self.map(|t| t.into_heap())
     }
 
-    unsafe fn mark(storage: &Option<T::In>) {
+    unsafe fn trace<R>(storage: &Option<T::In>, tracer: &mut R)
+        where R: Tracer<'h>
+    {
         match storage {
             &None => (),
-            &Some(ref u) => T::mark(u)
+            &Some(ref u) => T::trace(u, tracer)
         }
     }
 
@@ -186,9 +196,10 @@ macro_rules! gc_trivial_tuple_impl {
                 }
 
                 #[allow(non_snake_case)]
-                unsafe fn mark(storage: &Self::In) {
+                unsafe fn trace<R>(storage: &Self::In, tracer: &mut R) where R: Tracer<'h> {
                     let &($(ref $t,)*) = storage;
-                    $( <$t as $crate::traits::IntoHeap>::mark($t); )*
+                    $( <$t as $crate::traits::IntoHeap>::trace($t, tracer); )*
+                    let _ = tracer;
                 }
 
                 #[allow(non_snake_case)]

@@ -227,6 +227,7 @@
 extern crate bit_vec;
 
 pub mod traits;
+mod marking;
 mod pages;
 mod heap;
 mod gcref;

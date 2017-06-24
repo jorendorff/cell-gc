@@ -58,13 +58,12 @@ fn impl_into_heap_for_struct(ast: &syn::DeriveInput, data: &syn::VariantData) ->
             };
 
             // 2. IntoHeap implementation.
-            // Body of the mark() method.
-            let mark_fields: Vec<Tokens> = fields.iter().map(|f| {
+            // Body of the trace() method.
+            let trace_fields: Vec<Tokens> = fields.iter().map(|f| {
                 let name = &f.ident;
                 let ty = &f.ty;
                 quote! {
-                    <#ty as ::cell_gc::traits::IntoHeap<#heap_lifetime>>
-                        ::mark(&storage.#name);
+                    tracer.visit::<#ty>(&storage.#name);
                 }
             }).collect();
 
@@ -89,11 +88,14 @@ fn impl_into_heap_for_struct(ast: &syn::DeriveInput, data: &syn::VariantData) ->
                         }
                     }
 
-                    unsafe fn mark(storage: &#storage_type_name #ty_generics) {
-                        if !::cell_gc::Heap::get_mark_bit::<Self>(storage) {
-                            ::cell_gc::Heap::set_mark_bit::<Self>(storage);
-                            #( #mark_fields )*
-                        }
+                    unsafe fn trace<R>(storage: &#storage_type_name #ty_generics , tracer: &mut R)
+                        where R: ::cell_gc::traits::Tracer<#heap_lifetime>
+                    {
+                        #( #trace_fields )*
+
+                        // Quiet unused variables warnings if we didn't actually end up
+                        // with anything to trace.
+                        let _ = tracer;
                     }
 
                     unsafe fn from_heap(storage: &#storage_type_name #ty_generics) -> Self {
@@ -146,11 +148,13 @@ fn impl_into_heap_for_struct(ast: &syn::DeriveInput, data: &syn::VariantData) ->
                         self.0.as_mut_ptr()
                     }
 
-                    unsafe fn mark(storage: &*mut #storage_type_name #ty_generics) {
+                    unsafe fn trace<R>(storage: &*mut #storage_type_name #ty_generics , tracer: &mut R)
+                        where R: ::cell_gc::traits::Tracer<#heap_lifetime>
+                    {
                         let ptr = *storage;
-                        if !ptr.is_null() {
+                        if let Some(ref thing) = ptr.as_ref() {
                             <#name #ty_generics as ::cell_gc::traits::IntoHeap<#heap_lifetime>>
-                                ::mark(&*ptr);
+                                ::trace(thing, tracer);
                         }
                     }
 
@@ -369,7 +373,7 @@ fn impl_into_heap_for_enum(ast: &syn::DeriveInput, variants: &[syn::Variant]) ->
         }
     });
 
-    let mark_arms = variants.iter().map(|v| {
+    let trace_arms = variants.iter().map(|v| {
         let ident = &v.ident;
         match v.data {
             syn::VariantData::Struct(ref fields) => {
@@ -378,7 +382,7 @@ fn impl_into_heap_for_enum(ast: &syn::DeriveInput, variants: &[syn::Variant]) ->
                 quote! {
                     #storage_type_name::#ident { #(ref #field_names),* } => {
                         #(
-                            <#field_types as ::cell_gc::traits::IntoHeap>::mark(#field_names);
+                            tracer.visit::<#field_types>(#field_names);
                         )*
                     }
                 }
@@ -392,7 +396,7 @@ fn impl_into_heap_for_enum(ast: &syn::DeriveInput, variants: &[syn::Variant]) ->
                 quote! {
                     #storage_type_name::#ident( #(ref #bindings),* ) => {
                         #(
-                            <#field_types as ::cell_gc::traits::IntoHeap>::mark(#bindings);
+                            tracer.visit::<#field_types>(#bindings);
                         )*
                     }
                 }
@@ -423,10 +427,16 @@ fn impl_into_heap_for_enum(ast: &syn::DeriveInput, variants: &[syn::Variant]) ->
                 }
             }
 
-            unsafe fn mark(storage: &#storage_type_name #ty_generics) {
+            unsafe fn trace<R>(storage: &#storage_type_name #ty_generics , tracer: &mut R)
+                where R: ::cell_gc::traits::Tracer<#heap_lifetime>
+            {
                 match *storage {
-                    #( #mark_arms ),*
+                    #( #trace_arms ),*
                 }
+
+                // Quiet unused variables warnings if we didn't actually end up
+                // with anything to trace.
+                let _ = tracer;
             }
         }
     };
