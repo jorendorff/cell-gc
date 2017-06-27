@@ -73,29 +73,42 @@ unsafe impl<'h, T: IntoHeap<'h>> IntoHeap<'h> for VecRef<'h, T> {
 }
 
 impl<'h, T: IntoHeap<'h>> VecRef<'h, T> {
-    /// Unsafe to call: During the lifetime of the reference passed to the
-    /// callback, the caller must ensure that the vector is not modified.
-    /// Destructors and `from_heap` methods are presumed safe. Avoid
-    /// `to_heap`.
-    fn unsafe_deref<R, F>(&self, f: F) -> R
-        where F: for <'b> FnOnce(&'b Vec<T::In>) -> R
+    /// Run the given closure, passing it a reference to the heap-internal
+    /// storage vector.
+    ///
+    /// # Safety
+    ///
+    /// Anything that provides direct access to any heap storage is unsafe
+    /// because Rust can't guarantee there aren't other ways to obtain `mut`
+    /// references to that data at the same time.
+    ///
+    /// Therefore, during the call to `f`, it's the caller responsibility to
+    /// ensure that no `mut` references to the vector exist. In other words,
+    /// don't nest `with_storage` calls. Destructors and `from_heap` methods
+    /// may be presumed not to nest. Avoid `to_heap`.
+    ///
+    unsafe fn with_storage<'v, 'b, R, F>(&'v self, f: F) -> R
+        where F: FnOnce(&'b Vec<T::In>) -> R,
+              'v: 'b
     {
-        // NOTE: the signature above is overly restrictive.
-        // I should be able to figure out a better one when I have a little time.
         // TODO: in debug builds at least there should be a RefCell-like "lock" here,
         // asserting that no direct Rust references exist to anything in the GC heap.
-        f(unsafe { &*self.0.as_ptr() })
+        f(&*self.0.as_ptr())
     }
 
-    /// Unsafe to call: During the lifetime of the reference passed to the
-    /// callback, the caller must ensure that no other references exist to the
-    /// vector.  Destructors and `from_heap` methods are presumed safe. Avoid
-    /// `to_heap`.
-    fn unsafe_deref_mut<R, F>(&self, f: F) -> R
-        where F: for <'b> FnOnce(&'b mut Vec<T::In>) -> R
+    /// Run the given closure, passing it a `mut` reference to the heap-internal
+    /// storage vector.
+    ///
+    /// # Safety
+    ///
+    /// Like `with_storage`, except the caller must ensure that no other
+    /// references to the vector exist. It still amounts to: don't nest.
+    unsafe fn with_storage_mut<'v, 'b, R, F>(&'v self, f: F) -> R
+        where F: FnOnce(&'b mut Vec<T::In>) -> R,
+              'v: 'b
     {
         // TODO should assert here, like unsafe_deref
-        f(unsafe { &mut *self.0.as_mut_ptr() })
+        f(&mut *self.0.as_mut_ptr())
     }
 
     /// Get the element `index` from the vector.
@@ -108,7 +121,9 @@ impl<'h, T: IntoHeap<'h>> VecRef<'h, T> {
     ///
     /// Panics if `index` is out of bounds.
     pub fn get(&self, index: usize) -> T {
-        self.unsafe_deref(|v| unsafe { IntoHeap::from_heap(&v[index]) })
+        unsafe {
+            self.with_storage(|v| IntoHeap::from_heap(&v[index]))
+        }
     }
 
     /// Copy the vector out of the GC-managed heap. This returns an ordinary,
@@ -138,65 +153,93 @@ impl<'h, T: IntoHeap<'h>> VecRef<'h, T> {
     /// Panics if `index` is out of bounds.
     pub fn set(&self, index: usize, value: T) {
         let u = value.into_heap();
-        self.unsafe_deref_mut(|v| v[index] = u);
+        unsafe {
+            self.with_storage_mut(|v| v[index] = u);
+        }
     }
 
     pub fn capacity(&self) -> usize {
-        self.unsafe_deref(|v| v.capacity())
+        unsafe {
+            self.with_storage(|v| v.capacity())
+        }
     }
 
     pub fn reserve(&self, additional: usize) {
-        self.unsafe_deref_mut(|v| v.reserve(additional));
+        unsafe {
+            self.with_storage_mut(|v| v.reserve(additional));
+        }
     }
 
     pub fn reserve_exact(&self, additional: usize) {
-        self.unsafe_deref_mut(|v| v.reserve_exact(additional));
+        unsafe {
+            self.with_storage_mut(|v| v.reserve_exact(additional));
+        }
     }
 
     pub fn shrink_to_fit(&self) {
-        self.unsafe_deref_mut(|v| v.shrink_to_fit());
+        unsafe {
+            self.with_storage_mut(|v| v.shrink_to_fit());
+        }
     }
 
     pub fn truncate(&self, len: usize) {
-        self.unsafe_deref_mut(|v| v.truncate(len));
+        unsafe {
+            self.with_storage_mut(|v| v.truncate(len));
+        }
     }
 
     pub fn swap_remove(&self, index: usize) -> T {
-        let u = self.unsafe_deref_mut(|v| v.swap_remove(index));
-        unsafe { IntoHeap::from_heap(&u) }
+        unsafe {
+            let u = self.with_storage_mut(|v| v.swap_remove(index));
+            IntoHeap::from_heap(&u)
+        }
     }
 
     pub fn insert(&self, index: usize, element: T) {
         let u = element.into_heap();
-        self.unsafe_deref_mut(|v| v.insert(index, u));
+        unsafe {
+            self.with_storage_mut(|v| v.insert(index, u));
+        }
     }
 
     pub fn remove(&self, index: usize) -> T {
-        let u = self.unsafe_deref_mut(|v| v.remove(index));
-        unsafe { IntoHeap::from_heap(&u) }
+        unsafe {
+            let u = self.with_storage_mut(|v| v.remove(index));
+            IntoHeap::from_heap(&u)
+        }
     }
 
     pub fn push(&self, value: T) {
         let u = value.into_heap();
-        self.unsafe_deref_mut(|v| v.push(u));
+        unsafe {
+            self.with_storage_mut(|v| v.push(u));
+        }
     }
 
     pub fn pop(&self) -> Option<T> {
-        self.unsafe_deref_mut(|v| v.pop().map(|u| unsafe { IntoHeap::from_heap(&u) }))
+        unsafe {
+            self.with_storage_mut(|v| v.pop().map(|u| IntoHeap::from_heap(&u)))
+        }
     }
 
     pub fn append(&self, other: &VecRef<'h, T>) {
         let mut tmp: Vec<T::In> = vec![];
-        other.unsafe_deref_mut(|src| mem::swap(src, &mut tmp));
-        self.unsafe_deref_mut(|dest| dest.append(&mut tmp));
+        unsafe {
+            other.with_storage_mut(|src| mem::swap(src, &mut tmp));
+            self.with_storage_mut(|dest| dest.append(&mut tmp));
+        }
     }
 
     pub fn clear(&self) {
-        self.unsafe_deref_mut(|v| v.clear());
+        unsafe {
+            self.with_storage_mut(|v| v.clear());
+        }
     }
 
     pub fn len(&self) -> usize {
-        self.unsafe_deref(|v| v.len())
+        unsafe {
+            self.with_storage(|v| v.len())
+        }
     }
 
     pub fn is_empty(&self) -> bool {
@@ -209,14 +252,18 @@ impl<'h, T: IntoHeap<'h>> VecRef<'h, T> {
     /// but cell-gc never hands out Rust references to heap values. Instead
     /// this returns a clone of the value.
     pub fn first(&self) -> Option<T> {
-        self.unsafe_deref(|v| v.first().map(|u| unsafe { IntoHeap::from_heap(u) }))
+        unsafe {
+            self.with_storage(|v| v.first().map(|u| IntoHeap::from_heap(u)))
+        }
     }
 
     /// Get the last element of the vector, or `None` if the vector is empty.
     ///
     /// Like `first()`, this clones the value.
     pub fn last(&self) -> Option<T> {
-        self.unsafe_deref(|v| v.last().map(|u| unsafe { IntoHeap::from_heap(u) }))
+        unsafe {
+            self.with_storage(|v| v.last().map(|u| IntoHeap::from_heap(u)))
+        }
     }
 
     /// Sort the vector in place.
@@ -229,12 +276,16 @@ impl<'h, T: IntoHeap<'h>> VecRef<'h, T> {
         // user can do whatever malicious nonsense they like to the heap in
         // `compare`, and our copy of the vector is unaffected.
         let mut tmp = vec![];
-        self.unsafe_deref_mut(|v| mem::swap(&mut tmp, v));
+        unsafe {
+            self.with_storage_mut(|v| mem::swap(&mut tmp, v));
+        }
         tmp.sort_by(|ru1, ru2| {
             let t1 = unsafe { IntoHeap::from_heap(ru1) };
             let t2 = unsafe { IntoHeap::from_heap(ru2) };
             compare(&t1, &t2)
         });
-        self.unsafe_deref_mut(|v| mem::swap(&mut tmp, v));
+        unsafe {
+            self.with_storage_mut(|v| mem::swap(&mut tmp, v));
+        }
     }
 }
