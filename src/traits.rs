@@ -53,11 +53,14 @@ use gcref::GCRef;
 /// (or contains) a smart pointer to an in-heap value, then that value (and
 /// everything reachable from it) is protected from GC.
 ///
-/// Unsafe to implement: in-heap objects are full of pointers; if `into_heap`
-/// puts garbage into them, GC will crash. `mark` must be implmented with care
-/// in order to preserve the invariants of the GC graph-walking algorithm.
-/// Bugs there are very likely to lead to dangling pointers and
-/// hard-to-debug crashes down the road.
+/// # Safety
+///
+/// In-heap objects are full of pointers; if `into_heap` puts garbage into
+/// them, GC will crash.
+///
+/// `mark` must be implmented with care in order to preserve the invariants of
+/// the GC graph-walking algorithm. Bugs there are very likely to lead to
+/// dangling pointers and hard-to-debug crashes down the road.
 ///
 pub unsafe trait IntoHeap<'h>: Sized {
     /// The type of the value when it is physically stored in the heap.

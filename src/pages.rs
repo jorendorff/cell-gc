@@ -85,7 +85,6 @@ fn round_up(n: usize, k: usize) -> usize {
     if a == n { n } else { n + k }
 }
 
-
 impl<U> TypedPage<U> {
     /// The actual size of an allocation can't be smaller than the size of a
     /// pointer, due to the way we store the freelist by stealing a pointer
@@ -125,6 +124,7 @@ impl<U> TypedPage<U> {
         }
     }
 
+    /// Return the page containing the object `ptr` points to.
     pub fn find(ptr: *const U) -> *mut TypedPage<U> {
         let page_addr = ptr as usize & !(PAGE_ALIGN - 1);
         page_addr as *mut TypedPage<U>
@@ -198,8 +198,8 @@ impl PageBox {
     pub fn new<'h, T: IntoHeap<'h>>(heap: *mut Heap) -> PageBox {
         assert!(mem::size_of::<TypedPage<T::In>>() <=
                 TypedPage::<T::In>::first_allocation_offset());
-        assert!(TypedPage::<T::In>::first_allocation_offset() + TypedPage::<T::In>::capacity()
-                * TypedPage::<T::In>::allocation_size()
+        assert!(TypedPage::<T::In>::first_allocation_offset()
+                + TypedPage::<T::In>::capacity() * TypedPage::<T::In>::allocation_size()
                 <= PAGE_SIZE);
         let raw_page: *mut () = {
             let mut vec: Vec<u8> = Vec::with_capacity(PAGE_SIZE);
