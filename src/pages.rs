@@ -178,8 +178,7 @@ impl<U> TypedPage<U> {
         let mut addr = self.first_object_addr();
         for i in 0 .. Self::capacity() {
             if self.header.allocated_bits[i] && !self.header.mark_bits[i] {
-                // The next statement has the effect of calling the destructor.
-                ptr::read(addr as *const U);
+                ptr::drop_in_place(addr as *mut U);
                 self.header.allocated_bits.set(i, false);
                 self.add_to_free_list(addr as *mut U);
             }
@@ -251,9 +250,7 @@ impl Drop for PageBox {
         unsafe {
             assert!((*self.0).is_empty());
 
-            // Call the header's destructor. (ptr::read returns a temporary copy of
-            // the header. Since we don't store it anywhere, it is then dropped.)
-            ptr::read(self.0);
+            ptr::drop_in_place(self.0);
 
             // Deallocate the memory.
             Vec::from_raw_parts(self.0 as *mut u8, 0, PAGE_SIZE);
