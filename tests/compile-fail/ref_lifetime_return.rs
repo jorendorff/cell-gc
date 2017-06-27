@@ -1,4 +1,4 @@
-//! A GCRef must not outlive the Heap it points into, so it can't be returned
+//! A GCRef must not outlive the HeapSession it points into, so it can't be returned
 //! from the `with_heap` callback.
 
 #[macro_use] extern crate cell_gc;
@@ -8,8 +8,8 @@ use cell_gc::*;
 use pairs_aux::*;
 
 fn main() {
-    let obj = with_heap(|heap| {
-        alloc_null_pair(heap)
+    let obj = with_heap(|hs| {
+        alloc_null_pair(hs)
         //~^ ERROR cannot infer an appropriate lifetime
     });
 

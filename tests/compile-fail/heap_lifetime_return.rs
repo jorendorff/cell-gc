@@ -10,9 +10,9 @@ use cell_gc::*;
 use pairs_aux::*;
 
 fn main() {
-    with_heap(|heap1| {
-        let mut heap2 = with_heap(|h| *h);
-        let obj1 = alloc_null_pair(heap1);
-        let obj2 = alloc_pair(&mut heap2, Value::Null, Value::Pair(obj1));
+    with_heap(|hs1| {
+        let mut hs2 = with_heap(|h| *h);
+        let obj1 = alloc_null_pair(hs1);
+        let obj2 = alloc_pair(&mut hs2, Value::Null, Value::Pair(obj1));
     });
 }

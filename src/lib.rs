@@ -233,7 +233,7 @@ mod gcref;
 mod gcleaf;
 pub mod collections;
 
-pub use heap::{Heap, with_heap};
+pub use heap::{HeapSession, with_heap};
 pub use gcref::GCRef;
 pub use gcleaf::GCLeaf;
 

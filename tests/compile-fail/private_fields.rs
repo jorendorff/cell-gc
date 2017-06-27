@@ -4,7 +4,7 @@
 #[macro_use] extern crate cell_gc_derive;
 
 mod flowers {
-    use cell_gc::Heap;
+    use cell_gc::HeapSession;
 
     #[derive(IntoHeap)]
     pub struct Clade<'h> {
@@ -13,12 +13,12 @@ mod flowers {
     }
 
     impl<'h> Clade<'h> {
-        pub fn new(heap: &Heap<'h>,
+        pub fn new(hs: &HeapSession<'h>,
                    supertype: Option<CladeRef<'h>>,
                    name: String)
             -> CladeRef<'h>
         {
-            heap.alloc(Clade {
+            hs.alloc(Clade {
                 supertype: supertype,
                 name: name
             })
@@ -27,8 +27,8 @@ mod flowers {
 }
 
 fn main() {
-    cell_gc::with_heap(|heap| {
-        let clade = flowers::Clade::new(heap, None, "Angiospermae".to_string());
+    cell_gc::with_heap(|hs| {
+        let clade = flowers::Clade::new(hs, None, "Angiospermae".to_string());
         let parent = clade.supertype();  // error
         //~^ ERROR: method `supertype` is private
         clade.set_supertype(None);  // error

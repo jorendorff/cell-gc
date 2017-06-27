@@ -17,7 +17,7 @@ struct Chunk<'h> {
 }
 
 fn main() {
-    cell_gc::with_heap(|heap| {
+    cell_gc::with_heap(|hs| {
         let n = cell_gc::page_capacity::<Chunk>();
 
         // Users don't care about the exact value here, but test it anyway
@@ -29,7 +29,7 @@ fn main() {
 
         let mut root = None;
         for i in 0 .. n as u64 {
-            root = Some(heap.alloc(Chunk {
+            root = Some(hs.alloc(Chunk {
                 field_0: (i, i, i, i),
                 field_32: (i, i, i, i),
                 field_64: (i, i, i, i),
@@ -43,7 +43,7 @@ fn main() {
         }
 
         // Heap is full.
-        assert_eq!(heap.try_alloc(Chunk {
+        assert_eq!(hs.try_alloc(Chunk {
             field_0: (99, 99, 99, 99),
             field_32: (99, 99, 99, 99),
             field_64: (99, 99, 99, 99),
@@ -67,7 +67,7 @@ fn main() {
         assert_eq!(root, None);
 
         // Now, having discarded that refrence, we should be able to allocate.
-        root = heap.try_alloc(Chunk {
+        root = hs.try_alloc(Chunk {
             field_0: (99, 99, 99, 99),
             field_32: (99, 99, 99, 99),
             field_64: (99, 99, 99, 99),

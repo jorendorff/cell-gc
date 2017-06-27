@@ -14,14 +14,14 @@ use cell_gc::*;
 use pairs_aux::*;
 
 fn main() {
-    with_heap(|heap| {
-        let obj = alloc_null_pair(heap);
+    with_heap(|hs| {
+        let obj = alloc_null_pair(hs);
 
-        // note: dropping `heap` would just drop the reference, which is no problem
-        std::mem::drop(*heap);
+        // note: dropping `hs` would just drop the reference, which is no problem
+        std::mem::drop(*hs);
         //~^ ERROR cannot move out of borrowed content
 
         let val = Value::Pair(obj.clone());
-        obj.set_head(val); // occurs after the heap is gone
+        obj.set_head(val); // occurs after the heap session is gone
     });
 }

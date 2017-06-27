@@ -1,5 +1,5 @@
 use traits::IntoHeap;
-use heap::{Heap, HeapId};
+use heap::{HeapSession, HeapId};
 use std::fmt;
 use std::marker::PhantomData;
 
@@ -14,7 +14,7 @@ impl<'h, T: IntoHeap<'h>> GCRef<'h, T> {
     /// type `T::In` --- and a complete allocation, not a sub-object of one ---
     /// then later unsafe code will explode.
     pub unsafe fn new(p: *mut T::In) -> GCRef<'h, T> {
-        let heap: *const Heap<'h> = Heap::from_allocation::<T>(p);
+        let heap: *const HeapSession<'h> = HeapSession::from_allocation::<T>(p);
         (*heap).pin::<T>(p);
         GCRef {
             ptr: p,
@@ -29,7 +29,7 @@ impl<'h, T: IntoHeap<'h>> GCRef<'h, T> {
 impl<'h, T: IntoHeap<'h>> Drop for GCRef<'h, T> {
     fn drop(&mut self) {
         unsafe {
-            let heap = Heap::from_allocation::<T>(self.ptr);
+            let heap = HeapSession::from_allocation::<T>(self.ptr);
             (*heap).unpin::<T>(self.ptr);
         }
     }
@@ -39,7 +39,7 @@ impl<'h, T: IntoHeap<'h>> Clone for GCRef<'h, T> {
     fn clone(&self) -> GCRef<'h, T> {
         let &GCRef { ptr, heap_id } = self;
         unsafe {
-            let heap = Heap::from_allocation::<T>(ptr);
+            let heap = HeapSession::from_allocation::<T>(ptr);
             (*heap).pin::<T>(ptr);
         }
         GCRef {

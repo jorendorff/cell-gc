@@ -84,7 +84,7 @@ use gcref::GCRef;
 // What does this do? You'll never guess!
 pub type HeapId<'h> = PhantomData<::std::cell::Cell<&'h mut ()>>;
 
-pub struct Heap<'h> {
+pub struct HeapSession<'h> {
     id: HeapId<'h>,
     pages: HashMap<usize, PageBox<'h>>,
     pins: RefCell<HashMap<*mut (), usize>>
@@ -96,14 +96,14 @@ pub struct Heap<'h> {
 /// the API is a little wonky --- but how many heaps were you planning on
 /// creating?)
 pub fn with_heap<F, O>(f: F) -> O
-    where F: for<'h> FnOnce(&mut Heap<'h>) -> O
+    where F: for<'h> FnOnce(&mut HeapSession<'h>) -> O
 {
-    f(&mut Heap::new())
+    f(&mut HeapSession::new())
 }
 
-impl<'h> Heap<'h> {
-    fn new() -> Heap<'h> {
-        Heap {
+impl<'h> HeapSession<'h> {
+    fn new() -> HeapSession<'h> {
+        HeapSession {
             id: PhantomData,
             pages: HashMap::new(),
             pins: RefCell::new(HashMap::new())
@@ -112,7 +112,7 @@ impl<'h> Heap<'h> {
 
     fn get_page<T: IntoHeap<'h>>(&mut self) -> &mut TypedPage<'h, T> {
         let key = heap_type_id::<T>();
-        let heap_ptr = self as *mut Heap<'h>;
+        let heap_ptr = self as *mut HeapSession<'h>;
         self.pages
             .entry(key)
             .or_insert_with(|| PageBox::new::<T>(heap_ptr))
@@ -174,7 +174,7 @@ impl<'h> Heap<'h> {
         }
     }
 
-    pub unsafe fn from_allocation<T: IntoHeap<'h>>(ptr: *const T::In) -> *const Heap<'h> {
+    pub unsafe fn from_allocation<T: IntoHeap<'h>>(ptr: *const T::In) -> *const HeapSession<'h> {
         (*TypedPage::<'h, T>::find(ptr)).header.heap
     }
 
@@ -210,7 +210,7 @@ impl<'h> Heap<'h> {
     }
 }
 
-impl<'h> Drop for Heap<'h> {
+impl<'h> Drop for HeapSession<'h> {
     fn drop(&mut self) {
         // Perform a final GC to call destructors on any remaining allocations.
         assert!(self.pins.borrow().is_empty());

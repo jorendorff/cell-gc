@@ -14,11 +14,11 @@ struct Thing<'h> {
 }
 
 fn main() {
-    with_heap(|heap| {
-        let thing_1 = heap.alloc(Thing { boxed_ref: Box::new(None) });
-        let thing_2 = heap.alloc(Thing { boxed_ref: Box::new(Some(thing_1)) });
+    with_heap(|hs| {
+        let thing_1 = hs.alloc(Thing { boxed_ref: Box::new(None) });
+        let thing_2 = hs.alloc(Thing { boxed_ref: Box::new(Some(thing_1)) });
         std::mem::drop(thing_1);
-        heap.force_gc();  // Boxes aren't marked; thing_1 is collected!
+        hs.force_gc();  // Boxes aren't marked; thing_1 is collected!
         let thing_1_revived = (*thing_2.boxed_ref()).unwrap();  // bad
     });
 }

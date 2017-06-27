@@ -90,8 +90,8 @@ fn impl_into_heap_for_struct(ast: &syn::DeriveInput, data: &syn::VariantData) ->
                     }
 
                     unsafe fn mark(storage: &#storage_type_name #ty_generics) {
-                        if !::cell_gc::Heap::get_mark_bit::<Self>(storage) {
-                            ::cell_gc::Heap::set_mark_bit::<Self>(storage);
+                        if !::cell_gc::HeapSession::get_mark_bit::<Self>(storage) {
+                            ::cell_gc::HeapSession::set_mark_bit::<Self>(storage);
                             #( #mark_fields )*
                         }
                     }

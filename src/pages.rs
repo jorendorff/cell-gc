@@ -4,7 +4,7 @@ use std::{cmp, mem, ptr};
 use std::marker::PhantomData;
 use bit_vec::BitVec;
 use traits::IntoHeap;
-use heap::Heap;
+use heap::HeapSession;
 
 /// Non-inlined function that serves as an entry point to marking. This is used
 /// for marking root set entries.
@@ -27,7 +27,7 @@ fn is_aligned(ptr: *const ()) -> bool {
 }
 
 pub struct PageHeader<'h> {
-    pub heap: *mut Heap<'h>,
+    pub heap: *mut HeapSession<'h>,
     mark_bits: BitVec,
     allocated_bits: BitVec,
     mark_fn: unsafe fn(*const ()),
@@ -197,7 +197,7 @@ unsafe fn sweep_entry_point<'h, T: IntoHeap<'h>>(header: &mut PageHeader<'h>) {
 pub struct PageBox<'h>(*mut PageHeader<'h>);
 
 impl<'h> PageBox<'h> {
-    pub fn new<T: IntoHeap<'h>>(heap: *mut Heap<'h>) -> PageBox<'h> {
+    pub fn new<T: IntoHeap<'h>>(heap: *mut HeapSession<'h>) -> PageBox<'h> {
         assert!(mem::size_of::<TypedPage<'h, T>>() <=
                 TypedPage::<'h, T>::first_allocation_offset());
         assert!(TypedPage::<'h, T>::first_allocation_offset() + TypedPage::<'h, T>::capacity()

@@ -2,7 +2,7 @@
 
 #[macro_use] extern crate cell_gc;
 #[macro_use] extern crate cell_gc_derive;
-use cell_gc::{Heap, with_heap, GCLeaf};
+use cell_gc::{HeapSession, with_heap, GCLeaf};
 use std::rc::Rc;
 
 #[derive(Debug, IntoHeap)]
@@ -45,12 +45,12 @@ impl std::fmt::Debug for BuiltinFnPtr {
 }
 
 impl<'h> Value<'h> {
-    fn push_env(&mut self, heap: &mut Heap<'h>, key: Rc<String>, value: Value<'h>) {
-        let pair = Cons(heap.alloc(Pair {
+    fn push_env(&mut self, hs: &mut HeapSession<'h>, key: Rc<String>, value: Value<'h>) {
+        let pair = Cons(hs.alloc(Pair {
             car: Symbol(key),
             cdr: value
         }));
-        *self = Cons(heap.alloc(Pair {
+        *self = Cons(hs.alloc(Pair {
             car: pair,
             cdr: self.clone()
         }));
@@ -58,17 +58,17 @@ impl<'h> Value<'h> {
 }
 
 macro_rules! lisp {
-    { ( ) , $_heap:expr } => {
+    { ( ) , $_hs:expr } => {
         Nil
     };
-    { ( $h:tt $($t:tt)* ) , $heap:expr } => {
+    { ( $h:tt $($t:tt)* ) , $hs:expr } => {
         {
-            let h = lisp!($h, $heap);
-            let t = lisp!(($($t)*), $heap);
-            Cons($heap.alloc(Pair { car: h, cdr: t }))
+            let h = lisp!($h, $hs);
+            let t = lisp!(($($t)*), $hs);
+            Cons($hs.alloc(Pair { car: h, cdr: t }))
         }
     };
-    { $s:tt , $_heap:expr } => {
+    { $s:tt , $_hs:expr } => {
         {
             let s = stringify!($s);  // lame, but nothing else matches after an `ident` match fails
             if s.starts_with(|c: char| c.is_digit(10)) {
@@ -99,18 +99,18 @@ fn lookup<'h>(mut env: Value<'h>, name: Rc<String>) -> Result<Value<'h>, String>
     Err(format!("undefined symbol: {:?}", *name))
 }
 
-fn map_eval<'h>(heap: &mut Heap<'h>, mut exprs: Value<'h>, env: &Value<'h>)
+fn map_eval<'h>(hs: &mut HeapSession<'h>, mut exprs: Value<'h>, env: &Value<'h>)
     -> Result<Vec<Value<'h>>, String>
 {
     let mut v = vec![];
     while let Cons(pair) = exprs {
-        v.push(try!(eval(heap, pair.car(), env)));
+        v.push(try!(eval(hs, pair.car(), env)));
         exprs = pair.cdr();
     }
     Ok(v)
 }
 
-fn apply<'h>(heap: &mut Heap<'h>, fval: Value<'h>, args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
+fn apply<'h>(hs: &mut HeapSession<'h>, fval: Value<'h>, args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
     match fval {
         Builtin(f) => (f.0)(args),
         Lambda(pair) => {
@@ -127,11 +127,11 @@ fn apply<'h>(heap: &mut Heap<'h>, fval: Value<'h>, args: Vec<Value<'h>>) -> Resu
                     return Err("apply: not enough arguments".to_string());
                 }
                 if let Symbol(s) = pair.car() {
-                    let pair = Cons(heap.alloc(Pair {
+                    let pair = Cons(hs.alloc(Pair {
                         car: Symbol(s),
                         cdr: args[i].clone()
                     }));
-                    env = Cons(heap.alloc(Pair {
+                    env = Cons(hs.alloc(Pair {
                         car: pair,
                         cdr: env
                     }));
@@ -144,20 +144,20 @@ fn apply<'h>(heap: &mut Heap<'h>, fval: Value<'h>, args: Vec<Value<'h>>) -> Resu
             if i < args.len() {
                 return Err("apply: too many arguments".to_string());
             }
-            eval(heap, body, &env)
+            eval(hs, body, &env)
         }
         _ => Err("apply: not a function".to_string())
     }
 }
 
-fn eval<'h>(heap: &mut Heap<'h>, expr: Value<'h>, env: &Value<'h>) -> Result<Value<'h>, String> {
+fn eval<'h>(hs: &mut HeapSession<'h>, expr: Value<'h>, env: &Value<'h>) -> Result<Value<'h>, String> {
     match expr {
         Symbol(s) => lookup(env.clone(), s),
         Cons(p) => {
             let f = p.car();
             if let Symbol(ref s) = f {
                 if &**s == "lambda" {
-                    return Ok(Lambda(heap.alloc(Pair {
+                    return Ok(Lambda(hs.alloc(Pair {
                         car: p.cdr(),
                         cdr: env.clone()
                     })));
@@ -169,14 +169,14 @@ fn eval<'h>(heap: &mut Heap<'h>, expr: Value<'h>, env: &Value<'h>) -> Result<Val
                         Nil => {}
                         _ => return Err("too many arguments in (if) expression".to_string())
                     };
-                    let cond_result = try!(eval(heap, cond, env));
+                    let cond_result = try!(eval(hs, cond, env));
                     let selected_expr = if cond_result == Nil { f_expr } else { t_expr };
-                    return eval(heap, selected_expr, env);
+                    return eval(hs, selected_expr, env);
                 }
             }
-            let fval = try!(eval(heap, f, env));
-            let args = try!(map_eval(heap, p.cdr(), env));
-            apply(heap, fval, args)
+            let fval = try!(eval(hs, f, env));
+            let args = try!(map_eval(hs, p.cdr(), env));
+            apply(hs, fval, args)
         }
         Builtin(_) => Err(format!("builtin function found in source code")),
         _ => Ok(expr)  // nil and numbers are self-evaluating
@@ -196,13 +196,13 @@ fn add<'h>(args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
 }
 
 fn main() {
-    with_heap(|heap| {
+    with_heap(|hs| {
         let mut env = Nil;
-        env.push_env(heap, Rc::new("+".to_string()), Builtin(GCLeaf::new(BuiltinFnPtr(add))));
+        env.push_env(hs, Rc::new("+".to_string()), Builtin(GCLeaf::new(BuiltinFnPtr(add))));
         let program = lisp!(
             ((lambda (x y z) (+ x (+ y z))) 3 4 5)
-            , heap);
-        let result = eval(heap, program, &env);
+            , hs);
+        let result = eval(hs, program, &env);
         assert_eq!(result, Ok(Int(12)));
     });
 }
