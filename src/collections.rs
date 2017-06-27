@@ -2,27 +2,22 @@
 
 use traits::{IntoHeap, IntoHeapAllocation};
 use gcref::GCRef;
-use heap::HeapSessionId;
-use std::marker::PhantomData;
 use std::mem;
 use std::cmp::Ordering;
 
-/// An implementation detail.
-pub struct VecStorage<'h, T: IntoHeap<'h>>(Vec<T::In>, HeapSessionId<'h>);
-
 unsafe impl<'h, T: IntoHeap<'h>> IntoHeap<'h> for Vec<T> {
-    type In = VecStorage<'h, T>;
+    type In = Vec<T::In>;
 
-    fn into_heap(self) -> VecStorage<'h, T> {
-        VecStorage(self.into_iter().map(|x| x.into_heap()).collect(), PhantomData)
+    fn into_heap(self) -> Vec<T::In> {
+        self.into_iter().map(|x| x.into_heap()).collect()
     }
 
-    unsafe fn from_heap(storage: &VecStorage<'h, T>) -> Vec<T> {
-        storage.0.iter().map(|x| T::from_heap(x)).collect()
+    unsafe fn from_heap(storage: &Vec<T::In>) -> Vec<T> {
+        storage.iter().map(|x| T::from_heap(x)).collect()
     }
 
-    unsafe fn mark(storage: &VecStorage<'h, T>) {
-        for r in &storage.0 {
+    unsafe fn mark(storage: &Vec<T::In>) {
+        for r in storage {
             T::mark(r);
         }
     }
@@ -58,20 +53,20 @@ impl<'h, T: IntoHeap<'h>> IntoHeapAllocation<'h> for Vec<T> {
 pub struct VecRef<'h, T: IntoHeap<'h>>(GCRef<'h, Vec<T>>);
 
 unsafe impl<'h, T: IntoHeap<'h>> IntoHeap<'h> for VecRef<'h, T> {
-    type In = *mut VecStorage<'h, T>;
+    type In = *mut Vec<T::In>;
 
-    fn into_heap(self) -> *mut VecStorage<'h, T> {
+    fn into_heap(self) -> *mut Vec<T::In> {
         self.0.as_mut_ptr()
     }
 
-    unsafe fn from_heap(storage: &*mut VecStorage<'h, T>) -> VecRef<'h, T> {
+    unsafe fn from_heap(storage: &*mut Vec<T::In>) -> VecRef<'h, T> {
         VecRef(GCRef::new(*storage))
     }
 
-    unsafe fn mark(storage: &*mut VecStorage<'h, T>) {
+    unsafe fn mark(storage: &*mut Vec<T::In>) {
         // BUG - should call a method mark_ref that checks the mark bit before
         // doing anything
-        for r in &(**storage).0 {
+        for r in &**storage {
             T::mark(r);
         }
     }
@@ -89,7 +84,7 @@ impl<'h, T: IntoHeap<'h>> VecRef<'h, T> {
         // I should be able to figure out a better one when I have a little time.
         // TODO: in debug builds at least there should be a RefCell-like "lock" here,
         // asserting that no direct Rust references exist to anything in the GC heap.
-        f(unsafe { &(*self.0.as_ptr()).0 })
+        f(unsafe { &*self.0.as_ptr() })
     }
 
     /// Unsafe to call: During the lifetime of the reference passed to the
@@ -100,7 +95,7 @@ impl<'h, T: IntoHeap<'h>> VecRef<'h, T> {
         where F: for <'b> FnOnce(&'b mut Vec<T::In>) -> R
     {
         // TODO should assert here, like unsafe_deref
-        f(unsafe { &mut (*self.0.as_mut_ptr()).0 })
+        f(unsafe { &mut *self.0.as_mut_ptr() })
     }
 
     /// Get the element `index` from the vector.
