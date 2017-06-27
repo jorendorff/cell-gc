@@ -151,6 +151,34 @@ impl Heap {
         (*TypedPage::find(ptr)).set_mark_bit(ptr);
     }
 
+    fn gc(&mut self) {
+        unsafe {
+            // mark phase
+            for (_, page) in self.pages.iter_mut() {
+                page.clear_mark_bits();
+            }
+            for (&ptr, _) in self.pins.borrow().iter() {
+                (*PageHeader::find(ptr)).mark(ptr);
+            }
+
+            // sweep phase
+            for (_, page) in self.pages.iter_mut() {
+                page.sweep();
+            }
+        }
+    }
+}
+
+impl Drop for Heap {
+    fn drop(&mut self) {
+        // Perform a final GC to call destructors on any remaining allocations.
+        assert!(self.pins.borrow().is_empty());
+        self.gc();
+
+        for (_, page) in self.pages.iter() {
+            assert!(page.is_empty());
+        }
+    }
 }
 
 impl<'h> HeapSession<'h> {
@@ -185,7 +213,7 @@ impl<'h> HeapSession<'h> {
             let alloc = self.get_page::<T>().try_alloc();
             alloc
                 .or_else(|| {
-                    self.gc();
+                    self.heap.gc();
                     self.get_page::<T>().try_alloc()
                 })
                 .map(move |p| {
@@ -199,34 +227,7 @@ impl<'h> HeapSession<'h> {
         self.try_alloc(value).expect("out of memory (gc did not collect anything)")
     }
 
-    unsafe fn gc(&mut self) {
-        // mark phase
-        for (_, page) in self.heap.pages.iter_mut() {
-            page.clear_mark_bits();
-        }
-        for (&ptr, _) in self.heap.pins.borrow().iter() {
-            (*PageHeader::find(ptr)).mark(ptr);
-        }
-
-        // sweep phase
-        for (_, page) in self.heap.pages.iter_mut() {
-            page.sweep();
-        }
-    }
-
     pub fn force_gc(&mut self) {
-        unsafe { self.gc(); }
-    }
-}
-
-impl<'h> Drop for HeapSession<'h> {
-    fn drop(&mut self) {
-        // Perform a final GC to call destructors on any remaining allocations.
-        assert!(self.heap.pins.borrow().is_empty());
-        unsafe { self.gc(); }
-
-        for (_, page) in self.heap.pages.iter() {
-            assert!(page.is_empty());
-        }
+        self.heap.gc();
     }
 }
