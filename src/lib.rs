@@ -109,24 +109,29 @@
 //! #     head: i64,
 //! #     tail: Option<IntListRef<'h>>
 //! # }
+//! use cell_gc::Heap;
+//!
 //! fn main() {
 //!     // Create a heap (you'll only do this once in your whole program)
-//!     cell_gc::with_heap(|heap| {
+//!     let mut heap = Heap::new();
+//!
+//!     heap.enter(|hs| {
 //!         // Allocate an object (returns an IntListRef)
-//!         let obj1 = heap.alloc(IntList { head: 17, tail: None });
+//!         let obj1 = hs.alloc(IntList { head: 17, tail: None });
 //!         assert_eq!(obj1.head(), 17);
 //!         assert_eq!(obj1.tail(), None);
 //!
 //!         // Allocate another object
-//!         let obj2 = heap.alloc(IntList { head: 33, tail: Some(obj1) });
+//!         let obj2 = hs.alloc(IntList { head: 33, tail: Some(obj1) });
 //!         assert_eq!(obj2.head(), 33);
 //!         assert_eq!(obj2.tail().unwrap().head(), 17);
 //!     });
 //! }
 //! ```
 //!
-//! Use `with_heap` in your `main()` function to create a heap.
-//! Use `heap.alloc(v)` to allocate values in the heap.
+//! Use `Heap::new()` in your `main()` function to create a heap.
+//! Use `heap.enter()` to gain access to the heap (opening a "heap session", `hs`).
+//! Use `hs.alloc(v)` to allocate values in the heap.
 //!
 //! # Vectors in the GC heap
 //!
@@ -192,7 +197,7 @@
 //! create the object, and then you'll most likely mutate that existing vector
 //! rather than ever creating a new one.)
 //!
-//! You can allocate `Object`s in the heap using `heap.alloc(Object { ... })`,
+//! You can allocate `Object`s in the heap using `hs.alloc(Object { ... })`,
 //! and make one `Object` a child of another by using `obj1.children().push(obj2)`.
 //!
 //! # Safety
@@ -202,7 +207,7 @@
 //!
 //! Still, there's one weird rule to be aware of:
 //! **Don't implement `Drop` or `Clone`
-//! for any type declared using `gc_heap_type!`.**
+//! for any type declared using `derive(IntoHeap)`.**
 //! It's safe in the full Rust sense of that word
 //! (it won't cause crashes or undefined behavior,
 //! as long as your `.drop()` or `.clone()` method does nothing `unsafe`),
