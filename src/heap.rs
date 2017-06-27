@@ -81,13 +81,17 @@ use traits::{IntoHeap, IntoHeapAllocation};
 use pages::{heap_type_id, PageHeader, TypedPage, PageBox};
 use gcref::GCRef;
 
+pub struct Heap {
+    pages: HashMap<usize, PageBox>,
+    pins: RefCell<HashMap<*mut (), usize>>
+}
+
 // What does this do? You'll never guess!
-pub type HeapId<'h> = PhantomData<::std::cell::Cell<&'h mut ()>>;
+pub type HeapSessionId<'h> = PhantomData<::std::cell::Cell<&'h mut ()>>;
 
 pub struct HeapSession<'h> {
-    id: HeapId<'h>,
-    pages: HashMap<usize, PageBox<'h>>,
-    pins: RefCell<HashMap<*mut (), usize>>
+    id: HeapSessionId<'h>,
+    pub(crate) heap: Heap  // XXX HACK
 }
 
 /// Create a heap, pass it to a callback, then destroy the heap.
@@ -105,15 +109,17 @@ impl<'h> HeapSession<'h> {
     fn new() -> HeapSession<'h> {
         HeapSession {
             id: PhantomData,
-            pages: HashMap::new(),
-            pins: RefCell::new(HashMap::new())
+            heap: Heap {
+                pages: HashMap::new(),
+                pins: RefCell::new(HashMap::new())
+            }
         }
     }
 
     fn get_page<T: IntoHeap<'h>>(&mut self) -> &mut TypedPage<'h, T> {
         let key = heap_type_id::<T>();
-        let heap_ptr = self as *mut HeapSession<'h>;
-        self.pages
+        let heap_ptr = &mut self.heap as *mut Heap;
+        self.heap.pages
             .entry(key)
             .or_insert_with(|| PageBox::new::<T>(heap_ptr))
             .downcast_mut::<T>()
@@ -130,7 +136,7 @@ impl<'h> HeapSession<'h> {
     /// `p` must point to a live allocation of type `T` in this heap.
     pub unsafe fn pin<T: IntoHeap<'h>>(&self, p: *mut T::In) {
         let p = p as *mut ();
-        let mut pins = self.pins.borrow_mut();
+        let mut pins = self.heap.pins.borrow_mut();
         let entry = pins.entry(p).or_insert(0);
         *entry += 1;
     }
@@ -142,7 +148,7 @@ impl<'h> HeapSession<'h> {
     /// `p` must point to a pinned allocation of type `T` in this heap.
     pub unsafe fn unpin<T: IntoHeap<'h>>(&self, p: *mut T::In) {
         let p = p as *mut ();
-        let mut pins = self.pins.borrow_mut();
+        let mut pins = self.heap.pins.borrow_mut();
         if {
             let entry = pins.entry(p as *mut ()).or_insert(0);
             assert!(*entry != 0);
@@ -175,7 +181,7 @@ impl<'h> HeapSession<'h> {
     }
 
     pub unsafe fn from_allocation<T: IntoHeap<'h>>(ptr: *const T::In) -> *const HeapSession<'h> {
-        (*TypedPage::<'h, T>::find(ptr)).header.heap
+        (*TypedPage::<'h, T>::find(ptr)).header.heap as *const HeapSession<'h>  // XXX HACK
     }
 
     pub unsafe fn get_mark_bit<T: IntoHeap<'h>>(ptr: *const T::In) -> bool {
@@ -192,15 +198,15 @@ impl<'h> HeapSession<'h> {
 
     unsafe fn gc(&mut self) {
         // mark phase
-        for (_, page) in self.pages.iter_mut() {
+        for (_, page) in self.heap.pages.iter_mut() {
             page.clear_mark_bits();
         }
-        for (&ptr, _) in self.pins.borrow().iter() {
-            (*PageHeader::<'h>::find(ptr)).mark(ptr);
+        for (&ptr, _) in self.heap.pins.borrow().iter() {
+            (*PageHeader::find(ptr)).mark(ptr);
         }
 
         // sweep phase
-        for (_, page) in self.pages.iter_mut() {
+        for (_, page) in self.heap.pages.iter_mut() {
             page.sweep();
         }
     }
@@ -213,10 +219,10 @@ impl<'h> HeapSession<'h> {
 impl<'h> Drop for HeapSession<'h> {
     fn drop(&mut self) {
         // Perform a final GC to call destructors on any remaining allocations.
-        assert!(self.pins.borrow().is_empty());
+        assert!(self.heap.pins.borrow().is_empty());
         unsafe { self.gc(); }
 
-        for (_, page) in self.pages.iter() {
+        for (_, page) in self.heap.pages.iter() {
             assert!(page.is_empty());
         }
     }

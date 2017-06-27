@@ -1,11 +1,11 @@
 use traits::IntoHeap;
-use heap::{HeapSession, HeapId};
+use heap::{HeapSession, HeapSessionId};
 use std::fmt;
 use std::marker::PhantomData;
 
 pub struct GCRef<'h, T: IntoHeap<'h>> {
     ptr: *mut T::In,
-    heap_id: HeapId<'h>
+    heap_id: HeapSessionId<'h>
 }
 
 impl<'h, T: IntoHeap<'h>> GCRef<'h, T> {

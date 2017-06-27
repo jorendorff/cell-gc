@@ -2,13 +2,13 @@
 
 use traits::{IntoHeap, IntoHeapAllocation};
 use gcref::GCRef;
-use heap::HeapId;
+use heap::HeapSessionId;
 use std::marker::PhantomData;
 use std::mem;
 use std::cmp::Ordering;
 
 /// An implementation detail.
-pub struct VecStorage<'h, T: IntoHeap<'h>>(Vec<T::In>, HeapId<'h>);
+pub struct VecStorage<'h, T: IntoHeap<'h>>(Vec<T::In>, HeapSessionId<'h>);
 
 unsafe impl<'h, T: IntoHeap<'h>> IntoHeap<'h> for Vec<T> {
     type In = VecStorage<'h, T>;
