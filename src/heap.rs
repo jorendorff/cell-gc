@@ -91,7 +91,7 @@ pub type HeapSessionId<'h> = PhantomData<::std::cell::Cell<&'h mut ()>>;
 
 pub struct HeapSession<'h> {
     id: HeapSessionId<'h>,
-    heap: Heap
+    heap: &'h mut Heap
 }
 
 /// Create a heap, pass it to a callback, then destroy the heap.
@@ -99,13 +99,39 @@ pub struct HeapSession<'h> {
 /// The heap's lifetime is directly tied to this function call, for safety. (So
 /// the API is a little wonky --- but how many heaps were you planning on
 /// creating?)
-pub fn with_heap<F, O>(f: F) -> O
-    where F: for<'h> FnOnce(&mut HeapSession<'h>) -> O
+pub fn with_heap<R, F>(f: F) -> R
+    where F: for<'h> FnOnce(&mut HeapSession<'h>) -> R
 {
-    f(&mut HeapSession::new())
+    Heap::new().enter(f)
 }
 
 impl Heap {
+    /// Create a new, empty heap.
+    pub fn new() -> Heap {
+        Heap {
+            pages: HashMap::new(),
+            pins: RefCell::new(HashMap::new())
+        }
+    }
+
+    /// Run some code using this Heap.
+    ///
+    /// # Example
+    ///
+    ///     use cell_gc::{Heap, GCLeaf};
+    ///
+    ///     let mut heap = Heap::new();
+    ///     heap.enter(|hs| {
+    ///         // ... hs.alloc(MyHeapStruct { ... }) ...
+    ///         # hs.force_gc();
+    ///     });
+    ///
+    pub fn enter<R, F>(&mut self, f: F) -> R
+        where F: for<'h> FnOnce(&mut HeapSession<'h>) -> R
+    {
+        f(&mut HeapSession::new(self))
+    }
+
     /// Add the value `*p` to the root set, protecting it from GC.
     ///
     /// A value that has been pinned *n* times stays in the root set
@@ -182,19 +208,16 @@ impl Drop for Heap {
 }
 
 impl<'h> HeapSession<'h> {
-    fn new() -> HeapSession<'h> {
+    fn new(heap: &'h mut Heap) -> HeapSession<'h> {
         HeapSession {
             id: PhantomData,
-            heap: Heap {
-                pages: HashMap::new(),
-                pins: RefCell::new(HashMap::new())
-            }
+            heap
         }
     }
 
     fn get_page<'a, T: IntoHeap<'h> + 'a>(&'a mut self) -> &'a mut TypedPage<T::In> {
         let key = heap_type_id::<T>();
-        let heap_ptr = &mut self.heap as *mut Heap;
+        let heap_ptr = self.heap as *mut Heap;
         self.heap.pages
             .entry(key)
             .or_insert_with(|| PageBox::new::<T>(heap_ptr))
