@@ -240,5 +240,5 @@ pub use gcleaf::GCLeaf;
 /// Return the number of allocations of a given type that fit in a "page".
 /// (Unstable. This is a temporary hack for testing.)
 pub fn page_capacity<'h, T: traits::IntoHeapAllocation<'h>>() -> usize {
-    pages::TypedPage::<'h, T>::capacity()
+    pages::TypedPage::<T::In>::capacity()
 }

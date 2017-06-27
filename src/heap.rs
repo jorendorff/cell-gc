@@ -140,15 +140,15 @@ impl Heap {
     }
 
     pub unsafe fn from_allocation<'h, T: IntoHeap<'h>>(ptr: *const T::In) -> *const Heap {
-        (*TypedPage::<'h, T>::find(ptr)).header.heap
+        (*TypedPage::find(ptr)).header.heap
     }
 
     pub unsafe fn get_mark_bit<'h, T: IntoHeap<'h>>(ptr: *const T::In) -> bool {
-        (*TypedPage::<'h, T>::find(ptr)).get_mark_bit(ptr)
+        (*TypedPage::find(ptr)).get_mark_bit(ptr)
     }
 
     pub unsafe fn set_mark_bit<'h, T: IntoHeap<'h>>(ptr: *const T::In) {
-        (*TypedPage::<'h, T>::find(ptr)).set_mark_bit(ptr);
+        (*TypedPage::find(ptr)).set_mark_bit(ptr);
     }
 
 }
@@ -164,7 +164,7 @@ impl<'h> HeapSession<'h> {
         }
     }
 
-    fn get_page<T: IntoHeap<'h>>(&mut self) -> &mut TypedPage<'h, T> {
+    fn get_page<'a, T: IntoHeap<'h> + 'a>(&'a mut self) -> &'a mut TypedPage<T::In> {
         let key = heap_type_id::<T>();
         let heap_ptr = &mut self.heap as *mut Heap;
         self.heap.pages
