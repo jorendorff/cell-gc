@@ -91,7 +91,7 @@ pub type HeapSessionId<'h> = PhantomData<::std::cell::Cell<&'h mut ()>>;
 
 pub struct HeapSession<'h> {
     id: HeapSessionId<'h>,
-    pub(crate) heap: Heap  // XXX HACK
+    heap: Heap
 }
 
 /// Create a heap, pass it to a callback, then destroy the heap.
@@ -103,6 +103,54 @@ pub fn with_heap<F, O>(f: F) -> O
     where F: for<'h> FnOnce(&mut HeapSession<'h>) -> O
 {
     f(&mut HeapSession::new())
+}
+
+impl Heap {
+    /// Add the value `*p` to the root set, protecting it from GC.
+    ///
+    /// A value that has been pinned *n* times stays in the root set
+    /// until it has been unpinned *n* times.
+    ///
+    /// # Safety
+    ///
+    /// `p` must point to a live allocation of type `T` in this heap.
+    pub unsafe fn pin<'h, T: IntoHeap<'h>>(&self, p: *mut T::In) {
+        let p = p as *mut ();
+        let mut pins = self.pins.borrow_mut();
+        let entry = pins.entry(p).or_insert(0);
+        *entry += 1;
+    }
+
+    /// Unpin a heap-allocated value (see `pin`).
+    ///
+    /// # Safety
+    ///
+    /// `p` must point to a pinned allocation of type `T` in this heap.
+    pub unsafe fn unpin<'h, T: IntoHeap<'h>>(&self, p: *mut T::In) {
+        let p = p as *mut ();
+        let mut pins = self.pins.borrow_mut();
+        if {
+            let entry = pins.entry(p as *mut ()).or_insert(0);
+            assert!(*entry != 0);
+            *entry -= 1;
+            *entry == 0
+        } {
+            pins.remove(&p);
+        }
+    }
+
+    pub unsafe fn from_allocation<'h, T: IntoHeap<'h>>(ptr: *const T::In) -> *const Heap {
+        (*TypedPage::<'h, T>::find(ptr)).header.heap
+    }
+
+    pub unsafe fn get_mark_bit<'h, T: IntoHeap<'h>>(ptr: *const T::In) -> bool {
+        (*TypedPage::<'h, T>::find(ptr)).get_mark_bit(ptr)
+    }
+
+    pub unsafe fn set_mark_bit<'h, T: IntoHeap<'h>>(ptr: *const T::In) {
+        (*TypedPage::<'h, T>::find(ptr)).set_mark_bit(ptr);
+    }
+
 }
 
 impl<'h> HeapSession<'h> {
@@ -126,39 +174,6 @@ impl<'h> HeapSession<'h> {
             .unwrap()
     }
 
-    /// Add the value `*p` to the root set, protecting it from GC.
-    ///
-    /// A value that has been pinned *n* times stays in the root set
-    /// until it has been unpinned *n* times.
-    ///
-    /// # Safety
-    ///
-    /// `p` must point to a live allocation of type `T` in this heap.
-    pub unsafe fn pin<T: IntoHeap<'h>>(&self, p: *mut T::In) {
-        let p = p as *mut ();
-        let mut pins = self.heap.pins.borrow_mut();
-        let entry = pins.entry(p).or_insert(0);
-        *entry += 1;
-    }
-
-    /// Unpin a heap-allocated value (see `pin`).
-    ///
-    /// # Safety
-    ///
-    /// `p` must point to a pinned allocation of type `T` in this heap.
-    pub unsafe fn unpin<T: IntoHeap<'h>>(&self, p: *mut T::In) {
-        let p = p as *mut ();
-        let mut pins = self.heap.pins.borrow_mut();
-        if {
-            let entry = pins.entry(p as *mut ()).or_insert(0);
-            assert!(*entry != 0);
-            *entry -= 1;
-            *entry == 0
-        } {
-            pins.remove(&p);
-        }
-    }
-
     pub fn try_alloc<T: IntoHeapAllocation<'h>>(&mut self, value: T) -> Option<T::Ref> {
         // For now, this is done very early, so that if it panics, the heap is
         // left in an OK state. Better wrapping of raw pointers would make it
@@ -178,18 +193,6 @@ impl<'h> HeapSession<'h> {
                     T::wrap_gcref(GCRef::new(p))
                 })
         }
-    }
-
-    pub unsafe fn from_allocation<T: IntoHeap<'h>>(ptr: *const T::In) -> *const HeapSession<'h> {
-        (*TypedPage::<'h, T>::find(ptr)).header.heap as *const HeapSession<'h>  // XXX HACK
-    }
-
-    pub unsafe fn get_mark_bit<T: IntoHeap<'h>>(ptr: *const T::In) -> bool {
-        (*TypedPage::<'h, T>::find(ptr)).get_mark_bit(ptr)
-    }
-
-    pub unsafe fn set_mark_bit<T: IntoHeap<'h>>(ptr: *const T::In) {
-        (*TypedPage::<'h, T>::find(ptr)).set_mark_bit(ptr);
     }
 
     pub fn alloc<T: IntoHeapAllocation<'h>>(&mut self, value: T) -> T::Ref {
