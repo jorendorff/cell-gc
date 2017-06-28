@@ -237,9 +237,10 @@ mod heap;
 mod gcref;
 mod gcleaf;
 pub mod collections;
+pub mod ptr;
 
 pub use heap::{Heap, HeapSession, with_heap};
-pub use gcref::GCRef;
+pub use gcref::GcRef;
 pub use gcleaf::GCLeaf;
 
 /// Return the number of allocations of a given type that fit in a "page".

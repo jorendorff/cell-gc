@@ -79,7 +79,7 @@ fn impl_into_heap_for_struct(ast: &syn::DeriveInput, data: &syn::VariantData) ->
                 {
                     type In = #storage_type_name #ty_generics;
 
-                    fn into_heap(self) -> #storage_type_name #ty_generics {
+                    fn into_heap(self) -> Self::In {
                         #storage_type_name {
                             #(
                                 #field_names:
@@ -89,14 +89,16 @@ fn impl_into_heap_for_struct(ast: &syn::DeriveInput, data: &syn::VariantData) ->
                         }
                     }
 
-                    unsafe fn mark(storage: &#storage_type_name #ty_generics) {
-                        if !::cell_gc::Heap::get_mark_bit::<Self>(storage) {
-                            ::cell_gc::Heap::set_mark_bit::<Self>(storage);
+                    unsafe fn mark(storage: &Self::In) {
+                        let ptr = ::cell_gc::ptr::Pointer::new(storage);
+
+                        if !::cell_gc::Heap::get_mark_bit::<Self>(ptr) {
+                            ::cell_gc::Heap::set_mark_bit::<Self>(ptr);
                             #( #mark_fields )*
                         }
                     }
 
-                    unsafe fn from_heap(storage: &#storage_type_name #ty_generics) -> Self {
+                    unsafe fn from_heap(storage: &Self::In) -> Self {
                         #name {
                             #(
                                 #field_names:
@@ -117,7 +119,7 @@ fn impl_into_heap_for_struct(ast: &syn::DeriveInput, data: &syn::VariantData) ->
                 {
                     type Ref = #ref_type_name #ty_generics;
 
-                    fn wrap_gcref(gcref: ::cell_gc::GCRef<#heap_lifetime,
+                    fn wrap_gcref(gcref: ::cell_gc::GcRef<#heap_lifetime,
                                                           #name #ty_generics>)
                         -> #ref_type_name #ty_generics
                     {
@@ -130,7 +132,7 @@ fn impl_into_heap_for_struct(ast: &syn::DeriveInput, data: &syn::VariantData) ->
             let ref_type = quote! {
                 #[derive(Clone, Debug, PartialEq, Eq)]
                 #vis struct #ref_type_name #impl_generics
-                    (::cell_gc::GCRef<#heap_lifetime, #name #ty_generics>)
+                    (::cell_gc::GcRef<#heap_lifetime, #name #ty_generics>)
                     #where_clause;
             };
 
@@ -140,24 +142,21 @@ fn impl_into_heap_for_struct(ast: &syn::DeriveInput, data: &syn::VariantData) ->
                     for #ref_type_name #ty_generics
                     #where_clause
                 {
-                    type In = *mut #storage_type_name #ty_generics;
+                    type In = ::cell_gc::ptr::Pointer<#storage_type_name #ty_generics>;
 
-                    fn into_heap(self) -> *mut #storage_type_name #ty_generics {
-                        self.0.as_mut_ptr()
+                    fn into_heap(self) -> Self::In {
+                        self.0.ptr()
                     }
 
-                    unsafe fn mark(storage: &*mut #storage_type_name #ty_generics) {
-                        let ptr = *storage;
-                        if !ptr.is_null() {
+                    unsafe fn mark(storage: &Self::In) {
+                        if !storage.is_null() {
                             <#name #ty_generics as ::cell_gc::traits::IntoHeap<#heap_lifetime>>
-                                ::mark(&*ptr);
+                                ::mark(storage.as_ref());
                         }
                     }
 
-                    unsafe fn from_heap(storage: &*mut #storage_type_name #ty_generics)
-                                        -> #ref_type_name #ty_generics
-                    {
-                        #ref_type_name(::cell_gc::GCRef::new(*storage))
+                    unsafe fn from_heap(storage: &Self::In) -> #ref_type_name #ty_generics {
+                        #ref_type_name(::cell_gc::GcRef::<#name #ty_generics>::new(*storage))
                     }
                 }
             };
@@ -411,19 +410,19 @@ fn impl_into_heap_for_enum(ast: &syn::DeriveInput, variants: &[syn::Variant]) ->
         {
             type In = #storage_type_name #ty_generics;
 
-            fn into_heap(self) -> #storage_type_name #ty_generics {
+            fn into_heap(self) -> Self::In {
                 match self {
                     #( #into_heap_arms ),*
                 }
             }
 
-            unsafe fn from_heap(storage: &#storage_type_name #ty_generics) -> Self {
+            unsafe fn from_heap(storage: &Self::In) -> Self {
                 match *storage {
                     #( #from_heap_arms ),*
                 }
             }
 
-            unsafe fn mark(storage: &#storage_type_name #ty_generics) {
+            unsafe fn mark(storage: &Self::In) {
                 match *storage {
                     #( #mark_arms ),*
                 }

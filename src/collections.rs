@@ -1,7 +1,8 @@
 //! Collections for use with GC references.
 
 use traits::{IntoHeap, IntoHeapAllocation};
-use gcref::GCRef;
+use gcref::GcRef;
+use ptr::Pointer;
 use std::mem;
 use std::cmp::Ordering;
 
@@ -26,7 +27,7 @@ unsafe impl<'h, T: IntoHeap<'h>> IntoHeap<'h> for Vec<T> {
 impl<'h, T: IntoHeap<'h>> IntoHeapAllocation<'h> for Vec<T> {
     type Ref = VecRef<'h, T>;
 
-    fn wrap_gcref(gcref: GCRef<'h, Vec<T>>) -> VecRef<'h, T> {
+    fn wrap_gcref(gcref: GcRef<'h, Vec<T>>) -> VecRef<'h, T> {
         VecRef(gcref)
     }
 }
@@ -50,23 +51,23 @@ impl<'h, T: IntoHeap<'h>> IntoHeapAllocation<'h> for Vec<T> {
 /// });
 /// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct VecRef<'h, T: IntoHeap<'h>>(GCRef<'h, Vec<T>>);
+pub struct VecRef<'h, T: IntoHeap<'h>>(GcRef<'h, Vec<T>>);
 
 unsafe impl<'h, T: IntoHeap<'h>> IntoHeap<'h> for VecRef<'h, T> {
-    type In = *mut Vec<T::In>;
+    type In = Pointer<Vec<T::In>>;
 
-    fn into_heap(self) -> *mut Vec<T::In> {
-        self.0.as_mut_ptr()
+    fn into_heap(self) -> Pointer<Vec<T::In>> {
+        self.0.ptr()
     }
 
-    unsafe fn from_heap(storage: &*mut Vec<T::In>) -> VecRef<'h, T> {
-        VecRef(GCRef::new(*storage))
+    unsafe fn from_heap(storage: &Pointer<Vec<T::In>>) -> VecRef<'h, T> {
+        VecRef(GcRef::new(*storage))
     }
 
-    unsafe fn mark(storage: &*mut Vec<T::In>) {
+    unsafe fn mark(storage: &Pointer<Vec<T::In>>) {
         // BUG - should call a method mark_ref that checks the mark bit before
         // doing anything
-        for r in &**storage {
+        for r in storage.as_ref() {
             T::mark(r);
         }
     }

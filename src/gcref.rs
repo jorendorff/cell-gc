@@ -1,32 +1,34 @@
 use traits::IntoHeap;
 use heap::{Heap, HeapSessionId};
+use ptr::Pointer;
 use std::fmt;
 use std::marker::PhantomData;
 
-pub struct GCRef<'h, T: IntoHeap<'h>> {
-    ptr: *mut T::In,
+pub struct GcRef<'h, T: IntoHeap<'h>> {
+    ptr: Pointer<T::In>,
     heap_id: HeapSessionId<'h>
 }
 
-impl<'h, T: IntoHeap<'h>> GCRef<'h, T> {
-    /// Pin an object, returning a new `GCRef` that will unpin it when
+impl<'h, T: IntoHeap<'h>> GcRef<'h, T> {
+    /// Pin an object, returning a new `GcRef` that will unpin it when
     /// dropped. Unsafe because if `p` is not a pointer to a live allocation of
     /// type `T::In` --- and a complete allocation, not a sub-object of one ---
     /// then later unsafe code will explode.
-    pub unsafe fn new(p: *mut T::In) -> GCRef<'h, T> {
+    pub unsafe fn new(p: Pointer<T::In>) -> GcRef<'h, T> {
         let heap: *const Heap = Heap::from_allocation::<T>(p);
         (*heap).pin::<T>(p);
-        GCRef {
+        GcRef {
             ptr: p,
             heap_id: PhantomData
         }
     }
 
-    pub fn as_ptr(&self) -> *const T::In { self.ptr }
-    pub fn as_mut_ptr(&self) -> *mut T::In { self.ptr }
+    pub fn ptr(&self) -> Pointer<T::In> { self.ptr }
+    pub fn as_ptr(&self) -> *const T::In { self.ptr.as_raw() }
+    pub fn as_mut_ptr(&self) -> *mut T::In { self.ptr.as_raw() as *mut T::In }
 }
 
-impl<'h, T: IntoHeap<'h>> Drop for GCRef<'h, T> {
+impl<'h, T: IntoHeap<'h>> Drop for GcRef<'h, T> {
     fn drop(&mut self) {
         unsafe {
             let heap = Heap::from_allocation::<T>(self.ptr);
@@ -35,30 +37,30 @@ impl<'h, T: IntoHeap<'h>> Drop for GCRef<'h, T> {
     }
 }
 
-impl<'h, T: IntoHeap<'h>> Clone for GCRef<'h, T> {
-    fn clone(&self) -> GCRef<'h, T> {
-        let &GCRef { ptr, heap_id } = self;
+impl<'h, T: IntoHeap<'h>> Clone for GcRef<'h, T> {
+    fn clone(&self) -> GcRef<'h, T> {
+        let &GcRef { ptr, heap_id } = self;
         unsafe {
             let heap = Heap::from_allocation::<T>(ptr);
             (*heap).pin::<T>(ptr);
         }
-        GCRef {
+        GcRef {
             ptr: ptr,
             heap_id: heap_id
         }
     }
 }
 
-impl<'h, T: IntoHeap<'h>> fmt::Debug for GCRef<'h, T> {
+impl<'h, T: IntoHeap<'h>> fmt::Debug for GcRef<'h, T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "GCRef {{ ptr: {:p} }}", self.ptr)
+        write!(f, "GcRef {{ ptr: {:p} }}", self.ptr.as_raw())
     }
 }
 
-impl<'h, T: IntoHeap<'h>> PartialEq for GCRef<'h, T> {
-    fn eq(&self, other: &GCRef<'h, T>) -> bool {
+impl<'h, T: IntoHeap<'h>> PartialEq for GcRef<'h, T> {
+    fn eq(&self, other: &GcRef<'h, T>) -> bool {
         self.ptr == other.ptr
     }
 }
 
-impl<'h, T: IntoHeap<'h>> Eq for GCRef<'h, T> {}
+impl<'h, T: IntoHeap<'h>> Eq for GcRef<'h, T> {}
