@@ -1,4 +1,5 @@
-///! Allocating pages of memory from the OS and carving them into individual allocations.
+//! Allocating pages of memory from the OS and carving them into individual
+//! allocations.
 
 use std::{cmp, mem, ptr};
 use std::marker::PhantomData;
