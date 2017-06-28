@@ -117,7 +117,7 @@ fn impl_into_heap_for_struct(ast: &syn::DeriveInput, data: &syn::VariantData) ->
                 {
                     type Ref = #ref_type_name #ty_generics;
 
-                    fn wrap_gcref(gcref: ::cell_gc::GCRef<#heap_lifetime,
+                    fn wrap_gcref(gcref: ::cell_gc::GcRef<#heap_lifetime,
                                                           #name #ty_generics>)
                         -> #ref_type_name #ty_generics
                     {
@@ -130,7 +130,7 @@ fn impl_into_heap_for_struct(ast: &syn::DeriveInput, data: &syn::VariantData) ->
             let ref_type = quote! {
                 #[derive(Clone, Debug, PartialEq, Eq)]
                 #vis struct #ref_type_name #impl_generics
-                    (::cell_gc::GCRef<#heap_lifetime, #name #ty_generics>)
+                    (::cell_gc::GcRef<#heap_lifetime, #name #ty_generics>)
                     #where_clause;
             };
 
@@ -157,7 +157,7 @@ fn impl_into_heap_for_struct(ast: &syn::DeriveInput, data: &syn::VariantData) ->
                     unsafe fn from_heap(storage: &*mut #storage_type_name #ty_generics)
                                         -> #ref_type_name #ty_generics
                     {
-                        #ref_type_name(::cell_gc::GCRef::new(*storage))
+                        #ref_type_name(::cell_gc::GcRef::new(*storage))
                     }
                 }
             };

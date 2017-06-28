@@ -1,7 +1,7 @@
 //! Collections for use with GC references.
 
 use traits::{IntoHeap, IntoHeapAllocation};
-use gcref::GCRef;
+use gcref::GcRef;
 use std::mem;
 use std::cmp::Ordering;
 
@@ -26,7 +26,7 @@ unsafe impl<'h, T: IntoHeap<'h>> IntoHeap<'h> for Vec<T> {
 impl<'h, T: IntoHeap<'h>> IntoHeapAllocation<'h> for Vec<T> {
     type Ref = VecRef<'h, T>;
 
-    fn wrap_gcref(gcref: GCRef<'h, Vec<T>>) -> VecRef<'h, T> {
+    fn wrap_gcref(gcref: GcRef<'h, Vec<T>>) -> VecRef<'h, T> {
         VecRef(gcref)
     }
 }
@@ -50,7 +50,7 @@ impl<'h, T: IntoHeap<'h>> IntoHeapAllocation<'h> for Vec<T> {
 /// });
 /// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct VecRef<'h, T: IntoHeap<'h>>(GCRef<'h, Vec<T>>);
+pub struct VecRef<'h, T: IntoHeap<'h>>(GcRef<'h, Vec<T>>);
 
 unsafe impl<'h, T: IntoHeap<'h>> IntoHeap<'h> for VecRef<'h, T> {
     type In = *mut Vec<T::In>;
@@ -60,7 +60,7 @@ unsafe impl<'h, T: IntoHeap<'h>> IntoHeap<'h> for VecRef<'h, T> {
     }
 
     unsafe fn from_heap(storage: &*mut Vec<T::In>) -> VecRef<'h, T> {
-        VecRef(GCRef::new(*storage))
+        VecRef(GcRef::new(*storage))
     }
 
     unsafe fn mark(storage: &*mut Vec<T::In>) {

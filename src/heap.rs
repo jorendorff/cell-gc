@@ -79,7 +79,7 @@ use std::marker::PhantomData;
 use std::ptr;
 use traits::{IntoHeap, IntoHeapAllocation};
 use pages::{heap_type_id, PageHeader, TypedPage, PageBox};
-use gcref::GCRef;
+use gcref::GcRef;
 
 pub struct Heap {
     pages: HashMap<usize, PageBox>,
@@ -241,7 +241,7 @@ impl<'h> HeapSession<'h> {
                 })
                 .map(move |p| {
                     ptr::write(p, u);
-                    T::wrap_gcref(GCRef::new(p))
+                    T::wrap_gcref(GcRef::new(p))
                 })
         }
     }

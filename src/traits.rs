@@ -3,7 +3,7 @@
 //! Application code does not need to use these traits. They are public only so
 //! that `gc_heap_type!` can use it. Use the friendly macro!
 
-use gcref::GCRef;
+use gcref::GcRef;
 
 /// Trait for values that can be moved into a GC heap.
 ///
@@ -94,7 +94,7 @@ pub trait IntoHeapAllocation<'h>: IntoHeap<'h>
 {
     type Ref: IntoHeap<'h>;
 
-    fn wrap_gcref(gcref: GCRef<'h, Self>) -> Self::Ref;
+    fn wrap_gcref(gcref: GcRef<'h, Self>) -> Self::Ref;
 }
 
 
