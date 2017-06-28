@@ -2,6 +2,7 @@
 
 use traits::{IntoHeap, IntoHeapAllocation};
 use gcref::GcRef;
+use ptr::Pointer;
 use std::mem;
 use std::cmp::Ordering;
 
@@ -53,20 +54,20 @@ impl<'h, T: IntoHeap<'h>> IntoHeapAllocation<'h> for Vec<T> {
 pub struct VecRef<'h, T: IntoHeap<'h>>(GcRef<'h, Vec<T>>);
 
 unsafe impl<'h, T: IntoHeap<'h>> IntoHeap<'h> for VecRef<'h, T> {
-    type In = *mut Vec<T::In>;
+    type In = Pointer<Vec<T::In>>;
 
-    fn into_heap(self) -> *mut Vec<T::In> {
-        self.0.as_mut_ptr()
+    fn into_heap(self) -> Pointer<Vec<T::In>> {
+        self.0.ptr()
     }
 
-    unsafe fn from_heap(storage: &*mut Vec<T::In>) -> VecRef<'h, T> {
+    unsafe fn from_heap(storage: &Pointer<Vec<T::In>>) -> VecRef<'h, T> {
         VecRef(GcRef::new(*storage))
     }
 
-    unsafe fn mark(storage: &*mut Vec<T::In>) {
+    unsafe fn mark(storage: &Pointer<Vec<T::In>>) {
         // BUG - should call a method mark_ref that checks the mark bit before
         // doing anything
-        for r in &**storage {
+        for r in storage.as_ref() {
             T::mark(r);
         }
     }

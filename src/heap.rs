@@ -79,11 +79,12 @@ use std::marker::PhantomData;
 use std::ptr;
 use traits::{IntoHeap, IntoHeapAllocation};
 use pages::{heap_type_id, PageHeader, TypedPage, PageBox};
+use ptr::{Pointer, UntypedPointer};
 use gcref::GcRef;
 
 pub struct Heap {
     pages: HashMap<usize, PageBox>,
-    pins: RefCell<HashMap<*mut (), usize>>
+    pins: RefCell<HashMap<UntypedPointer, usize>>
 }
 
 // What does this do? You'll never guess!
@@ -140,10 +141,9 @@ impl Heap {
     /// # Safety
     ///
     /// `p` must point to a live allocation of type `T` in this heap.
-    pub unsafe fn pin<'h, T: IntoHeap<'h>>(&self, p: *mut T::In) {
-        let p = p as *mut ();
+    pub unsafe fn pin<'h, T: IntoHeap<'h>>(&self, p: Pointer<T::In>) {
         let mut pins = self.pins.borrow_mut();
-        let entry = pins.entry(p).or_insert(0);
+        let entry = pins.entry(p.into()).or_insert(0);
         *entry += 1;
     }
 
@@ -152,28 +152,27 @@ impl Heap {
     /// # Safety
     ///
     /// `p` must point to a pinned allocation of type `T` in this heap.
-    pub unsafe fn unpin<'h, T: IntoHeap<'h>>(&self, p: *mut T::In) {
-        let p = p as *mut ();
+    pub unsafe fn unpin<'h, T: IntoHeap<'h>>(&self, p: Pointer<T::In>) {
         let mut pins = self.pins.borrow_mut();
         if {
-            let entry = pins.entry(p as *mut ()).or_insert(0);
+            let entry = pins.entry(p.into()).or_insert(0);
             assert!(*entry != 0);
             *entry -= 1;
             *entry == 0
         } {
-            pins.remove(&p);
+            pins.remove(&p.into());
         }
     }
 
-    pub unsafe fn from_allocation<'h, T: IntoHeap<'h>>(ptr: *const T::In) -> *const Heap {
+    pub unsafe fn from_allocation<'h, T: IntoHeap<'h>>(ptr: Pointer<T::In>) -> *const Heap {
         (*TypedPage::find(ptr)).header.heap
     }
 
-    pub unsafe fn get_mark_bit<'h, T: IntoHeap<'h>>(ptr: *const T::In) -> bool {
+    pub unsafe fn get_mark_bit<'h, T: IntoHeap<'h>>(ptr: Pointer<T::In>) -> bool {
         (*TypedPage::find(ptr)).get_mark_bit(ptr)
     }
 
-    pub unsafe fn set_mark_bit<'h, T: IntoHeap<'h>>(ptr: *const T::In) {
+    pub unsafe fn set_mark_bit<'h, T: IntoHeap<'h>>(ptr: Pointer<T::In>) {
         (*TypedPage::find(ptr)).set_mark_bit(ptr);
     }
 
@@ -240,7 +239,7 @@ impl<'h> HeapSession<'h> {
                     self.get_page::<T>().try_alloc()
                 })
                 .map(move |p| {
-                    ptr::write(p, u);
+                    ptr::write(p.as_raw() as *mut _, u);
                     T::wrap_gcref(GcRef::new(p))
                 })
         }

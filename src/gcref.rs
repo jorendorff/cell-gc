@@ -1,10 +1,11 @@
 use traits::IntoHeap;
 use heap::{Heap, HeapSessionId};
+use ptr::Pointer;
 use std::fmt;
 use std::marker::PhantomData;
 
 pub struct GcRef<'h, T: IntoHeap<'h>> {
-    ptr: *mut T::In,
+    ptr: Pointer<T::In>,
     heap_id: HeapSessionId<'h>
 }
 
@@ -13,7 +14,7 @@ impl<'h, T: IntoHeap<'h>> GcRef<'h, T> {
     /// dropped. Unsafe because if `p` is not a pointer to a live allocation of
     /// type `T::In` --- and a complete allocation, not a sub-object of one ---
     /// then later unsafe code will explode.
-    pub unsafe fn new(p: *mut T::In) -> GcRef<'h, T> {
+    pub unsafe fn new(p: Pointer<T::In>) -> GcRef<'h, T> {
         let heap: *const Heap = Heap::from_allocation::<T>(p);
         (*heap).pin::<T>(p);
         GcRef {
@@ -22,8 +23,9 @@ impl<'h, T: IntoHeap<'h>> GcRef<'h, T> {
         }
     }
 
-    pub fn as_ptr(&self) -> *const T::In { self.ptr }
-    pub fn as_mut_ptr(&self) -> *mut T::In { self.ptr }
+    pub fn ptr(&self) -> Pointer<T::In> { self.ptr }
+    pub fn as_ptr(&self) -> *const T::In { self.ptr.as_raw() }
+    pub fn as_mut_ptr(&self) -> *mut T::In { self.ptr.as_raw() as *mut T::In }
 }
 
 impl<'h, T: IntoHeap<'h>> Drop for GcRef<'h, T> {
@@ -51,7 +53,7 @@ impl<'h, T: IntoHeap<'h>> Clone for GcRef<'h, T> {
 
 impl<'h, T: IntoHeap<'h>> fmt::Debug for GcRef<'h, T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "GcRef {{ ptr: {:p} }}", self.ptr)
+        write!(f, "GcRef {{ ptr: {:p} }}", self.ptr.as_raw())
     }
 }
 

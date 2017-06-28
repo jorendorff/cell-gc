@@ -6,22 +6,24 @@ use std::marker::PhantomData;
 use bit_vec::BitVec;
 use traits::IntoHeap;
 use heap::Heap;
+use ptr::{Pointer, UntypedPointer};
 
 /// Non-inlined function that serves as an entry point to marking. This is used
 /// for marking root set entries.
-unsafe fn mark_entry_point<'h, T: IntoHeap<'h>>(addr: *const ()) {
-    T::mark(&*(addr as *const T::In));
+unsafe fn mark_entry_point<'h, T: IntoHeap<'h>>(addr: UntypedPointer) {
+    let addr = addr.as_typed_ptr::<T::In>();
+    T::mark(addr.as_ref());
 }
 
 pub fn heap_type_id<'h, T: IntoHeap<'h>>() -> usize {
     mark_entry_point::<T> as *const () as usize
 }
 
-const PAGE_SIZE: usize = 0x1000;
+pub(crate) const PAGE_SIZE: usize = 0x1000;
 
 /// We rely on all bits to the right of this bit being 0 in addresses of
 /// TypedPage instances.
-const PAGE_ALIGN: usize = 0x1000;
+pub(crate) const PAGE_ALIGN: usize = 0x1000;
 
 fn is_aligned(ptr: *const ()) -> bool {
     ptr as usize & (PAGE_ALIGN - 1) == 0
@@ -31,14 +33,14 @@ pub struct PageHeader {
     pub heap: *mut Heap,
     mark_bits: BitVec,
     allocated_bits: BitVec,
-    mark_fn: unsafe fn(*const ()),
+    mark_fn: unsafe fn(UntypedPointer),
     sweep_fn: unsafe fn(&mut PageHeader),
     freelist: *mut ()
 }
 
 impl PageHeader {
-    pub fn find(ptr: *mut ()) -> *mut PageHeader {
-        let header_addr = ptr as usize & !(PAGE_ALIGN - 1);
+    pub fn find(ptr: UntypedPointer) -> *mut PageHeader {
+        let header_addr = ptr.as_usize() & !(PAGE_ALIGN - 1);
         header_addr as *mut PageHeader
     }
 
@@ -51,7 +53,7 @@ impl PageHeader {
         self.allocated_bits.none()
     }
 
-    pub unsafe fn mark(&self, ptr: *const ()) {
+    pub unsafe fn mark(&self, ptr: UntypedPointer) {
         (self.mark_fn)(ptr);
     }
 
@@ -99,7 +101,7 @@ impl<U> TypedPage<U> {
     }
 
     /// Offset, in bytes, of the first allocation from the start of the page.
-    fn first_allocation_offset() -> usize {
+    pub(crate) fn first_allocation_offset() -> usize {
         round_up(mem::size_of::<PageHeader>(), Self::allocation_align())
     }
 
@@ -126,8 +128,9 @@ impl<U> TypedPage<U> {
     }
 
     /// Return the page containing the object `ptr` points to.
-    pub fn find(ptr: *const U) -> *mut TypedPage<U> {
-        let page_addr = ptr as usize & !(PAGE_ALIGN - 1);
+    pub fn find(ptr: Pointer<U>) -> *mut TypedPage<U> {
+        let ptr: usize = ptr.into();
+        let page_addr = ptr & !(PAGE_ALIGN - 1);
         page_addr as *mut TypedPage<U>
     }
 
@@ -138,36 +141,36 @@ impl<U> TypedPage<U> {
         self.header.freelist = p as *mut ();
     }
 
-    unsafe fn allocation_index(&self, ptr: *const U) -> usize {
+    unsafe fn allocation_index(&self, ptr: Pointer<U>) -> usize {
         let base = self.first_object_addr();
 
         // Check that ptr is in range.
-        assert!(ptr >= base as *const U);
-        assert!(ptr < (base + (Self::capacity() * Self::allocation_size())) as *const U);
+        assert!(ptr.as_void() >= base as _);
+        assert!(ptr.as_void() < (base + (Self::capacity() * Self::allocation_size())) as _);
 
-        let index = (ptr as usize - base as usize) / Self::allocation_size();
-        assert_eq!((base + index * Self::allocation_size()) as *const U, ptr);
+        let index = (ptr.as_usize() - base as usize) / Self::allocation_size();
+        assert_eq!((base + index * Self::allocation_size()) as *const (), ptr.as_void());
         index
     }
 
-    pub unsafe fn get_mark_bit(&mut self, ptr: *const U) -> bool {
+    pub unsafe fn get_mark_bit(&mut self, ptr: Pointer<U>) -> bool {
         let index = self.allocation_index(ptr);
         self.header.mark_bits[index]
     }
 
-    pub unsafe fn set_mark_bit(&mut self, ptr: *const U) {
+    pub unsafe fn set_mark_bit(&mut self, ptr: Pointer<U>) {
         let index = self.allocation_index(ptr);
         self.header.mark_bits.set(index, true);
     }
 
-    pub unsafe fn try_alloc(&mut self) -> Option<*mut U> {
+    pub unsafe fn try_alloc(&mut self) -> Option<Pointer<U>> {
         let p = self.header.freelist;
         if p.is_null() {
             None
         } else {
             let listp = p as *mut *mut ();
             self.header.freelist = *listp;
-            let ap = p as *mut U;
+            let ap = Pointer::new(p as *mut U);
             let index = self.allocation_index(ap);
             assert!(!self.header.allocated_bits[index]);
             self.header.allocated_bits.set(index, true);
