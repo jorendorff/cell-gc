@@ -17,9 +17,9 @@ unsafe impl<'h, T: IntoHeap<'h>> IntoHeap<'h> for Vec<T> {
         storage.iter().map(|x| T::from_heap(x)).collect()
     }
 
-    unsafe fn mark(storage: &Vec<T::In>) {
+    unsafe fn trace(storage: &Vec<T::In>) {
         for r in storage {
-            T::mark(r);
+            T::trace(r);
         }
     }
 }
@@ -64,11 +64,11 @@ unsafe impl<'h, T: IntoHeap<'h>> IntoHeap<'h> for VecRef<'h, T> {
         VecRef(GcRef::new(*storage))
     }
 
-    unsafe fn mark(storage: &Pointer<Vec<T::In>>) {
+    unsafe fn trace(storage: &Pointer<Vec<T::In>>) {
         // BUG - should call a method mark_ref that checks the mark bit before
         // doing anything
         for r in storage.as_ref() {
-            T::mark(r);
+            T::trace(r);
         }
     }
 }

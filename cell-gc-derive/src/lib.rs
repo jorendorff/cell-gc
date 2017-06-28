@@ -60,15 +60,13 @@ fn impl_into_heap_for_struct(ast: &syn::DeriveInput, data: &syn::VariantData) ->
             };
 
             // 2. IntoHeap implementation.
-            // Body of the mark() method.
-            let mark_fields: Vec<Tokens> = fields
-                .iter()
-                .map(|f| {
-                    let name = &f.ident;
-                    let ty = &f.ty;
-                    quote! {
+            // Body of the trace() method.
+            let trace_fields: Vec<Tokens> = fields.iter().map(|f| {
+                let name = &f.ident;
+                let ty = &f.ty;
+                quote! {
                     <#ty as ::cell_gc::traits::IntoHeap<#heap_lifetime>>
-                        ::mark(&storage.#name);
+                        ::trace(&storage.#name);
                 }
                 })
                 .collect();
@@ -94,12 +92,12 @@ fn impl_into_heap_for_struct(ast: &syn::DeriveInput, data: &syn::VariantData) ->
                         }
                     }
 
-                    unsafe fn mark(storage: &Self::In) {
+                    unsafe fn trace(storage: &Self::In) {
                         let ptr = ::cell_gc::ptr::Pointer::new(storage);
 
                         if !::cell_gc::Heap::get_mark_bit::<Self>(ptr) {
                             ::cell_gc::Heap::set_mark_bit::<Self>(ptr);
-                            #( #mark_fields )*
+                            #( #trace_fields )*
                         }
                     }
 
@@ -153,10 +151,10 @@ fn impl_into_heap_for_struct(ast: &syn::DeriveInput, data: &syn::VariantData) ->
                         self.0.ptr()
                     }
 
-                    unsafe fn mark(storage: &Self::In) {
+                    unsafe fn trace(storage: &Self::In) {
                         if !storage.is_null() {
                             <#name #ty_generics as ::cell_gc::traits::IntoHeap<#heap_lifetime>>
-                                ::mark(storage.as_ref());
+                                ::trace(storage.as_ref());
                         }
                     }
 
@@ -375,7 +373,7 @@ fn impl_into_heap_for_enum(ast: &syn::DeriveInput, variants: &[syn::Variant]) ->
         }
     });
 
-    let mark_arms = variants.iter().map(|v| {
+    let trace_arms = variants.iter().map(|v| {
         let ident = &v.ident;
         match v.data {
             syn::VariantData::Struct(ref fields) => {
@@ -384,7 +382,7 @@ fn impl_into_heap_for_enum(ast: &syn::DeriveInput, variants: &[syn::Variant]) ->
                 quote! {
                     #storage_type_name::#ident { #(ref #field_names),* } => {
                         #(
-                            <#field_types as ::cell_gc::traits::IntoHeap>::mark(#field_names);
+                            <#field_types as ::cell_gc::traits::IntoHeap>::trace(#field_names);
                         )*
                     }
                 }
@@ -397,7 +395,7 @@ fn impl_into_heap_for_enum(ast: &syn::DeriveInput, variants: &[syn::Variant]) ->
                 quote! {
                     #storage_type_name::#ident( #(ref #bindings),* ) => {
                         #(
-                            <#field_types as ::cell_gc::traits::IntoHeap>::mark(#bindings);
+                            <#field_types as ::cell_gc::traits::IntoHeap>::trace(#bindings);
                         )*
                     }
                 }
@@ -428,9 +426,9 @@ fn impl_into_heap_for_enum(ast: &syn::DeriveInput, variants: &[syn::Variant]) ->
                 }
             }
 
-            unsafe fn mark(storage: &Self::In) {
+            unsafe fn trace(storage: &Self::In) {
                 match *storage {
-                    #( #mark_arms ),*
+                    #( #trace_arms ),*
                 }
             }
         }

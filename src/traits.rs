@@ -86,7 +86,7 @@ pub unsafe trait IntoHeap<'h>: Sized {
     /// Unsafe to call: It is impossible for ordinary users to call this
     /// safely, because `self` must be a direct, unwrapped reference to a value
     /// stored in the GC heap, which ordinary users cannot obtain.
-    unsafe fn mark(&Self::In);
+    unsafe fn trace(&Self::In);
 }
 
 /// Relate an `IntoHeap` type to the corresponding safe reference type.
@@ -105,7 +105,7 @@ macro_rules! gc_trivial_impl {
             type In = $t;
             fn into_heap(self) -> $t { self }
             unsafe fn from_heap(storage: &$t) -> $t { storage.clone() }
-            unsafe fn mark(_storage: &$t) {}
+            unsafe fn trace(_storage: &$t) {}
         }
     }
 }
@@ -136,7 +136,7 @@ macro_rules! gc_generic_trivial_impl {
                 type In = $t;
                 fn into_heap(self) -> $t { self }
                 unsafe fn from_heap(storage: &$t) -> $t { (*storage).clone() }
-                unsafe fn mark(_storage: &$t) {}
+                unsafe fn trace(_storage: &$t) {}
             }
         }
     }
@@ -158,10 +158,10 @@ unsafe impl<'h, T: IntoHeap<'h>> IntoHeap<'h> for Option<T> {
         self.map(|t| t.into_heap())
     }
 
-    unsafe fn mark(storage: &Option<T::In>) {
+    unsafe fn trace(storage: &Option<T::In>) {
         match storage {
             &None => (),
-            &Some(ref u) => T::mark(u),
+            &Some(ref u) => T::trace(u),
         }
     }
 
@@ -188,9 +188,9 @@ macro_rules! gc_trivial_tuple_impl {
                 }
 
                 #[allow(non_snake_case)]
-                unsafe fn mark(storage: &Self::In) {
+                unsafe fn trace(storage: &Self::In) {
                     let &($(ref $t,)*) = storage;
-                    $( <$t as $crate::traits::IntoHeap>::mark($t); )*
+                    $( <$t as $crate::traits::IntoHeap>::trace($t); )*
                 }
 
                 #[allow(non_snake_case)]

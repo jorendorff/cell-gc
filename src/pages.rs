@@ -12,7 +12,7 @@ use ptr::{Pointer, UntypedPointer};
 /// for marking root set entries.
 unsafe fn mark_entry_point<'h, T: IntoHeap<'h>>(addr: UntypedPointer) {
     let addr = addr.as_typed_ptr::<T::In>();
-    T::mark(addr.as_ref());
+    T::trace(addr.as_ref());
 }
 
 pub fn heap_type_id<'h, T: IntoHeap<'h>>() -> usize {
