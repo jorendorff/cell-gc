@@ -1,13 +1,14 @@
 //! Allocating pages of memory from the OS and carving them into individual
 //! allocations.
 
-use std::{cmp, mem, ptr};
-use std::marker::PhantomData;
 use bit_vec::BitVec;
-use traits::{IntoHeapAllocation, Tracer};
 use heap::{Heap, HeapSessionId};
 use marking::MarkingTracer;
 use ptr::{Pointer, UntypedPointer};
+use std::{cmp, mem, ptr};
+use std::marker::PhantomData;
+use std::ops::{Deref, DerefMut};
+use traits::{IntoHeapAllocation, Tracer};
 
 /// Non-inlined function that serves as an entry point to marking. This is used
 /// for marking root set entries.
@@ -47,6 +48,7 @@ fn is_aligned(ptr: *const ()) -> bool {
 
 pub struct PageHeader {
     pub heap: *mut Heap,
+    next_page: *mut PageHeader,
     mark_bits: BitVec,
     allocated_bits: BitVec,
     mark_fn: unsafe fn(UntypedPointer, &mut MarkingTracer),
@@ -94,6 +96,20 @@ pub struct TypedPage<U> {
     pub allocations: PhantomData<U>,
 }
 
+impl<U> Deref for TypedPage<U> {
+    type Target = PageHeader;
+
+    fn deref(&self) -> &PageHeader {
+        &self.header
+    }
+}
+
+impl<U> DerefMut for TypedPage<U> {
+    fn deref_mut(&mut self) -> &mut PageHeader {
+        &mut self.header
+    }
+}
+
 /// Returns the smallest multiple of `k` that is at least `n`.
 ///
 /// Panics if the answer is too big to fit in a `usize`.
@@ -132,7 +148,7 @@ impl<U> TypedPage<U> {
         (self as *const Self as usize) + Self::first_allocation_offset()
     }
 
-    unsafe fn init(&mut self) {
+    unsafe fn init_freelist(&mut self) {
         let mut addr = self.first_object_addr();
         for _ in 0..Self::capacity() {
             self.add_to_free_list(addr as *mut U);
@@ -228,78 +244,6 @@ unsafe fn sweep_entry_point<'h, T: IntoHeapAllocation<'h>>(header: &mut PageHead
     header.downcast_mut::<T>().unwrap().sweep();
 }
 
-pub struct PageBox(*mut PageHeader);
-
-impl PageBox {
-    fn new<'h, T: IntoHeapAllocation<'h>>(heap: *mut Heap) -> PageBox {
-        assert!(
-            mem::size_of::<TypedPage<T::In>>() <= TypedPage::<T::In>::first_allocation_offset()
-        );
-        assert!(
-            TypedPage::<T::In>::first_allocation_offset() +
-                TypedPage::<T::In>::capacity() * TypedPage::<T::In>::allocation_size() <=
-                PAGE_SIZE
-        );
-        let raw_page: *mut () = {
-            let mut vec: Vec<u8> = Vec::with_capacity(PAGE_SIZE);
-            let page = vec.as_mut_ptr() as *mut ();
-
-            // Rust makes no guarantee whatsoever that this will work.
-            // If it doesn't, panic.
-            assert!(is_aligned(page));
-
-            mem::forget(vec);
-            page
-        };
-
-        let page: *mut TypedPage<T::In> = raw_page as *mut TypedPage<T::In>;
-        let capacity = TypedPage::<T::In>::capacity();
-        unsafe {
-            ptr::write(
-                page,
-                TypedPage {
-                    header: PageHeader {
-                        heap: heap,
-                        mark_bits: BitVec::from_elem(capacity, false),
-                        allocated_bits: BitVec::from_elem(capacity, false),
-                        mark_fn: mark_entry_point::<T>,
-                        freelist: ptr::null_mut(),
-                    },
-                    allocations: PhantomData,
-                },
-            );
-            TypedPage::init(&mut *page);
-            PageBox(&mut (*page).header as *mut PageHeader)
-        }
-    }
-}
-
-impl ::std::ops::Deref for PageBox {
-    type Target = PageHeader;
-    fn deref(&self) -> &PageHeader {
-        unsafe { &*self.0 }
-    }
-}
-
-impl ::std::ops::DerefMut for PageBox {
-    fn deref_mut(&mut self) -> &mut PageHeader {
-        unsafe { &mut *self.0 }
-    }
-}
-
-impl Drop for PageBox {
-    fn drop(&mut self) {
-        unsafe {
-            assert!((*self.0).is_empty());
-
-            ptr::drop_in_place(self.0);
-
-            // Deallocate the memory.
-            Vec::from_raw_parts(self.0 as *mut u8, 0, PAGE_SIZE);
-        }
-    }
-}
-
 /// An unordered collection of memory pages that all share an allocation type.
 pub struct PageSet {
     heap: *mut Heap,
@@ -310,10 +254,24 @@ pub struct PageSet {
     ///
     /// All pages in this collection have matching `.heap`, `.mark_fn`, and
     /// `.sweep_fn` fields.
-    pages: Vec<PageBox>,
+    pages: *mut PageHeader,
 
     /// The maximum number of pages, or None for no limit.
     limit: Option<usize>,
+}
+
+impl Drop for PageSet {
+    fn drop(&mut self) {
+        unsafe {
+            let mut p = self.pages;
+            while !p.is_null() {
+                let next = (*p).next_page;
+                ptr::drop_in_place(p); // drop the header
+                Vec::from_raw_parts(p as *mut u8, 0, PAGE_SIZE); // free the page
+                p = next;
+            }
+        }
+    }
 }
 
 impl PageSet {
@@ -326,7 +284,7 @@ impl PageSet {
         PageSet {
             heap,
             sweep_fn: sweep_entry_point::<T>,
-            pages: vec![],
+            pages: ptr::null_mut(),
             limit: None,
         }
     }
@@ -346,7 +304,7 @@ impl PageSet {
         );
 
         PageSetRef {
-            pages: self,
+            page_set: self,
             id: PhantomData,
             also: PhantomData,
         }
@@ -358,8 +316,10 @@ impl PageSet {
     ///
     /// This must be called only at the beginning of a GC cycle.
     pub unsafe fn clear_mark_bits(&mut self) {
-        for page in &mut self.pages {
-            page.clear_mark_bits();
+        let mut page = self.pages;
+        while !page.is_null() {
+            (*page).clear_mark_bits();
+            page = (*page).next_page;
         }
     }
 
@@ -369,28 +329,34 @@ impl PageSet {
     ///
     /// Safe to call only as the final part of GC.
     pub unsafe fn sweep(&mut self) {
-        for page in &mut self.pages {
-            (self.sweep_fn)(page);
+        let mut page = self.pages;
+        while !page.is_null() {
+            (self.sweep_fn)(&mut *page);
+            page = (*page).next_page;
         }
     }
 
     /// Assert that nothing is allocated in this set of pages.
     pub fn assert_no_allocations(&self) {
-        for page in &self.pages {
-            assert!(page.is_empty());
+        unsafe {
+            let mut page = self.pages;
+            while !page.is_null() {
+                assert!((*page).is_empty());
+                page = (*page).next_page;
+            }
         }
     }
 }
 
 pub struct PageSetRef<'a, 'h, T: IntoHeapAllocation<'h> + 'a> {
-    pages: &'a mut PageSet,
+    page_set: &'a mut PageSet,
     id: HeapSessionId<'h>,
     also: PhantomData<&'a mut T>,
 }
 
 impl<'a, 'h, T: IntoHeapAllocation<'h> + 'a> PageSetRef<'a, 'h, T> {
     pub fn set_page_limit(&mut self, limit: Option<usize>) {
-        self.pages.limit = limit;
+        self.page_set.limit = limit;
     }
 
     /// Allocate memory for a value of type `T::In`.
@@ -400,22 +366,73 @@ impl<'a, 'h, T: IntoHeapAllocation<'h> + 'a> PageSetRef<'a, 'h, T> {
     /// Safe to call as long as GC is not happening.
     pub unsafe fn try_alloc(&mut self) -> Option<Pointer<T::In>> {
         // First, try to allocate from each existing page. (Obviously slow.)
-        for page in &mut self.pages.pages {
-            let page = page.downcast_mut::<T>().unwrap();
-            if let Some(ptr) = page.try_alloc() {
+        let mut page = self.page_set.pages;
+        let mut page_count = 0;
+        while !page.is_null() {
+            let t_page = (*page).downcast_mut::<T>().unwrap();
+            if let Some(ptr) = t_page.try_alloc() {
                 return Some(ptr);
             }
+
+            page_count += 1;
+            page = (*page).next_page;
         }
 
         // If there is a limit and we already have at least that many pages, fail.
-        match self.pages.limit {
-            Some(limit) if self.pages.pages.len() >= limit => None,
-            _ => {
-                let mut page = PageBox::new::<T>(self.pages.heap);
-                let alloc = page.downcast_mut::<T>().unwrap().try_alloc();
-                self.pages.pages.push(page);
-                alloc
-            }
+        match self.page_set.limit {
+            Some(limit) if page_count >= limit => None,
+            _ => self.new_page().try_alloc(),
+        }
+    }
+
+    /// Allocate a page from the operating system.
+    ///
+    /// Initialize its header and freelist and link it into this page set's
+    /// linked list of pages.
+    fn new_page(&mut self) -> &mut TypedPage<T::In> {
+        assert!(
+            mem::size_of::<TypedPage<T::In>>() <= TypedPage::<T::In>::first_allocation_offset()
+        );
+        assert!(
+            TypedPage::<T::In>::first_allocation_offset() +
+                TypedPage::<T::In>::capacity() * TypedPage::<T::In>::allocation_size() <=
+                PAGE_SIZE
+        );
+
+        let mut vec: Vec<u8> = Vec::with_capacity(PAGE_SIZE);
+        let raw_page = vec.as_mut_ptr() as *mut ();
+
+        // Rust makes no guarantee whatsoever that this will work.
+        // If it doesn't, panic.
+        assert!(is_aligned(raw_page));
+
+        let page_ptr: *mut TypedPage<T::In> = raw_page as *mut TypedPage<T::In>;
+        let capacity = TypedPage::<T::In>::capacity();
+        unsafe {
+            ptr::write(
+                page_ptr,
+                TypedPage {
+                    header: PageHeader {
+                        heap: self.page_set.heap,
+                        next_page: self.page_set.pages,
+                        mark_bits: BitVec::from_elem(capacity, false),
+                        allocated_bits: BitVec::from_elem(capacity, false),
+                        mark_fn: mark_entry_point::<T>,
+                        freelist: ptr::null_mut(),
+                    },
+                    allocations: PhantomData,
+                },
+            );
+
+            let page = &mut *page_ptr;
+            page.init_freelist();
+
+            // Remove the memory from the vector and link it into
+            // the PageSet's linked list.
+            mem::forget(vec);
+            self.page_set.pages = &mut page.header;
+
+            page
         }
     }
 }
