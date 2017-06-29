@@ -238,6 +238,7 @@ mod gcref;
 mod gcleaf;
 pub mod collections;
 pub mod ptr;
+mod marking;
 
 pub use heap::{Heap, HeapSession, with_heap};
 pub use gcref::GcRef;

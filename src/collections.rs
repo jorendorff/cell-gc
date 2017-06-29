@@ -1,6 +1,6 @@
 //! Collections for use with GC references.
 
-use traits::{IntoHeap, IntoHeapAllocation};
+use traits::{IntoHeap, IntoHeapAllocation, Tracer};
 use gcref::GcRef;
 use ptr::Pointer;
 use std::mem;
@@ -17,9 +17,12 @@ unsafe impl<'h, T: IntoHeap<'h>> IntoHeap<'h> for Vec<T> {
         storage.iter().map(|x| T::from_heap(x)).collect()
     }
 
-    unsafe fn mark(storage: &Vec<T::In>) {
+    unsafe fn trace<R>(storage: &Vec<T::In>, tracer: &mut R)
+    where
+        R: Tracer,
+    {
         for r in storage {
-            T::mark(r);
+            T::trace(r, tracer);
         }
     }
 }
@@ -64,11 +67,14 @@ unsafe impl<'h, T: IntoHeap<'h>> IntoHeap<'h> for VecRef<'h, T> {
         VecRef(GcRef::new(*storage))
     }
 
-    unsafe fn mark(storage: &Pointer<Vec<T::In>>) {
+    unsafe fn trace<R>(storage: &Pointer<Vec<T::In>>, tracer: &mut R)
+    where
+        R: Tracer,
+    {
         // BUG - should call a method mark_ref that checks the mark bit before
         // doing anything
         for r in storage.as_ref() {
-            T::mark(r);
+            T::trace(r, tracer);
         }
     }
 }

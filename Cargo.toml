@@ -4,7 +4,10 @@ description = "A fun garbage collector for that virtual machine you're writing i
 repository = "https://github.com/jorendorff/cell-gc/"
 license = "MIT"
 version = "0.2.0"
-authors = ["Jason Orendorff <jason.orendorff@gmail.com>"]
+authors = [
+    "Jason Orendorff <jason.orendorff@gmail.com>",
+    "Nick Fitzgerald <fitzgen@gmail.com>",
+]
 
 [dependencies]
 bit-vec = "0.4"

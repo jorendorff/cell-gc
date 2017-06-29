@@ -1,0 +1,3 @@
+write_mode = "Overwrite"
+closure_block_indent_threshold = 0
+use_try_shorthand = true

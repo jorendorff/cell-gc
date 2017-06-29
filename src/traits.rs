@@ -4,6 +4,7 @@
 //! that `gc_heap_type!` can use it. Use the friendly macro!
 
 use gcref::GcRef;
+use ptr::Pointer;
 
 /// Trait for values that can be moved into a GC heap.
 ///
@@ -86,7 +87,9 @@ pub unsafe trait IntoHeap<'h>: Sized {
     /// Unsafe to call: It is impossible for ordinary users to call this
     /// safely, because `self` must be a direct, unwrapped reference to a value
     /// stored in the GC heap, which ordinary users cannot obtain.
-    unsafe fn mark(&Self::In);
+    unsafe fn trace<R>(&Self::In, tracer: &mut R)
+    where
+        R: Tracer;
 }
 
 /// Relate an `IntoHeap` type to the corresponding safe reference type.
@@ -96,6 +99,11 @@ pub trait IntoHeapAllocation<'h>: IntoHeap<'h> {
     fn wrap_gcref(gcref: GcRef<'h, Self>) -> Self::Ref;
 }
 
+pub trait Tracer {
+    fn visit<'h, T>(&mut self, Pointer<T::In>)
+    where
+        T: IntoHeap<'h>;
+}
 
 // === Provided implmentations for primitive types
 
@@ -105,7 +113,7 @@ macro_rules! gc_trivial_impl {
             type In = $t;
             fn into_heap(self) -> $t { self }
             unsafe fn from_heap(storage: &$t) -> $t { storage.clone() }
-            unsafe fn mark(_storage: &$t) {}
+            unsafe fn trace<R>(_storage: &$t, _tracer: &mut R) where R: Tracer {}
         }
     }
 }
@@ -136,7 +144,7 @@ macro_rules! gc_generic_trivial_impl {
                 type In = $t;
                 fn into_heap(self) -> $t { self }
                 unsafe fn from_heap(storage: &$t) -> $t { (*storage).clone() }
-                unsafe fn mark(_storage: &$t) {}
+                unsafe fn trace<R>(_storage: &$t, _tracer: &mut R) where R: Tracer {}
             }
         }
     }
@@ -158,10 +166,13 @@ unsafe impl<'h, T: IntoHeap<'h>> IntoHeap<'h> for Option<T> {
         self.map(|t| t.into_heap())
     }
 
-    unsafe fn mark(storage: &Option<T::In>) {
+    unsafe fn trace<R>(storage: &Option<T::In>, tracer: &mut R)
+    where
+        R: Tracer,
+    {
         match storage {
             &None => (),
-            &Some(ref u) => T::mark(u),
+            &Some(ref u) => T::trace(u, tracer),
         }
     }
 
@@ -188,9 +199,18 @@ macro_rules! gc_trivial_tuple_impl {
                 }
 
                 #[allow(non_snake_case)]
-                unsafe fn mark(storage: &Self::In) {
+                unsafe fn trace<R>(storage: &Self::In, tracer: &mut R)
+                    where R: Tracer
+                {
                     let &($(ref $t,)*) = storage;
-                    $( <$t as $crate::traits::IntoHeap>::mark($t); )*
+
+                    $(
+                        <$t as $crate::traits::IntoHeap>::trace($t, tracer);
+                    )*
+
+                    // If the above `$(...)*` expansion is empty, we need this
+                    // to quiet unused variable warnings for `tracer`.
+                    let _ = tracer;
                 }
 
                 #[allow(non_snake_case)]
