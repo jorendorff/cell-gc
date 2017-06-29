@@ -20,10 +20,8 @@ pub fn derive_into_heap(input: TokenStream) -> TokenStream {
 
 fn impl_into_heap(ast: &syn::DeriveInput) -> Tokens {
     match ast.body {
-        syn::Body::Struct(ref data) =>
-            impl_into_heap_for_struct(ast, data),
-        syn::Body::Enum(ref variants) =>
-            impl_into_heap_for_enum(ast, variants)
+        syn::Body::Struct(ref data) => impl_into_heap_for_struct(ast, data),
+        syn::Body::Enum(ref variants) => impl_into_heap_for_enum(ast, variants),
     }
 }
 
@@ -33,22 +31,26 @@ fn impl_into_heap_for_struct(ast: &syn::DeriveInput, data: &syn::VariantData) ->
     let storage_type_name: Ident = Ident::from(name_str.to_string() + "Storage");
     let vis = &ast.vis;
     let (impl_generics, ty_generics, where_clause) = ast.generics.split_for_impl();
-    let heap_lifetime =
-        &ast.generics.lifetimes.first()
+    let heap_lifetime = &ast.generics
+        .lifetimes
+        .first()
         .expect("lifetime parameter required")
         .lifetime;
 
     match *data {
         syn::VariantData::Struct(ref fields) => {
-            let field_vis: &Vec<_>   = &fields.iter().map(|f| &f.vis).collect();
+            let field_vis: &Vec<_> = &fields.iter().map(|f| &f.vis).collect();
             let field_names: &Vec<_> = &fields.iter().map(|f| &f.ident).collect();
             let field_types: &Vec<_> = &fields.iter().map(|f| &f.ty).collect();
-            let field_storage_types: Vec<_> = fields.iter().map(|f| {
-                let field_ty = &f.ty;
-                quote! {
+            let field_storage_types: Vec<_> = fields
+                .iter()
+                .map(|f| {
+                    let field_ty = &f.ty;
+                    quote! {
                     <#field_ty as ::cell_gc::traits::IntoHeap<#heap_lifetime>>::In
                 }
-            }).collect();
+                })
+                .collect();
 
             // 1. The in-heap representation of the struct.
             let storage_struct = quote! {
@@ -59,14 +61,17 @@ fn impl_into_heap_for_struct(ast: &syn::DeriveInput, data: &syn::VariantData) ->
 
             // 2. IntoHeap implementation.
             // Body of the mark() method.
-            let mark_fields: Vec<Tokens> = fields.iter().map(|f| {
-                let name = &f.ident;
-                let ty = &f.ty;
-                quote! {
+            let mark_fields: Vec<Tokens> = fields
+                .iter()
+                .map(|f| {
+                    let name = &f.ident;
+                    let ty = &f.ty;
+                    quote! {
                     <#ty as ::cell_gc::traits::IntoHeap<#heap_lifetime>>
                         ::mark(&storage.#name);
                 }
-            }).collect();
+                })
+                .collect();
 
             // Oddly you can't use the same identifier more than once in the
             // same loop. So create an alias.
@@ -162,10 +167,13 @@ fn impl_into_heap_for_struct(ast: &syn::DeriveInput, data: &syn::VariantData) ->
             };
 
             // 6. Getters and setters.
-            let field_setter_names: Vec<_> = fields.iter().map(|f| {
-                let field_str: &str = f.ident.as_ref().unwrap().as_ref();
-                Ident::from(format!("set_{}", field_str))
-            }).collect();
+            let field_setter_names: Vec<_> = fields
+                .iter()
+                .map(|f| {
+                    let field_str: &str = f.ident.as_ref().unwrap().as_ref();
+                    Ident::from(format!("set_{}", field_str))
+                })
+                .collect();
             let accessors = quote! {
                 impl #impl_generics #ref_type_name #ty_generics #where_clause {
                     #(
@@ -207,10 +215,10 @@ fn impl_into_heap_for_struct(ast: &syn::DeriveInput, data: &syn::VariantData) ->
                 #ref_type_into_heap
                 #accessors
             }
-        },
+        }
         syn::VariantData::Tuple(ref _fields) => {
             panic!("#[derive(IntoHeap)] does not support tuple structs");
-        },
+        }
         syn::VariantData::Unit => {
             panic!("#[derive(IntoHeap)] does not support unit structs");
         }
@@ -224,8 +232,9 @@ fn impl_into_heap_for_enum(ast: &syn::DeriveInput, variants: &[syn::Variant]) ->
     let storage_type_name: Ident = Ident::from(name_str.to_string() + "Storage");
     let vis = &ast.vis;
     let (impl_generics, ty_generics, where_clause) = ast.generics.split_for_impl();
-    let heap_lifetime =
-        &ast.generics.lifetimes.first()
+    let heap_lifetime = &ast.generics
+        .lifetimes
+        .first()
         .expect("lifetime parameter required")
         .lifetime;
 
@@ -301,8 +310,7 @@ fn impl_into_heap_for_enum(ast: &syn::DeriveInput, variants: &[syn::Variant]) ->
             }
             syn::VariantData::Tuple(ref fields) => {
                 let field_types = fields.iter().map(|f| &f.ty);
-                let bindings: &Vec<Ident> =
-                    &(0..fields.len())
+                let bindings: &Vec<Ident> = &(0..fields.len())
                     .map(|n| Ident::from(format!("x{}", n)))
                     .collect();
                 quote! {
@@ -345,8 +353,7 @@ fn impl_into_heap_for_enum(ast: &syn::DeriveInput, variants: &[syn::Variant]) ->
             }
             syn::VariantData::Tuple(ref fields) => {
                 let field_types = fields.iter().map(|f| &f.ty);
-                let bindings: &Vec<Ident> =
-                    &(0..fields.len())
+                let bindings: &Vec<Ident> = &(0..fields.len())
                     .map(|n| Ident::from(format!("x{}", n)))
                     .collect();
                 quote! {
@@ -384,8 +391,7 @@ fn impl_into_heap_for_enum(ast: &syn::DeriveInput, variants: &[syn::Variant]) ->
             }
             syn::VariantData::Tuple(ref fields) => {
                 let field_types = fields.iter().map(|f| &f.ty);
-                let bindings: &Vec<Ident> =
-                    &(0..fields.len())
+                let bindings: &Vec<Ident> = &(0..fields.len())
                     .map(|n| Ident::from(format!("x{}", n)))
                     .collect();
                 quote! {

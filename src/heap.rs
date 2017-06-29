@@ -250,9 +250,8 @@ impl<'h> HeapSession<'h> {
     }
 
     pub fn alloc<T: IntoHeapAllocation<'h>>(&mut self, value: T) -> T::Ref {
-        self.try_alloc(value).expect(
-            "out of memory (gc did not collect anything)",
-        )
+        self.try_alloc(value)
+            .expect("out of memory (gc did not collect anything)")
     }
 
     pub fn force_gc(&mut self) {

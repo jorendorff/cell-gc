@@ -85,7 +85,11 @@ pub struct TypedPage<U> {
 /// Panics if the answer is too big to fit in a `usize`.
 fn round_up(n: usize, k: usize) -> usize {
     let a = n / k * k;
-    if a == n { n } else { n + k }
+    if a == n {
+        n
+    } else {
+        n + k
+    }
 }
 
 impl<U> TypedPage<U> {
