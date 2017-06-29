@@ -179,6 +179,7 @@ fn impl_into_heap_for_struct(ast: &syn::DeriveInput, data: &syn::VariantData) ->
             let accessors = quote! {
                 impl #impl_generics #ref_type_name #ty_generics #where_clause {
                     #(
+                        #[allow(dead_code)]
                         #field_vis fn #field_names(&self) -> #field_types {
                             let ptr = self.0.as_ptr();
                             unsafe {
@@ -189,6 +190,7 @@ fn impl_into_heap_for_struct(ast: &syn::DeriveInput, data: &syn::VariantData) ->
                     )*
 
                     #(
+                        #[allow(dead_code)]
                         #field_vis fn #field_setter_names(&self, v: #field_types) {
                             let ptr = self.0.as_mut_ptr();
                             let u = ::cell_gc::traits::IntoHeap::into_heap(v);
@@ -203,6 +205,7 @@ fn impl_into_heap_for_struct(ast: &syn::DeriveInput, data: &syn::VariantData) ->
                     //    ::cell_gc::traits::IntoHeap::from_heap(ptr)
                     //}
 
+                    #[allow(dead_code)]
                     pub fn as_mut_ptr(&self) -> *mut #storage_type_name #ty_generics {
                         self.0.as_mut_ptr()
                     }

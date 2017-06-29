@@ -20,9 +20,9 @@ fn main () {
         assert!(n >= 500);
         assert!(n <= 1024);
 
-        let refs: Vec<UnitRef> =
+        let _: Vec<UnitRef> =
             (0 .. n)
-            .map(|i| hs.alloc(Unit { phantom: PhantomData }))
+            .map(|_| hs.alloc(Unit { phantom: PhantomData }))
             .collect();
 
         hs.force_gc();

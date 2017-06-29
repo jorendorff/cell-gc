@@ -39,7 +39,7 @@ impl PartialEq for BuiltinFnPtr {
 
 impl std::fmt::Debug for BuiltinFnPtr {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "BuiltinFn({:p})", self.0 as usize as *mut ());
+        write!(f, "BuiltinFn({:p})", self.0 as usize as *mut ())?;
         Ok(())
     }
 }

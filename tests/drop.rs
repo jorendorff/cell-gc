@@ -32,7 +32,7 @@ fn main() {
         let ptr: *mut i32 = &mut drop_count;
 
         let mut r = hs.alloc(Dropper { addr: ptr as usize, ignore: Nothing });
-        for i in 1..7 {
+        for _ in 1..7 {
             r = hs.alloc(Dropper { addr: ptr as usize, ignore: Nothing });
         }
 

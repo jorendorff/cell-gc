@@ -59,7 +59,7 @@ fn main() {
 
         // Spot-check that the objects are still good.
         let mut j = n as u64;
-        for i in 0 .. n {
+        for _ in 0 .. n {
             j -= 1;
             let chunk = root.expect("references aren't working or something");
             assert_eq!(chunk.field_0().0, j);
