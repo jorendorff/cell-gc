@@ -119,6 +119,22 @@ impl Heap {
         }
     }
 
+    /// Start a session to access this heap.
+    ///
+    /// You need a `HeapSession` in order to do anything interesting with a heap.
+    /// Each heap has either 0 or 1 `HeapSession` at a time, and a `HeapSession`
+    /// is bound to a stack lifetime, so Rust can enforce safety rules.
+    ///
+    /// It would be safe to make this method public, but it's a pain in
+    /// practice. You'll want to pass a `&mut HeapSession<'h>` around, not a
+    /// `HeapSession<'h>`, since `HeapSession` is not `Copy`. Use `enter`.
+    fn open<'h>(&'h mut self) -> HeapSession<'h> {
+        HeapSession {
+            id: PhantomData,
+            heap: self
+        }
+    }
+
     /// Run some code using this Heap.
     ///
     /// # Example
@@ -135,7 +151,7 @@ impl Heap {
     where
         F: for<'h> FnOnce(&mut HeapSession<'h>) -> R,
     {
-        f(&mut HeapSession::new(self))
+        f(&mut self.open())
     }
 
     /// Add the value `*p` to the root set, protecting it from GC.
@@ -253,13 +269,6 @@ impl Drop for Heap {
 }
 
 impl<'h> HeapSession<'h> {
-    fn new(heap: &'h mut Heap) -> HeapSession<'h> {
-        HeapSession {
-            id: PhantomData,
-            heap,
-        }
-    }
-
     fn get_page_set<'a, T: IntoHeapAllocation<'h> + 'a>(&'a mut self) -> PageSetRef<'a, 'h, T> {
         let key = heap_type_id::<T>();
         let heap: *mut Heap = self.heap;
