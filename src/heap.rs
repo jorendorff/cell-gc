@@ -263,12 +263,11 @@ impl<'h> HeapSession<'h> {
     fn get_page_set<'a, T: IntoHeapAllocation<'h> + 'a>(&'a mut self) -> PageSetRef<'a, 'h, T> {
         let key = heap_type_id::<T>();
         let heap: *mut Heap = self.heap;
-        let page_ref =
-            self.heap
+        self.heap
             .page_sets
             .entry(key)
-            .or_insert_with(|| unsafe { PageSet::new(heap) });
-        unsafe { page_ref.unchecked_downcast_mut() }
+            .or_insert_with(|| unsafe { PageSet::new::<T>(heap) })
+            .downcast_mut()
     }
 
     pub fn set_page_limit<T: IntoHeapAllocation<'h>>(&mut self, limit: Option<usize>) {

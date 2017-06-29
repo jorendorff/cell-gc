@@ -50,7 +50,6 @@ pub struct PageHeader {
     mark_bits: BitVec,
     allocated_bits: BitVec,
     mark_fn: unsafe fn(UntypedPointer, &mut MarkingTracer),
-    sweep_fn: unsafe fn(&mut PageHeader),
     freelist: *mut (),
 }
 
@@ -71,10 +70,6 @@ impl PageHeader {
 
     pub unsafe fn mark(&self, ptr: UntypedPointer, tracer: &mut MarkingTracer) {
         (self.mark_fn)(ptr, tracer);
-    }
-
-    pub unsafe fn sweep(&mut self) {
-        (self.sweep_fn)(self);
     }
 
     pub fn type_id(&self) -> usize {
@@ -268,7 +263,6 @@ impl PageBox {
                         mark_bits: BitVec::from_elem(capacity, false),
                         allocated_bits: BitVec::from_elem(capacity, false),
                         mark_fn: mark_entry_point::<T>,
-                        sweep_fn: sweep_entry_point::<T>,
                         freelist: ptr::null_mut(),
                     },
                     allocations: PhantomData,
@@ -310,6 +304,8 @@ impl Drop for PageBox {
 pub struct PageSet {
     heap: *mut Heap,
 
+    sweep_fn: unsafe fn(&mut PageHeader),
+
     /// The collection of pages.
     ///
     /// All pages in this collection have matching `.heap`, `.mark_fn`, and
@@ -326,9 +322,10 @@ impl PageSet {
     /// # Safety
     ///
     /// Safe as long as `heap` is a valid pointer.
-    pub unsafe fn new(heap: *mut Heap) -> PageSet {
+    pub unsafe fn new<'h, T: IntoHeapAllocation<'h>>(heap: *mut Heap) -> PageSet {
         PageSet {
             heap,
+            sweep_fn: sweep_entry_point::<T>,
             pages: vec![],
             limit: None
         }
@@ -336,15 +333,14 @@ impl PageSet {
 
     /// Downcast to a typed PageSetRef.
     ///
-    /// # Safety
+    /// # Panics
     ///
-    /// The actual allocation type of this page set must be T.
-    pub unsafe fn unchecked_downcast_mut<'a, 'h, T>(&'a mut self) -> PageSetRef<'a, 'h, T>
+    /// If T is not the actual allocation type for this page set.
+    pub fn downcast_mut<'a, 'h, T>(&'a mut self) -> PageSetRef<'a, 'h, T>
     where
         T: IntoHeapAllocation<'h> + 'a
     {
-        // The assertion only covers the case where we have at least one page.
-        assert!(self.pages.is_empty() || self.pages[0].downcast_mut::<T>().is_some());
+        assert_eq!(self.sweep_fn as *const (), sweep_entry_point::<T> as *const ());
 
         PageSetRef {
             pages: self,
@@ -371,7 +367,7 @@ impl PageSet {
     /// Safe to call only as the final part of GC.
     pub unsafe fn sweep(&mut self) {
         for page in &mut self.pages {
-            page.sweep();
+            (self.sweep_fn)(page);
         }
     }
 
