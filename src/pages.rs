@@ -183,6 +183,12 @@ impl<U> TypedPage<U> {
         self.header.mark_bits.set(index, true);
     }
 
+    /// Allocate a `U`-sized-and-aligned region of uninitialized memory
+    /// from this page.
+    ///
+    /// # Safety
+    ///
+    /// This is safe unless GC is happening.
     pub unsafe fn try_alloc(&mut self) -> Option<Pointer<U>> {
         let p = self.header.freelist;
         if p.is_null() {
