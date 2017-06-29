@@ -11,7 +11,7 @@ authors = [
 
 [dependencies]
 bit-vec = "0.4"
-cell-gc-derive = { path = "cell-gc-derive" }
+cell-gc-derive = { path = "cell-gc-derive", version = "0.2.1" }
 
 [dev-dependencies]
 compiletest_rs = "0.2"

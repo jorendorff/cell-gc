@@ -1,7 +1,13 @@
 [package]
 name = "cell-gc-derive"
-version = "0.1.0"
-authors = ["Jason Orendorff <jason.orendorff@gmail.com>"]
+description = "Custom derive support for cell-gc."
+repository = "https://github.com/jorendorff/cell-gc/"
+license = "MIT"
+version = "0.2.1"
+authors = [
+    "Jason Orendorff <jason.orendorff@gmail.com>",
+    "Nick Fitzgerald <fitzgen@gmail.com>",
+]
 
 [lib]
 proc_macro = true
