@@ -1,4 +1,4 @@
-// ignore-test Not a test. Used by other tests
+// Not a test. Used by other tests.
 
 #![allow(dead_code)]  // Tests don't ordinarily use every feature and every accessor.
 

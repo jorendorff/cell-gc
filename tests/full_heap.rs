@@ -3,8 +3,8 @@
 
 extern crate cell_gc;
 #[macro_use] extern crate cell_gc_derive;
-mod pairs_aux;
-use pairs_aux::*;
+mod aux;
+use aux::pairs::*;
 
 fn null_pair<'h>() -> Pair<'h> {
     Pair { head: Value::Null, tail: Value::Null }

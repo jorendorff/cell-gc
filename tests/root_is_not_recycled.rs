@@ -2,8 +2,8 @@
 
 extern crate cell_gc;
 #[macro_use] extern crate cell_gc_derive;
-mod pairs_aux;
-use pairs_aux::*;
+mod aux;
+use aux::pairs::*;
 use std::rc::Rc;
 
 fn main() {
