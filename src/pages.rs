@@ -390,14 +390,17 @@ impl<'a, 'h, T: IntoHeapAllocation<'h> + 'a> PageSetRef<'a, 'h, T> {
     /// Initialize its header and freelist and link it into this page set's
     /// linked list of pages.
     fn new_page(&mut self) -> &mut TypedPage<T::In> {
-        assert!(
-            mem::size_of::<TypedPage<T::In>>() <= TypedPage::<T::In>::first_allocation_offset()
-        );
-        assert!(
-            TypedPage::<T::In>::first_allocation_offset() +
-                TypedPage::<T::In>::capacity() * TypedPage::<T::In>::allocation_size() <=
-                PAGE_SIZE
-        );
+        assert!({
+            let size_of_page = mem::size_of::<TypedPage<T::In>>();
+            let alloc_offset = TypedPage::<T::In>::first_allocation_offset();
+            size_of_page <= alloc_offset
+        });
+        assert!({
+            let alloc_offset = TypedPage::<T::In>::first_allocation_offset();
+            let alloc_size = TypedPage::<T::In>::allocation_size();
+            let capacity = TypedPage::<T::In>::capacity();
+            alloc_offset + capacity * alloc_size <= PAGE_SIZE
+        });
 
         let mut vec: Vec<u8> = Vec::with_capacity(PAGE_SIZE);
         let raw_page = vec.as_mut_ptr() as *mut ();
