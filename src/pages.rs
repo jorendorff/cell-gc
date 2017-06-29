@@ -5,7 +5,7 @@ use std::{cmp, mem, ptr};
 use std::marker::PhantomData;
 use bit_vec::BitVec;
 use traits::{IntoHeapAllocation, Tracer};
-use heap::Heap;
+use heap::{Heap, HeapSessionId};
 use marking::MarkingTracer;
 use ptr::{Pointer, UntypedPointer};
 
@@ -223,6 +223,12 @@ impl<U> TypedPage<U> {
     }
 }
 
+/// Sweep a page.
+///
+/// # Safety
+///
+/// This must be called only after a full mark phase, to avoid sweeping objects
+/// that are still reachable.
 unsafe fn sweep_entry_point<'h, T: IntoHeapAllocation<'h>>(header: &mut PageHeader) {
     header.downcast_mut::<T>().unwrap().sweep();
 }
@@ -230,7 +236,7 @@ unsafe fn sweep_entry_point<'h, T: IntoHeapAllocation<'h>>(header: &mut PageHead
 pub struct PageBox(*mut PageHeader);
 
 impl PageBox {
-    pub fn new<'h, T: IntoHeapAllocation<'h>>(heap: *mut Heap) -> PageBox {
+    fn new<'h, T: IntoHeapAllocation<'h>>(heap: *mut Heap) -> PageBox {
         assert!(
             mem::size_of::<TypedPage<T::In>>() <= TypedPage::<T::In>::first_allocation_offset()
         );
@@ -296,6 +302,121 @@ impl Drop for PageBox {
 
             // Deallocate the memory.
             Vec::from_raw_parts(self.0 as *mut u8, 0, PAGE_SIZE);
+        }
+    }
+}
+
+/// An unordered collection of memory pages that all share an allocation type.
+pub struct PageSet {
+    heap: *mut Heap,
+
+    /// The collection of pages.
+    ///
+    /// All pages in this collection have matching `.heap`, `.mark_fn`, and
+    /// `.sweep_fn` fields.
+    pages: Vec<PageBox>,
+
+    /// The maximum number of pages, or None for no limit.
+    limit: Option<usize>,
+}
+
+impl PageSet {
+    /// Create a new PageSet.
+    ///
+    /// # Safety
+    ///
+    /// Safe as long as `heap` is a valid pointer.
+    pub unsafe fn new(heap: *mut Heap) -> PageSet {
+        PageSet {
+            heap,
+            pages: vec![],
+            limit: None
+        }
+    }
+
+    /// Downcast to a typed PageSetRef.
+    ///
+    /// # Safety
+    ///
+    /// The actual allocation type of this page set must be T.
+    pub unsafe fn unchecked_downcast_mut<'a, 'h, T>(&'a mut self) -> PageSetRef<'a, 'h, T>
+    where
+        T: IntoHeapAllocation<'h> + 'a
+    {
+        // The assertion only covers the case where we have at least one page.
+        assert!(self.pages.is_empty() || self.pages[0].downcast_mut::<T>().is_some());
+
+        PageSetRef {
+            pages: self,
+            id: PhantomData,
+            also: PhantomData
+        }
+    }
+
+    /// Clear mark bits from each page in this set.
+    ///
+    /// # Safety
+    ///
+    /// This must be called only at the beginning of a GC cycle.
+    pub unsafe fn clear_mark_bits(&mut self) {
+        for page in &mut self.pages {
+            page.clear_mark_bits();
+        }
+    }
+
+    /// Sweep all unmarked objects from all pages.
+    ///
+    /// # Safety
+    ///
+    /// Safe to call only as the final part of GC.
+    pub unsafe fn sweep(&mut self) {
+        for page in &mut self.pages {
+            page.sweep();
+        }
+    }
+
+    /// Assert that nothing is allocated in this set of pages.
+    pub fn assert_no_allocations(&self) {
+        for page in &self.pages {
+            assert!(page.is_empty());
+        }
+    }
+}
+
+pub struct PageSetRef<'a, 'h, T: IntoHeapAllocation<'h> + 'a> {
+    pages: &'a mut PageSet,
+    id: HeapSessionId<'h>,
+    also: PhantomData<&'a mut T>
+}
+
+impl<'a, 'h, T: IntoHeapAllocation<'h> + 'a> PageSetRef<'a, 'h, T> {
+    pub fn set_page_limit(&mut self, limit: Option<usize>) {
+        self.pages.limit = limit;
+    }
+
+    /// Allocate memory for a value of type `T::In`.
+    ///
+    /// # Safety
+    ///
+    /// Safe to call as long as GC is not happening.
+    pub unsafe fn try_alloc(&mut self) -> Option<Pointer<T::In>> {
+        // First, try to allocate from each existing page. (Obviously slow.)
+        for page in &mut self.pages.pages {
+            let page = page.downcast_mut::<T>().unwrap();
+            if let Some(ptr) = page.try_alloc() {
+                return Some(ptr);
+            }
+        }
+
+        // If there is a limit and we already have at least that many pages, fail.
+        match self.pages.limit {
+            Some(limit) if self.pages.pages.len() >= limit => None,
+            _ => {
+                let mut page = PageBox::new::<T>(self.pages.heap);
+                let alloc = page.downcast_mut::<T>().unwrap().try_alloc();
+                self.pages.pages.push(page);
+                alloc
+            }
         }
     }
 }

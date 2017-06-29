@@ -17,9 +17,6 @@ So this GC is designed for:
 
 ## Caveats
 
-**cell-gc only works for toy-sized programs at present.**
-[See issue #4.](https://github.com/jorendorff/rust-toy-gc/issues/4)
-
 **cell-gc is for use in VMs.** So the assumption is that the data the GC is
 managing is not really *your* data; it's your end user's data. If you don't
 want every field of every GC-managed object to be public and mutable, cell-gc
@@ -33,6 +30,7 @@ Instead, you can create one heap per thread (like JavaScript).
 
 Currently it does not support lots of small heaps with random lifetimes (like Erlang),
 but I have some ideas on how to get there.
+[See issue #7.](https://github.com/jorendorff/rust-toy-gc/issues/7)
 
 
 ## How to use it
@@ -45,7 +43,7 @@ Declaring GC types is actually super easy. Just add `#[derive(IntoHeap)]`
 to any struct:
 
 ```rust
-#[macro_use] extern crate cell_gc;
+extern crate cell_gc;
 #[macro_use] extern crate cell_gc_derive;
 
 /// A linked list of numbers that lives in the GC heap.
@@ -111,24 +109,29 @@ using the `IntList` from above:
 #     head: i64,
 #     tail: Option<IntListRef<'h>>
 # }
+use cell_gc::Heap;
+
 fn main() {
     // Create a heap (you'll only do this once in your whole program)
-    cell_gc::with_heap(|heap| {
+    let mut heap = Heap::new();
+
+    heap.enter(|hs| {
         // Allocate an object (returns an IntListRef)
-        let obj1 = heap.alloc(IntList { head: 17, tail: None });
+        let obj1 = hs.alloc(IntList { head: 17, tail: None });
         assert_eq!(obj1.head(), 17);
         assert_eq!(obj1.tail(), None);
 
         // Allocate another object
-        let obj2 = heap.alloc(IntList { head: 33, tail: Some(obj1) });
+        let obj2 = hs.alloc(IntList { head: 33, tail: Some(obj1) });
         assert_eq!(obj2.head(), 33);
         assert_eq!(obj2.tail().unwrap().head(), 17);
     });
 }
 ```
 
-Use `with_heap` in your `main()` function to create a heap.
-Use `heap.alloc(v)` to allocate values in the heap.
+Use `Heap::new()` in your `main()` function to create a heap.
+Use `heap.enter()` to gain access to the heap (opening a "heap session", `hs`).
+Use `hs.alloc(v)` to allocate values in the heap.
 
 ## Vectors in the GC heap
 
@@ -194,7 +197,7 @@ Instead, you'll initialize the `children` field with a vector when you
 create the object, and then you'll most likely mutate that existing vector
 rather than ever creating a new one.)
 
-You can allocate `Object`s in the heap using `heap.alloc(Object { ... })`,
+You can allocate `Object`s in the heap using `hs.alloc(Object { ... })`,
 and make one `Object` a child of another by using `obj1.children().push(obj2)`.
 
 ## Safety
@@ -204,7 +207,7 @@ this GC is safe.<sup>[citation needed]</sup>
 
 Still, there's one weird rule to be aware of:
 **Don't implement `Drop` or `Clone`
-for any type declared using `gc_heap_type!`.**
+for any type declared using `derive(IntoHeap)`.**
 It's safe in the full Rust sense of that word
 (it won't cause crashes or undefined behavior,
 as long as your `.drop()` or `.clone()` method does nothing `unsafe`),

@@ -78,13 +78,13 @@ use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::ptr;
 use traits::IntoHeapAllocation;
-use pages::{heap_type_id, TypedPage, PageBox};
+use pages::{heap_type_id, TypedPage, PageSet, PageSetRef};
 use ptr::{Pointer, UntypedPointer};
 use gcref::GcRef;
 use marking::{mark, MarkingTracer};
 
 pub struct Heap {
-    pages: HashMap<usize, PageBox>,
+    page_sets: HashMap<usize, PageSet>,
     pins: RefCell<HashMap<UntypedPointer, usize>>,
     marking_tracer: Option<MarkingTracer>,
 }
@@ -113,7 +113,7 @@ impl Heap {
     /// Create a new, empty heap.
     pub fn new() -> Heap {
         Heap {
-            pages: HashMap::new(),
+            page_sets: HashMap::new(),
             pins: RefCell::new(HashMap::new()),
             marking_tracer: Some(MarkingTracer::default()),
         }
@@ -217,9 +217,14 @@ impl Heap {
         retval
     }
 
-    pub(crate) fn clear_mark_bits(&mut self) {
-        for (_, page) in self.pages.iter_mut() {
-            page.clear_mark_bits();
+    /// Clear all mark bits in preparation for GC.
+    ///
+    /// # Safety
+    ///
+    /// This must be called only at the beginning of a GC cycle.
+    pub(crate) unsafe fn clear_mark_bits(&mut self) {
+        for page_set in self.page_sets.values_mut() {
+            page_set.clear_mark_bits();
         }
     }
 
@@ -227,9 +232,9 @@ impl Heap {
         mark(self);
 
         // sweep phase
-        for (_, page) in self.pages.iter_mut() {
+        for page_set in self.page_sets.values_mut() {
             unsafe {
-                page.sweep();
+                page_set.sweep();
             }
         }
     }
@@ -241,8 +246,8 @@ impl Drop for Heap {
         assert!(self.pins.borrow().is_empty());
         self.gc();
 
-        for (_, page) in self.pages.iter() {
-            assert!(page.is_empty());
+        for page_set in self.page_sets.values() {
+            page_set.assert_no_allocations();
         }
     }
 }
@@ -255,15 +260,19 @@ impl<'h> HeapSession<'h> {
         }
     }
 
-    fn get_page<'a, T: IntoHeapAllocation<'h> + 'a>(&'a mut self) -> &'a mut TypedPage<T::In> {
+    fn get_page_set<'a, T: IntoHeapAllocation<'h> + 'a>(&'a mut self) -> PageSetRef<'a, 'h, T> {
         let key = heap_type_id::<T>();
-        let heap_ptr = self.heap as *mut Heap;
-        self.heap
-            .pages
+        let heap: *mut Heap = self.heap;
+        let page_ref =
+            self.heap
+            .page_sets
             .entry(key)
-            .or_insert_with(|| PageBox::new::<T>(heap_ptr))
-            .downcast_mut::<T>()
-            .unwrap()
+            .or_insert_with(|| unsafe { PageSet::new(heap) });
+        unsafe { page_ref.unchecked_downcast_mut() }
+    }
+
+    pub fn set_page_limit<T: IntoHeapAllocation<'h>>(&mut self, limit: Option<usize>) {
+        self.get_page_set::<T>().set_page_limit(limit);
     }
 
     pub fn try_alloc<T: IntoHeapAllocation<'h>>(&mut self, value: T) -> Option<T::Ref> {
@@ -274,11 +283,11 @@ impl<'h> HeapSession<'h> {
         // way.) Looking forward to placement new!
         let u = value.into_heap();
         unsafe {
-            let alloc = self.get_page::<T>().try_alloc();
+            let alloc = self.get_page_set::<T>().try_alloc();
             alloc
                 .or_else(|| {
                     self.heap.gc();
-                    self.get_page::<T>().try_alloc()
+                    self.get_page_set::<T>().try_alloc()
                 })
                 .map(move |p| {
                     ptr::write(p.as_raw() as *mut _, u);

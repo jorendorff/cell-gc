@@ -12,6 +12,8 @@ fn null_pair<'h>() -> Pair<'h> {
 
 fn main() {
     cell_gc::with_heap(|hs| {
+        hs.set_page_limit::<Pair>(Some(1));
+
         // Fill up the heap by allocating HEAP_SIZE objects.
         let mut v = Value::Null;
         for _ in 0 .. cell_gc::page_capacity::<Pair>() {

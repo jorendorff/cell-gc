@@ -8,7 +8,9 @@ use traits::{IntoHeapAllocation, Tracer};
 
 /// Perform all the marking for a collection.
 pub fn mark<'h>(heap: &mut Heap) {
-    heap.clear_mark_bits();
+    unsafe {
+        heap.clear_mark_bits();
+    }
 
     heap.with_marking_tracer(|heap, mut tracer| {
         heap.each_pin(|ptr| unsafe {

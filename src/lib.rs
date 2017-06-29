@@ -15,9 +15,6 @@
 //!
 //! # Caveats
 //!
-//! **cell-gc only works for toy-sized programs at present.**
-//! [See issue #4.](https://github.com/jorendorff/rust-toy-gc/issues/4)
-//!
 //! **cell-gc is for use in VMs.** So the assumption is that the data the GC is
 //! managing is not really *your* data; it's your end user's data. If you don't
 //! want every field of every GC-managed object to be public and mutable, cell-gc
@@ -31,6 +28,7 @@
 //!
 //! Currently it does not support lots of small heaps with random lifetimes (like Erlang),
 //! but I have some ideas on how to get there.
+//! [See issue #7.](https://github.com/jorendorff/rust-toy-gc/issues/7)
 //!
 //!
 //! # How to use it
@@ -43,7 +41,7 @@
 //! to any struct:
 //!
 //! ```rust
-//! #[macro_use] extern crate cell_gc;
+//! extern crate cell_gc;
 //! #[macro_use] extern crate cell_gc_derive;
 //!
 //! /// A linked list of numbers that lives in the GC heap.

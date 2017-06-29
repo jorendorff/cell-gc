@@ -59,9 +59,12 @@ use ptr::Pointer;
 /// In-heap objects are full of pointers; if `into_heap` puts garbage into
 /// them, GC will crash.
 ///
-/// `mark` must be implmented with care in order to preserve the invariants of
-/// the GC graph-walking algorithm. Bugs there are very likely to lead to
+/// `trace` must be implemented with care in order to preserve the invariants
+/// of the GC graph-walking algorithm. Bugs there are very likely to lead to
 /// dangling pointers and hard-to-debug crashes down the road.
+///
+/// And this maybe goes without saying, but none of these methods may allocate
+/// or do anything else that could trigger garbage collection.
 ///
 pub unsafe trait IntoHeap<'h>: Sized {
     /// The type of the value when it is physically stored in the heap.
@@ -84,9 +87,11 @@ pub unsafe trait IntoHeap<'h>: Sized {
     /// stored in the GC heap, which ordinary users cannot obtain.
     unsafe fn from_heap(&Self::In) -> Self;
 
-    /// Unsafe to call: It is impossible for ordinary users to call this
-    /// safely, because `self` must be a direct, unwrapped reference to a value
-    /// stored in the GC heap, which ordinary users cannot obtain.
+    /// # Safety
+    ///
+    /// It is impossible for ordinary users to call this safely, because `self`
+    /// must be a direct, unwrapped reference to a value stored in the GC heap,
+    /// which ordinary users cannot obtain.
     unsafe fn trace<R>(&Self::In, tracer: &mut R)
     where
         R: Tracer;

@@ -7,6 +7,8 @@ use pairs_aux::*;
 
 fn main() {
     cell_gc::with_heap(|hs| {
+        hs.set_page_limit::<Pair>(Some(1));
+
         // Make a cycle.
         let (p1, p2);
         {

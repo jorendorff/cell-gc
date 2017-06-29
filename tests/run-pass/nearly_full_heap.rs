@@ -7,6 +7,8 @@ use pairs_aux::*;
 
 fn main() {
     cell_gc::with_heap(|hs| {
+        hs.set_page_limit::<Pair>(Some(1));
+
         // Make the heap nearly full by allocating (HEAP_SIZE - 1) objects.
         let mut v = Value::Null;
         for _ in 0 .. cell_gc::page_capacity::<Pair>() - 1 {

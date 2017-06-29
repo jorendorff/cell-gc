@@ -16,6 +16,8 @@ struct Big<'h> {
 
 fn main () {
     cell_gc::with_heap(|hs| {
+        hs.set_page_limit::<Big>(Some(1));
+
         let n = cell_gc::page_capacity::<Big>();
         assert_eq!(n, 1);  // see comment in size_medium.rs
 

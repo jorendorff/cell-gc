@@ -18,6 +18,8 @@ struct Chunk<'h> {
 
 fn main() {
     cell_gc::with_heap(|hs| {
+        hs.set_page_limit::<Chunk>(Some(1));
+
         let n = cell_gc::page_capacity::<Chunk>();
 
         // Users don't care about the exact value here, but test it anyway
