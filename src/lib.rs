@@ -100,7 +100,7 @@
 //! using the `IntList` from above:
 //!
 //! ```rust
-//! # #[macro_use] extern crate cell_gc;
+//! # extern crate cell_gc;
 //! # #[macro_use] extern crate cell_gc_derive;
 //! # #[derive(IntoHeap)]
 //! # struct IntList<'h> {
@@ -136,7 +136,7 @@
 //! A very simple "object" type for a text adventure game:
 //!
 //! ```rust
-//! #[macro_use] extern crate cell_gc;
+//! extern crate cell_gc;
 //! #[macro_use] extern crate cell_gc_derive;
 //!
 //! use cell_gc::collections::VecRef;

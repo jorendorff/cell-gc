@@ -102,7 +102,7 @@ This part isn't documented well yet. But here's an example,
 using the `IntList` from above:
 
 ```rust
-# #[macro_use] extern crate cell_gc;
+# extern crate cell_gc;
 # #[macro_use] extern crate cell_gc_derive;
 # #[derive(IntoHeap)]
 # struct IntList<'h> {
@@ -138,7 +138,7 @@ Use `hs.alloc(v)` to allocate values in the heap.
 A very simple "object" type for a text adventure game:
 
 ```rust
-#[macro_use] extern crate cell_gc;
+extern crate cell_gc;
 #[macro_use] extern crate cell_gc_derive;
 
 use cell_gc::collections::VecRef;
