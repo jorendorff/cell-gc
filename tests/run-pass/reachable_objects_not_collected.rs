@@ -7,25 +7,25 @@ mod pairs_aux;
 use pairs_aux::*;
 
 fn main() {
-    cell_gc::with_heap(|heap| {
-        let obj1 = alloc_null_pair(heap);
+    cell_gc::with_heap(|hs| {
+        let obj1 = alloc_null_pair(hs);
         let (p2, p3, p4, p5);
         {
-            let obj2 = alloc_null_pair(heap);
+            let obj2 = alloc_null_pair(hs);
             p2 = obj2.as_mut_ptr();
             obj1.set_head(Value::Pair(obj2.clone()));
-            let obj3 = alloc_null_pair(heap);
+            let obj3 = alloc_null_pair(hs);
             p3 = obj3.as_mut_ptr();
             obj1.set_tail(Value::Pair(obj3));
-            let obj4 = alloc_null_pair(heap);
+            let obj4 = alloc_null_pair(hs);
             p4 = obj4.as_mut_ptr();
             obj2.set_head(Value::Pair(obj4));
-            let obj5 = alloc_null_pair(heap);
+            let obj5 = alloc_null_pair(hs);
             p5 = obj5.as_mut_ptr();
             obj2.set_tail(Value::Pair(obj5));
         }
 
-        heap.force_gc();
+        hs.force_gc();
 
         let h = match obj1.head() {
             Value::Pair(p) => p,

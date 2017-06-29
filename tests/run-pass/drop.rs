@@ -26,20 +26,20 @@ impl<'h> Drop for DropperStorage<'h> {
 }
 
 fn main() {
-    cell_gc::with_heap(|heap| {
+    cell_gc::with_heap(|hs| {
         let mut drop_count: i32 = 0;
         let ptr: *mut i32 = &mut drop_count;
 
-        let mut r = heap.alloc(Dropper { addr: ptr as usize, ignore: Nothing });
+        let mut r = hs.alloc(Dropper { addr: ptr as usize, ignore: Nothing });
         for i in 1..7 {
-            r = heap.alloc(Dropper { addr: ptr as usize, ignore: Nothing });
+            r = hs.alloc(Dropper { addr: ptr as usize, ignore: Nothing });
         }
 
         assert_eq!(drop_count, 0);
-        heap.force_gc();
+        hs.force_gc();
         assert_eq!(drop_count, 6);
         std::mem::drop(r);
-        heap.force_gc();
+        hs.force_gc();
         assert_eq!(drop_count, 7);
     });
 }

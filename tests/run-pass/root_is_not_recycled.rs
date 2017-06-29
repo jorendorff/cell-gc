@@ -7,13 +7,13 @@ use pairs_aux::*;
 use std::rc::Rc;
 
 fn main() {
-    cell_gc::with_heap(|heap| {
+    cell_gc::with_heap(|hs| {
         // Create and root one object.
-        let root = alloc_pair(heap, Value::Int(1), Value::Str(Rc::new("hello world".to_string())));
+        let root = alloc_pair(hs, Value::Int(1), Value::Str(Rc::new("hello world".to_string())));
 
         // Subsequent allocations never return root.
         for _ in 0 .. cell_gc::page_capacity::<Pair>() * 2 {
-            let tmp = alloc_null_pair(heap);
+            let tmp = alloc_null_pair(hs);
             assert!(tmp != root);
         }
     });

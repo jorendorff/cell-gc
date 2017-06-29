@@ -15,7 +15,7 @@ struct Big<'h> {
 }
 
 fn main () {
-    cell_gc::with_heap(|heap| {
+    cell_gc::with_heap(|hs| {
         let n = cell_gc::page_capacity::<Big>();
         assert_eq!(n, 1);  // see comment in size_medium.rs
 
@@ -23,13 +23,13 @@ fn main () {
         let b = (a, a, a, a);
         let c = (b, b, b, b);
         let d = (c, c, c, c, c);
-        let result = heap.alloc(Big {
+        let result = hs.alloc(Big {
             bits: d,
             next: None
         });
         assert_eq!(result.bits(), d);
         assert_eq!(result.next(), None);
 
-        assert_eq!(heap.try_alloc(Big {bits: d, next: None}), None);
+        assert_eq!(hs.try_alloc(Big {bits: d, next: None}), None);
     });
 }

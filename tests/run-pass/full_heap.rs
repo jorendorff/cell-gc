@@ -11,17 +11,17 @@ fn null_pair<'h>() -> Pair<'h> {
 }
 
 fn main() {
-    cell_gc::with_heap(|heap| {
+    cell_gc::with_heap(|hs| {
         // Fill up the heap by allocating HEAP_SIZE objects.
         let mut v = Value::Null;
         for _ in 0 .. cell_gc::page_capacity::<Pair>() {
-            v = Value::Pair(alloc_pair(heap, Value::Null, v));
+            v = Value::Pair(alloc_pair(hs, Value::Null, v));
         }
 
         // The whole heap is reachable.  Now try_alloc() should return null every
         // time it's called.
         for _ in 0 .. 4 {
-            let attempt: Option<PairRef> = heap.try_alloc(null_pair());
+            let attempt: Option<PairRef> = hs.try_alloc(null_pair());
             assert_eq!(attempt, None);
         }
     });

@@ -10,16 +10,16 @@ struct Philosopher<'h> {
 }
 
 fn main() {
-    cell_gc::with_heap(|heap| {
-        let s = heap.alloc(Philosopher {
+    cell_gc::with_heap(|hs| {
+        let s = hs.alloc(Philosopher {
             name: "Socrates",
             teacher: None
         });
-        let p = heap.alloc(Philosopher {
+        let p = hs.alloc(Philosopher {
             name: "Plato",
             teacher: Some(s.clone())
         });
-        let a = heap.alloc(Philosopher {
+        let a = hs.alloc(Philosopher {
             name: "Aristotle",
             teacher: Some(p.clone())
         });

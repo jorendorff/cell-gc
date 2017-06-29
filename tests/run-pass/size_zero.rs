@@ -12,7 +12,7 @@ struct Unit<'h> {
 fn main () {
     assert_eq!(std::mem::size_of::<UnitStorage>(), 0);
 
-    cell_gc::with_heap(|heap| {
+    cell_gc::with_heap(|hs| {
         let n = cell_gc::page_capacity::<Unit>();
 
         // see comment in size_medium.rs
@@ -21,12 +21,12 @@ fn main () {
 
         let refs: Vec<UnitRef> =
             (0 .. n)
-            .map(|i| heap.alloc(Unit { phantom: PhantomData }))
+            .map(|i| hs.alloc(Unit { phantom: PhantomData }))
             .collect();
 
-        heap.force_gc();
+        hs.force_gc();
 
-        assert_eq!(heap.try_alloc(Unit { phantom: PhantomData }),
+        assert_eq!(hs.try_alloc(Unit { phantom: PhantomData }),
                    None);
     });
 }

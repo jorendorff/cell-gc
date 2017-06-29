@@ -6,13 +6,13 @@ mod pairs_aux;
 use pairs_aux::*;
 
 fn main() {
-    cell_gc::with_heap(|heap| {
+    cell_gc::with_heap(|hs| {
         // Make a cycle.
         let (p1, p2);
         {
-            let obj1 = alloc_null_pair(heap);
+            let obj1 = alloc_null_pair(hs);
             p1 = obj1.as_mut_ptr();
-            let obj2 = alloc_null_pair(heap);
+            let obj2 = alloc_null_pair(hs);
             p2 = obj2.as_mut_ptr();
             obj2.set_tail(Value::Pair(obj1.clone()));
             obj1.set_tail(Value::Pair(obj2.clone()));
@@ -23,7 +23,7 @@ fn main() {
         let mut recycled2 = 0;
         let mut root = Value::Null;
         for _ in 0 .. cell_gc::page_capacity::<Pair>() {
-            let p = alloc_pair(heap, Value::Null, root);
+            let p = alloc_pair(hs, Value::Null, root);
             root = Value::Pair(p.clone());
             if p.as_mut_ptr() == p1 {
                 recycled1 += 1;

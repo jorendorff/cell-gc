@@ -12,7 +12,7 @@ struct Tiny<'h> {
 }
 
 fn main () {
-    cell_gc::with_heap(|heap| {
+    cell_gc::with_heap(|hs| {
         let n = cell_gc::page_capacity::<Tiny>();
 
         // see comment in size_medium.rs
@@ -22,7 +22,7 @@ fn main () {
         let refs: Vec<TinyRef> =
             (0 .. n)
             .map(|i| {
-                heap.alloc(Tiny {
+                hs.alloc(Tiny {
                     bit: i & 1 == 1,
                     phantom: PhantomData
                 })
@@ -34,7 +34,7 @@ fn main () {
             refs[i].set_bit(i % 5 == 3);
         }
 
-        heap.force_gc();
+        hs.force_gc();
 
         for i in 0 .. n {
             assert_eq!(refs[i].bit(), i % 5 == 3);

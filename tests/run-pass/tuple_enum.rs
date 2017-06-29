@@ -18,11 +18,11 @@ enum Thing<'h> {
 }
 
 fn main() {
-    cell_gc::with_heap(|heap| {
-        let zero = heap.alloc(ThingBox { thing: Thing::Zero });
-        let one = heap.alloc(ThingBox { thing: Thing::One(zero.clone()) });
-        let two = heap.alloc(ThingBox { thing: Thing::Two(zero.clone(), one.clone()) });
-        let v: VecRef<ThingBoxRef> = heap.alloc(vec![zero, one, two]);
+    cell_gc::with_heap(|hs| {
+        let zero = hs.alloc(ThingBox { thing: Thing::Zero });
+        let one = hs.alloc(ThingBox { thing: Thing::One(zero.clone()) });
+        let two = hs.alloc(ThingBox { thing: Thing::Two(zero.clone(), one.clone()) });
+        let v: VecRef<ThingBoxRef> = hs.alloc(vec![zero, one, two]);
 
         fn log<'h>(out: &mut String, r: ThingBoxRef<'h>) {
             match r.thing() {
