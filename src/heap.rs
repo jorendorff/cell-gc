@@ -270,10 +270,24 @@ impl<'h> HeapSession<'h> {
             .downcast_mut()
     }
 
+    /// Set (or unset) the limit on the number of pages that can be used to
+    /// allocate values of type `T` in this heap. By default, no limit is set.
+    ///
+    /// See `try_alloc` for more.
+    ///
+    /// If there are already at least `limit` pages for `T` values, this may have no effect;
+    /// it doesn't cause pages to be freed.
     pub fn set_page_limit<T: IntoHeapAllocation<'h>>(&mut self, limit: Option<usize>) {
         self.get_page_set::<T>().set_page_limit(limit);
     }
 
+    /// Allocate memory, moving `value` into the heap.
+    ///
+    /// If a limit has previously been set using `set_page_limit`, and we run
+    /// up against the limit (already have at least that many pages for `T`
+    /// values, and they are all full of live values), `try_alloc` first
+    /// attempts to free some memory by doing garbage collection. If that
+    /// doesn't work, `try_alloc` returns `None`.
     pub fn try_alloc<T: IntoHeapAllocation<'h>>(&mut self, value: T) -> Option<T::Ref> {
         // For now, this is done very early, so that if it panics, the heap is
         // left in an OK state. Better wrapping of raw pointers would make it
@@ -295,11 +309,18 @@ impl<'h> HeapSession<'h> {
         }
     }
 
+    /// Allocate memory, moving `T` into the heap. This may cause garbage collection.
+    ///
+    /// # Panics
+    ///
+    /// If a page limit has been set, all pages are full, and GC fails to shake
+    /// anything loose.
     pub fn alloc<T: IntoHeapAllocation<'h>>(&mut self, value: T) -> T::Ref {
         self.try_alloc(value)
             .expect("out of memory (gc did not collect anything)")
     }
 
+    /// Do garbage collection.
     pub fn force_gc(&mut self) {
         self.heap.gc();
     }
