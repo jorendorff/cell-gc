@@ -90,8 +90,7 @@ pub unsafe trait IntoHeap<'h>: Sized {
 }
 
 /// Relate an `IntoHeap` type to the corresponding safe reference type.
-pub trait IntoHeapAllocation<'h>: IntoHeap<'h>
-{
+pub trait IntoHeapAllocation<'h>: IntoHeap<'h> {
     type Ref: IntoHeap<'h>;
 
     fn wrap_gcref(gcref: GcRef<'h, Self>) -> Self::Ref;
@@ -162,14 +161,14 @@ unsafe impl<'h, T: IntoHeap<'h>> IntoHeap<'h> for Option<T> {
     unsafe fn mark(storage: &Option<T::In>) {
         match storage {
             &None => (),
-            &Some(ref u) => T::mark(u)
+            &Some(ref u) => T::mark(u),
         }
     }
 
     unsafe fn from_heap(storage: &Option<T::In>) -> Option<T> {
         match storage {
             &None => None,
-            &Some(ref u) => Some(T::from_heap(u))
+            &Some(ref u) => Some(T::from_heap(u)),
         }
     }
 }

@@ -84,7 +84,7 @@ use gcref::GcRef;
 
 pub struct Heap {
     pages: HashMap<usize, PageBox>,
-    pins: RefCell<HashMap<UntypedPointer, usize>>
+    pins: RefCell<HashMap<UntypedPointer, usize>>,
 }
 
 // What does this do? You'll never guess!
@@ -92,7 +92,7 @@ pub type HeapSessionId<'h> = PhantomData<::std::cell::Cell<&'h mut ()>>;
 
 pub struct HeapSession<'h> {
     id: HeapSessionId<'h>,
-    heap: &'h mut Heap
+    heap: &'h mut Heap,
 }
 
 /// Create a heap, pass it to a callback, then destroy the heap.
@@ -101,7 +101,8 @@ pub struct HeapSession<'h> {
 /// the API is a little wonky --- but how many heaps were you planning on
 /// creating?)
 pub fn with_heap<R, F>(f: F) -> R
-    where F: for<'h> FnOnce(&mut HeapSession<'h>) -> R
+where
+    F: for<'h> FnOnce(&mut HeapSession<'h>) -> R,
 {
     Heap::new().enter(f)
 }
@@ -111,7 +112,7 @@ impl Heap {
     pub fn new() -> Heap {
         Heap {
             pages: HashMap::new(),
-            pins: RefCell::new(HashMap::new())
+            pins: RefCell::new(HashMap::new()),
         }
     }
 
@@ -128,7 +129,8 @@ impl Heap {
     ///     });
     ///
     pub fn enter<R, F>(&mut self, f: F) -> R
-        where F: for<'h> FnOnce(&mut HeapSession<'h>) -> R
+    where
+        F: for<'h> FnOnce(&mut HeapSession<'h>) -> R,
     {
         f(&mut HeapSession::new(self))
     }
@@ -154,12 +156,13 @@ impl Heap {
     /// `p` must point to a pinned allocation of type `T` in this heap.
     pub unsafe fn unpin<'h, T: IntoHeap<'h>>(&self, p: Pointer<T::In>) {
         let mut pins = self.pins.borrow_mut();
-        if {
+        let done = {
             let entry = pins.entry(p.into()).or_insert(0);
             assert!(*entry != 0);
             *entry -= 1;
             *entry == 0
-        } {
+        };
+        if done {
             pins.remove(&p.into());
         }
     }
@@ -210,14 +213,15 @@ impl<'h> HeapSession<'h> {
     fn new(heap: &'h mut Heap) -> HeapSession<'h> {
         HeapSession {
             id: PhantomData,
-            heap
+            heap,
         }
     }
 
     fn get_page<'a, T: IntoHeap<'h> + 'a>(&'a mut self) -> &'a mut TypedPage<T::In> {
         let key = heap_type_id::<T>();
         let heap_ptr = self.heap as *mut Heap;
-        self.heap.pages
+        self.heap
+            .pages
             .entry(key)
             .or_insert_with(|| PageBox::new::<T>(heap_ptr))
             .downcast_mut::<T>()
@@ -246,7 +250,9 @@ impl<'h> HeapSession<'h> {
     }
 
     pub fn alloc<T: IntoHeapAllocation<'h>>(&mut self, value: T) -> T::Ref {
-        self.try_alloc(value).expect("out of memory (gc did not collect anything)")
+        self.try_alloc(value).expect(
+            "out of memory (gc did not collect anything)",
+        )
     }
 
     pub fn force_gc(&mut self) {

@@ -35,7 +35,7 @@ pub struct PageHeader {
     allocated_bits: BitVec,
     mark_fn: unsafe fn(UntypedPointer),
     sweep_fn: unsafe fn(&mut PageHeader),
-    freelist: *mut ()
+    freelist: *mut (),
 }
 
 impl PageHeader {
@@ -77,7 +77,7 @@ impl PageHeader {
 
 pub struct TypedPage<U> {
     pub header: PageHeader,
-    pub allocations: PhantomData<U>
+    pub allocations: PhantomData<U>,
 }
 
 /// Returns the smallest multiple of `k` that is at least `n`.
@@ -116,7 +116,7 @@ impl<U> TypedPage<U> {
 
     unsafe fn init(&mut self) {
         let mut addr = self.first_object_addr();
-        for _ in 0 .. Self::capacity() {
+        for _ in 0..Self::capacity() {
             self.add_to_free_list(addr as *mut U);
 
             // This can't use `ptr = ptr.offset(1)` because if U is smaller
@@ -149,7 +149,10 @@ impl<U> TypedPage<U> {
         assert!(ptr.as_void() < (base + (Self::capacity() * Self::allocation_size())) as _);
 
         let index = (ptr.as_usize() - base as usize) / Self::allocation_size();
-        assert_eq!((base + index * Self::allocation_size()) as *const (), ptr.as_void());
+        assert_eq!(
+            (base + index * Self::allocation_size()) as *const (),
+            ptr.as_void()
+        );
         index
     }
 
@@ -180,7 +183,7 @@ impl<U> TypedPage<U> {
 
     unsafe fn sweep(&mut self) {
         let mut addr = self.first_object_addr();
-        for i in 0 .. Self::capacity() {
+        for i in 0..Self::capacity() {
             if self.header.allocated_bits[i] && !self.header.mark_bits[i] {
                 ptr::drop_in_place(addr as *mut U);
                 self.header.allocated_bits.set(i, false);
@@ -199,11 +202,14 @@ pub struct PageBox(*mut PageHeader);
 
 impl PageBox {
     pub fn new<'h, T: IntoHeap<'h>>(heap: *mut Heap) -> PageBox {
-        assert!(mem::size_of::<TypedPage<T::In>>() <=
-                TypedPage::<T::In>::first_allocation_offset());
-        assert!(TypedPage::<T::In>::first_allocation_offset()
-                + TypedPage::<T::In>::capacity() * TypedPage::<T::In>::allocation_size()
-                <= PAGE_SIZE);
+        assert!(
+            mem::size_of::<TypedPage<T::In>>() <= TypedPage::<T::In>::first_allocation_offset()
+        );
+        assert!(
+            TypedPage::<T::In>::first_allocation_offset() +
+                TypedPage::<T::In>::capacity() * TypedPage::<T::In>::allocation_size() <=
+                PAGE_SIZE
+        );
         let raw_page: *mut () = {
             let mut vec: Vec<u8> = Vec::with_capacity(PAGE_SIZE);
             let page = vec.as_mut_ptr() as *mut ();
@@ -219,17 +225,20 @@ impl PageBox {
         let page: *mut TypedPage<T::In> = raw_page as *mut TypedPage<T::In>;
         let capacity = TypedPage::<T::In>::capacity();
         unsafe {
-            ptr::write(page, TypedPage {
-                header: PageHeader {
-                    heap: heap,
-                    mark_bits: BitVec::from_elem(capacity, false),
-                    allocated_bits: BitVec::from_elem(capacity, false),
-                    mark_fn: mark_entry_point::<T>,
-                    sweep_fn: sweep_entry_point::<T>,
-                    freelist: ptr::null_mut()
+            ptr::write(
+                page,
+                TypedPage {
+                    header: PageHeader {
+                        heap: heap,
+                        mark_bits: BitVec::from_elem(capacity, false),
+                        allocated_bits: BitVec::from_elem(capacity, false),
+                        mark_fn: mark_entry_point::<T>,
+                        sweep_fn: sweep_entry_point::<T>,
+                        freelist: ptr::null_mut(),
+                    },
+                    allocations: PhantomData,
                 },
-                allocations: PhantomData
-            });
+            );
             TypedPage::init(&mut *page);
             PageBox(&mut (*page).header as *mut PageHeader)
         }

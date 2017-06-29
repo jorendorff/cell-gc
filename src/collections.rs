@@ -89,8 +89,9 @@ impl<'h, T: IntoHeap<'h>> VecRef<'h, T> {
     /// may be presumed not to nest. Avoid `to_heap`.
     ///
     unsafe fn with_storage<'v, 'b, R, F>(&'v self, f: F) -> R
-        where F: FnOnce(&'b Vec<T::In>) -> R,
-              'v: 'b
+    where
+        F: FnOnce(&'b Vec<T::In>) -> R,
+        'v: 'b,
     {
         // TODO: in debug builds at least there should be a RefCell-like "lock" here,
         // asserting that no direct Rust references exist to anything in the GC heap.
@@ -105,8 +106,9 @@ impl<'h, T: IntoHeap<'h>> VecRef<'h, T> {
     /// Like `with_storage`, except the caller must ensure that no other
     /// references to the vector exist. It still amounts to: don't nest.
     unsafe fn with_storage_mut<'v, 'b, R, F>(&'v self, f: F) -> R
-        where F: FnOnce(&'b mut Vec<T::In>) -> R,
-              'v: 'b
+    where
+        F: FnOnce(&'b mut Vec<T::In>) -> R,
+        'v: 'b,
     {
         // TODO should assert here, like unsafe_deref
         f(&mut *self.0.as_mut_ptr())
@@ -122,9 +124,7 @@ impl<'h, T: IntoHeap<'h>> VecRef<'h, T> {
     ///
     /// Panics if `index` is out of bounds.
     pub fn get(&self, index: usize) -> T {
-        unsafe {
-            self.with_storage(|v| IntoHeap::from_heap(&v[index]))
-        }
+        unsafe { self.with_storage(|v| IntoHeap::from_heap(&v[index])) }
     }
 
     /// Copy the vector out of the GC-managed heap. This returns an ordinary,
@@ -160,9 +160,7 @@ impl<'h, T: IntoHeap<'h>> VecRef<'h, T> {
     }
 
     pub fn capacity(&self) -> usize {
-        unsafe {
-            self.with_storage(|v| v.capacity())
-        }
+        unsafe { self.with_storage(|v| v.capacity()) }
     }
 
     pub fn reserve(&self, additional: usize) {
@@ -218,9 +216,7 @@ impl<'h, T: IntoHeap<'h>> VecRef<'h, T> {
     }
 
     pub fn pop(&self) -> Option<T> {
-        unsafe {
-            self.with_storage_mut(|v| v.pop().map(|u| IntoHeap::from_heap(&u)))
-        }
+        unsafe { self.with_storage_mut(|v| v.pop().map(|u| IntoHeap::from_heap(&u))) }
     }
 
     pub fn append(&self, other: &VecRef<'h, T>) {
@@ -238,9 +234,7 @@ impl<'h, T: IntoHeap<'h>> VecRef<'h, T> {
     }
 
     pub fn len(&self) -> usize {
-        unsafe {
-            self.with_storage(|v| v.len())
-        }
+        unsafe { self.with_storage(|v| v.len()) }
     }
 
     pub fn is_empty(&self) -> bool {
@@ -253,26 +247,28 @@ impl<'h, T: IntoHeap<'h>> VecRef<'h, T> {
     /// but cell-gc never hands out Rust references to heap values. Instead
     /// this returns a clone of the value.
     pub fn first(&self) -> Option<T> {
-        unsafe {
-            self.with_storage(|v| v.first().map(|u| IntoHeap::from_heap(u)))
-        }
+        unsafe { self.with_storage(|v| v.first().map(|u| IntoHeap::from_heap(u))) }
     }
 
     /// Get the last element of the vector, or `None` if the vector is empty.
     ///
     /// Like `first()`, this clones the value.
     pub fn last(&self) -> Option<T> {
-        unsafe {
-            self.with_storage(|v| v.last().map(|u| IntoHeap::from_heap(u)))
-        }
+        unsafe { self.with_storage(|v| v.last().map(|u| IntoHeap::from_heap(u))) }
     }
 
     /// Sort the vector in place.
-    pub fn sort(&self) where T: Ord {
+    pub fn sort(&self)
+    where
+        T: Ord,
+    {
         self.sort_by(Ord::cmp);
     }
 
-    pub fn sort_by<F>(&self, mut compare: F) where F: FnMut(&T, &T) -> Ordering {
+    pub fn sort_by<F>(&self, mut compare: F)
+    where
+        F: FnMut(&T, &T) -> Ordering,
+    {
         // Make the heap vector empty while we're sorting it.  This way, the
         // user can do whatever malicious nonsense they like to the heap in
         // `compare`, and our copy of the vector is unaffected.

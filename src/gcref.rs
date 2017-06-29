@@ -6,7 +6,7 @@ use std::marker::PhantomData;
 
 pub struct GcRef<'h, T: IntoHeap<'h>> {
     ptr: Pointer<T::In>,
-    heap_id: HeapSessionId<'h>
+    heap_id: HeapSessionId<'h>,
 }
 
 impl<'h, T: IntoHeap<'h>> GcRef<'h, T> {
@@ -19,13 +19,21 @@ impl<'h, T: IntoHeap<'h>> GcRef<'h, T> {
         (*heap).pin::<T>(p);
         GcRef {
             ptr: p,
-            heap_id: PhantomData
+            heap_id: PhantomData,
         }
     }
 
-    pub fn ptr(&self) -> Pointer<T::In> { self.ptr }
-    pub fn as_ptr(&self) -> *const T::In { self.ptr.as_raw() }
-    pub fn as_mut_ptr(&self) -> *mut T::In { self.ptr.as_raw() as *mut T::In }
+    pub fn ptr(&self) -> Pointer<T::In> {
+        self.ptr
+    }
+
+    pub fn as_ptr(&self) -> *const T::In {
+        self.ptr.as_raw()
+    }
+
+    pub fn as_mut_ptr(&self) -> *mut T::In {
+        self.ptr.as_raw() as *mut T::In
+    }
 }
 
 impl<'h, T: IntoHeap<'h>> Drop for GcRef<'h, T> {
@@ -46,7 +54,7 @@ impl<'h, T: IntoHeap<'h>> Clone for GcRef<'h, T> {
         }
         GcRef {
             ptr: ptr,
-            heap_id: heap_id
+            heap_id: heap_id,
         }
     }
 }

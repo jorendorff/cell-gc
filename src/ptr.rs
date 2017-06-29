@@ -42,8 +42,11 @@ impl<T> Pointer<T> {
     /// the GC's internal `PageHeader`.
     #[inline]
     pub unsafe fn new(ptr: *const T) -> Pointer<T> {
-        assert_eq!(ptr as usize & (mem::align_of::<T>() - 1), 0,
-                   "heap pointers respect T's alignment");
+        assert_eq!(
+            ptr as usize & (mem::align_of::<T>() - 1),
+            0,
+            "heap pointers respect T's alignment"
+        );
         assert!(
             {
                 let ptr = ptr as usize;
@@ -147,8 +150,11 @@ pub struct UntypedPointer(*const ());
 impl UntypedPointer {
     #[inline]
     unsafe fn new(ptr: *const ()) -> UntypedPointer {
-        assert_eq!(ptr as usize & (mem::size_of::<usize>() - 1), 0,
-                   "All GC heap pointers are at least word-aligned");
+        assert_eq!(
+            ptr as usize & (mem::size_of::<usize>() - 1),
+            0,
+            "All GC heap pointers are at least word-aligned"
+        );
         assert!(
             {
                 let ptr = ptr as usize;
