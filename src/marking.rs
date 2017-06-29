@@ -11,10 +11,8 @@ pub fn mark<'h>(heap: &mut Heap) {
     heap.clear_mark_bits();
 
     heap.with_marking_tracer(|heap, mut tracer| {
-        heap.each_pin(|ptr| {
-            unsafe {
-                (*PageHeader::find(ptr)).mark(ptr, &mut tracer);
-            }
+        heap.each_pin(|ptr| unsafe {
+            (*PageHeader::find(ptr)).mark(ptr, &mut tracer);
         });
 
         tracer.mark_to_fix_point();
@@ -81,7 +79,8 @@ impl<'h> MarkingTracer {
 
 impl Tracer for MarkingTracer {
     fn visit<'h, T>(&mut self, ptr: Pointer<T::In>)
-        where T: IntoHeap<'h>
+    where
+        T: IntoHeap<'h>,
     {
         let is_marked = unsafe { Heap::get_mark_bit::<T>(ptr) };
         if is_marked {

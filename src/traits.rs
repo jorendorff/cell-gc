@@ -88,7 +88,8 @@ pub unsafe trait IntoHeap<'h>: Sized {
     /// safely, because `self` must be a direct, unwrapped reference to a value
     /// stored in the GC heap, which ordinary users cannot obtain.
     unsafe fn trace<R>(&Self::In, tracer: &mut R)
-        where R: Tracer;
+    where
+        R: Tracer;
 }
 
 /// Relate an `IntoHeap` type to the corresponding safe reference type.
@@ -100,7 +101,8 @@ pub trait IntoHeapAllocation<'h>: IntoHeap<'h> {
 
 pub trait Tracer {
     fn visit<'h, T>(&mut self, Pointer<T::In>)
-        where T: IntoHeap<'h>;
+    where
+        T: IntoHeap<'h>;
 }
 
 // === Provided implmentations for primitive types
@@ -165,7 +167,8 @@ unsafe impl<'h, T: IntoHeap<'h>> IntoHeap<'h> for Option<T> {
     }
 
     unsafe fn trace<R>(storage: &Option<T::In>, tracer: &mut R)
-        where R: Tracer
+    where
+        R: Tracer,
     {
         match storage {
             &None => (),

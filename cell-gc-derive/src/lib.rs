@@ -61,10 +61,12 @@ fn impl_into_heap_for_struct(ast: &syn::DeriveInput, data: &syn::VariantData) ->
 
             // 2. IntoHeap implementation.
             // Body of the trace() method.
-            let trace_fields: Vec<Tokens> = fields.iter().map(|f| {
-                let name = &f.ident;
-                let ty = &f.ty;
-                quote! {
+            let trace_fields: Vec<Tokens> = fields
+                .iter()
+                .map(|f| {
+                    let name = &f.ident;
+                    let ty = &f.ty;
+                    quote! {
                     <#ty as ::cell_gc::traits::IntoHeap<#heap_lifetime>>
                         ::trace(&storage.#name, tracer);
                 }
@@ -384,7 +386,8 @@ fn impl_into_heap_for_enum(ast: &syn::DeriveInput, variants: &[syn::Variant]) ->
                 quote! {
                     #storage_type_name::#ident { #(ref #field_names),* } => {
                         #(
-                            <#field_types as ::cell_gc::traits::IntoHeap>::trace(#field_names, tracer);
+                            <#field_types as ::cell_gc::traits::IntoHeap>
+                                ::trace(#field_names, tracer);
                         )*
                     }
                 }
@@ -397,7 +400,8 @@ fn impl_into_heap_for_enum(ast: &syn::DeriveInput, variants: &[syn::Variant]) ->
                 quote! {
                     #storage_type_name::#ident( #(ref #bindings),* ) => {
                         #(
-                            <#field_types as ::cell_gc::traits::IntoHeap>::trace(#bindings, tracer);
+                            <#field_types as ::cell_gc::traits::IntoHeap>
+                                ::trace(#bindings, tracer);
                         )*
                     }
                 }

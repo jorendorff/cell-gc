@@ -11,8 +11,7 @@ use ptr::{Pointer, UntypedPointer};
 
 /// Non-inlined function that serves as an entry point to marking. This is used
 /// for marking root set entries.
-unsafe fn mark_entry_point<'h, T: IntoHeap<'h>>(addr: UntypedPointer,
-                                                tracer: &mut MarkingTracer) {
+unsafe fn mark_entry_point<'h, T: IntoHeap<'h>>(addr: UntypedPointer, tracer: &mut MarkingTracer) {
     let addr = addr.as_typed_ptr::<T::In>();
 
     if Heap::get_mark_bit::<T>(addr) {

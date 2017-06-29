@@ -18,7 +18,8 @@ unsafe impl<'h, T: IntoHeap<'h>> IntoHeap<'h> for Vec<T> {
     }
 
     unsafe fn trace<R>(storage: &Vec<T::In>, tracer: &mut R)
-        where R: Tracer
+    where
+        R: Tracer,
     {
         for r in storage {
             T::trace(r, tracer);
@@ -67,7 +68,8 @@ unsafe impl<'h, T: IntoHeap<'h>> IntoHeap<'h> for VecRef<'h, T> {
     }
 
     unsafe fn trace<R>(storage: &Pointer<Vec<T::In>>, tracer: &mut R)
-        where R: Tracer
+    where
+        R: Tracer,
     {
         // BUG - should call a method mark_ref that checks the mark bit before
         // doing anything

@@ -172,7 +172,8 @@ impl Heap {
 
     /// Call the given function on each pinned root.
     pub fn each_pin<F>(&self, mut f: F)
-        where F: FnMut(UntypedPointer)
+    where
+        F: FnMut(UntypedPointer),
     {
         for (&ptr, _) in self.pins.borrow().iter() {
             f(ptr);
@@ -207,7 +208,8 @@ impl Heap {
     /// have two independent borrows of the heap and the marking tracer and the
     /// same time.
     pub(crate) fn with_marking_tracer<F, O>(&mut self, mut f: F) -> O
-        where F: FnMut(&mut Self, &mut MarkingTracer) -> O
+    where
+        F: FnMut(&mut Self, &mut MarkingTracer) -> O,
     {
         let mut tracer = self.take_marking_tracer();
         let retval = f(self, &mut tracer);
