@@ -131,7 +131,7 @@ impl Heap {
     fn open<'h>(&'h mut self) -> HeapSession<'h> {
         HeapSession {
             id: PhantomData,
-            heap: self
+            heap: self,
         }
     }
 
@@ -196,7 +196,9 @@ impl Heap {
         }
     }
 
-    pub unsafe fn from_allocation<'h, T: IntoHeapAllocation<'h>>(ptr: Pointer<T::In>) -> *const Heap {
+    pub unsafe fn from_allocation<'h, T: IntoHeapAllocation<'h>>(
+        ptr: Pointer<T::In>,
+    ) -> *const Heap {
         (*TypedPage::find(ptr)).header.heap
     }
 

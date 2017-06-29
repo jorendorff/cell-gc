@@ -13,7 +13,7 @@ use ptr::{Pointer, UntypedPointer};
 /// for marking root set entries.
 unsafe fn mark_entry_point<'h, T>(addr: UntypedPointer, tracer: &mut MarkingTracer)
 where
-    T: IntoHeapAllocation<'h>
+    T: IntoHeapAllocation<'h>,
 {
     let addr = addr.as_typed_ptr::<T::In>();
 
@@ -78,7 +78,7 @@ impl PageHeader {
 
     pub fn downcast_mut<'h, T>(&mut self) -> Option<&mut TypedPage<T::In>>
     where
-        T: IntoHeapAllocation<'h>
+        T: IntoHeapAllocation<'h>,
     {
         if heap_type_id::<T>() == self.type_id() {
             let ptr = self as *mut PageHeader as *mut TypedPage<T::In>;
@@ -327,7 +327,7 @@ impl PageSet {
             heap,
             sweep_fn: sweep_entry_point::<T>,
             pages: vec![],
-            limit: None
+            limit: None,
         }
     }
 
@@ -338,14 +338,17 @@ impl PageSet {
     /// If T is not the actual allocation type for this page set.
     pub fn downcast_mut<'a, 'h, T>(&'a mut self) -> PageSetRef<'a, 'h, T>
     where
-        T: IntoHeapAllocation<'h> + 'a
+        T: IntoHeapAllocation<'h> + 'a,
     {
-        assert_eq!(self.sweep_fn as *const (), sweep_entry_point::<T> as *const ());
+        assert_eq!(
+            self.sweep_fn as *const (),
+            sweep_entry_point::<T> as *const ()
+        );
 
         PageSetRef {
             pages: self,
             id: PhantomData,
-            also: PhantomData
+            also: PhantomData,
         }
     }
 
@@ -382,7 +385,7 @@ impl PageSet {
 pub struct PageSetRef<'a, 'h, T: IntoHeapAllocation<'h> + 'a> {
     pages: &'a mut PageSet,
     id: HeapSessionId<'h>,
-    also: PhantomData<&'a mut T>
+    also: PhantomData<&'a mut T>,
 }
 
 impl<'a, 'h, T: IntoHeapAllocation<'h> + 'a> PageSetRef<'a, 'h, T> {
