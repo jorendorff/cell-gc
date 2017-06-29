@@ -1,10 +1,10 @@
 //! Collections for use with GC references.
 
-use traits::{IntoHeap, IntoHeapAllocation, Tracer};
 use gcref::GcRef;
 use ptr::Pointer;
-use std::mem;
 use std::cmp::Ordering;
+use std::mem;
+use traits::{IntoHeap, IntoHeapAllocation, Tracer};
 
 unsafe impl<'h, T: IntoHeap<'h>> IntoHeap<'h> for Vec<T> {
     type In = Vec<T::In>;

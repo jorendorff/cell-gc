@@ -1,8 +1,8 @@
-use traits::IntoHeapAllocation;
 use heap::{Heap, HeapSessionId};
 use ptr::Pointer;
 use std::fmt;
 use std::marker::PhantomData;
+use traits::IntoHeapAllocation;
 
 pub struct GcRef<'h, T: IntoHeapAllocation<'h>> {
     ptr: Pointer<T::In>,

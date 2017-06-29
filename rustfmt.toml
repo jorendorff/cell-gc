@@ -1,3 +1,6 @@
 write_mode = "Overwrite"
+
 closure_block_indent_threshold = 0
+reorder_imported_names = true
+reorder_imports = true
 use_try_shorthand = true

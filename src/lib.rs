@@ -238,9 +238,9 @@ pub mod collections;
 pub mod ptr;
 mod marking;
 
-pub use heap::{Heap, HeapSession, with_heap};
-pub use gcref::GcRef;
 pub use gcleaf::GCLeaf;
+pub use gcref::GcRef;
+pub use heap::{Heap, HeapSession, with_heap};
 
 /// Return the number of allocations of a given type that fit in a "page".
 /// (Unstable. This is a temporary hack for testing.)

@@ -73,15 +73,15 @@
 //! avoid reading pointer fields while dropping, and avoid calling into
 //! arbitrary code.
 
+use gcref::GcRef;
+use marking::{MarkingTracer, mark};
+use pages::{PageSet, PageSetRef, TypedPage, heap_type_id};
+use ptr::{Pointer, UntypedPointer};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::ptr;
 use traits::IntoHeapAllocation;
-use pages::{heap_type_id, TypedPage, PageSet, PageSetRef};
-use ptr::{Pointer, UntypedPointer};
-use gcref::GcRef;
-use marking::{mark, MarkingTracer};
 
 pub struct Heap {
     page_sets: HashMap<usize, PageSet>,
