@@ -1,6 +1,7 @@
 //! Non-pinning pointers into the GC heap.
 
 use pages::{PAGE_ALIGN, TypedPage};
+use std::fmt;
 use std::marker::PhantomData;
 use std::mem;
 
@@ -22,7 +23,7 @@ use std::mem;
 /// `GcRef<T>` for that instead), only for GC internals. We have to make it
 /// `pub` so that `#[derive(IntoHeap)]` can generate code that uses it, but no
 /// one else should!
-#[derive(Debug, Hash, PartialOrd, Ord)]
+#[derive(Hash, PartialOrd, Ord)]
 pub struct Pointer<T> {
     ptr: UntypedPointer,
     phantom: PhantomData<*const T>,
@@ -106,6 +107,12 @@ impl<T> Pointer<T> {
     }
 }
 
+impl<T> fmt::Debug for Pointer<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Pointer {{ {:p} }}", self.ptr.as_void())
+    }
+}
+
 impl<T> Clone for Pointer<T> {
     fn clone(&self) -> Pointer<T> {
         *self
@@ -176,7 +183,7 @@ impl UntypedPointer {
     /// safety rules.
     #[inline]
     pub unsafe fn as_typed_ptr<T>(&self) -> Pointer<T> {
-        Pointer::new(self.0 as *const _)
+        Pointer::new(self.0 as *const T)
     }
 
     /// Is this pointer null?

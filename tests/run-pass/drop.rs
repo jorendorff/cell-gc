@@ -28,6 +28,7 @@ impl<'h> Drop for DropperStorage<'h> {
 fn main() {
     cell_gc::with_heap(|hs| {
         let mut drop_count: i32 = 0;
+
         let ptr: *mut i32 = &mut drop_count;
 
         let mut r = hs.alloc(Dropper { addr: ptr as usize, ignore: Nothing });

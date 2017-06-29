@@ -4,15 +4,29 @@
 use std::{cmp, mem, ptr};
 use std::marker::PhantomData;
 use bit_vec::BitVec;
-use traits::IntoHeap;
+use traits::{IntoHeap, Tracer};
 use heap::Heap;
+use marking::MarkingTracer;
 use ptr::{Pointer, UntypedPointer};
 
 /// Non-inlined function that serves as an entry point to marking. This is used
 /// for marking root set entries.
-unsafe fn mark_entry_point<'h, T: IntoHeap<'h>>(addr: UntypedPointer) {
+unsafe fn mark_entry_point<'h, T: IntoHeap<'h>>(addr: UntypedPointer,
+                                                tracer: &mut MarkingTracer) {
     let addr = addr.as_typed_ptr::<T::In>();
-    T::trace(addr.as_ref());
+
+    if Heap::get_mark_bit::<T>(addr) {
+        // If the mark bit is set, then this object is gray in the classic
+        // tri-color sense: seen but we just popped it off the mark stack and
+        // have't finished enumerating its outgoing edges.
+        T::trace(addr.as_ref(), tracer);
+    } else {
+        // If the mark bit is not set, then this object is white in the classic
+        // tri-color sense: freshly discovered to be live, and we now need to
+        // set its mark bit and then process its edges or push it onto the mark
+        // stack for later edge processing.
+        tracer.visit::<T>(addr);
+    }
 }
 
 pub fn heap_type_id<'h, T: IntoHeap<'h>>() -> usize {
@@ -33,7 +47,7 @@ pub struct PageHeader {
     pub heap: *mut Heap,
     mark_bits: BitVec,
     allocated_bits: BitVec,
-    mark_fn: unsafe fn(UntypedPointer),
+    mark_fn: unsafe fn(UntypedPointer, &mut MarkingTracer),
     sweep_fn: unsafe fn(&mut PageHeader),
     freelist: *mut (),
 }
@@ -53,8 +67,8 @@ impl PageHeader {
         self.allocated_bits.none()
     }
 
-    pub unsafe fn mark(&self, ptr: UntypedPointer) {
-        (self.mark_fn)(ptr);
+    pub unsafe fn mark(&self, ptr: UntypedPointer, tracer: &mut MarkingTracer) {
+        (self.mark_fn)(ptr, tracer);
     }
 
     pub unsafe fn sweep(&mut self) {

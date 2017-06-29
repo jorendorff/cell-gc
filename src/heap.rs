@@ -78,13 +78,15 @@ use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::ptr;
 use traits::{IntoHeap, IntoHeapAllocation};
-use pages::{heap_type_id, PageHeader, TypedPage, PageBox};
+use pages::{heap_type_id, TypedPage, PageBox};
 use ptr::{Pointer, UntypedPointer};
 use gcref::GcRef;
+use marking::{mark, MarkingTracer};
 
 pub struct Heap {
     pages: HashMap<usize, PageBox>,
     pins: RefCell<HashMap<UntypedPointer, usize>>,
+    marking_tracer: Option<MarkingTracer>,
 }
 
 // What does this do? You'll never guess!
@@ -113,6 +115,7 @@ impl Heap {
         Heap {
             pages: HashMap::new(),
             pins: RefCell::new(HashMap::new()),
+            marking_tracer: Some(MarkingTracer::default()),
         }
     }
 
@@ -167,6 +170,15 @@ impl Heap {
         }
     }
 
+    /// Call the given function on each pinned root.
+    pub fn each_pin<F>(&self, mut f: F)
+        where F: FnMut(UntypedPointer)
+    {
+        for (&ptr, _) in self.pins.borrow().iter() {
+            f(ptr);
+        }
+    }
+
     pub unsafe fn from_allocation<'h, T: IntoHeap<'h>>(ptr: Pointer<T::In>) -> *const Heap {
         (*TypedPage::find(ptr)).header.heap
     }
@@ -179,18 +191,42 @@ impl Heap {
         (*TypedPage::find(ptr)).set_mark_bit(ptr);
     }
 
-    fn gc(&mut self) {
-        unsafe {
-            // mark phase
-            for (_, page) in self.pages.iter_mut() {
-                page.clear_mark_bits();
-            }
-            for (&ptr, _) in self.pins.borrow().iter() {
-                (*PageHeader::find(ptr)).mark(ptr);
-            }
+    fn take_marking_tracer(&mut self) -> MarkingTracer {
+        self.marking_tracer.take().unwrap()
+    }
 
-            // sweep phase
-            for (_, page) in self.pages.iter_mut() {
+    fn replace_marking_tracer(&mut self, tracer: MarkingTracer) {
+        assert!(self.marking_tracer.is_none());
+        assert!(tracer.mark_stack_is_empty());
+        self.marking_tracer = Some(tracer);
+    }
+
+    /// Run the given function with the marking tracer.
+    ///
+    /// The marking tracer is taken out of the heap and replaced again so we can
+    /// have two independent borrows of the heap and the marking tracer and the
+    /// same time.
+    pub(crate) fn with_marking_tracer<F, O>(&mut self, mut f: F) -> O
+        where F: FnMut(&mut Self, &mut MarkingTracer) -> O
+    {
+        let mut tracer = self.take_marking_tracer();
+        let retval = f(self, &mut tracer);
+        self.replace_marking_tracer(tracer);
+        retval
+    }
+
+    pub(crate) fn clear_mark_bits(&mut self) {
+        for (_, page) in self.pages.iter_mut() {
+            page.clear_mark_bits();
+        }
+    }
+
+    fn gc(&mut self) {
+        mark(self);
+
+        // sweep phase
+        for (_, page) in self.pages.iter_mut() {
+            unsafe {
                 page.sweep();
             }
         }

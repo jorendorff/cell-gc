@@ -66,7 +66,7 @@ fn impl_into_heap_for_struct(ast: &syn::DeriveInput, data: &syn::VariantData) ->
                 let ty = &f.ty;
                 quote! {
                     <#ty as ::cell_gc::traits::IntoHeap<#heap_lifetime>>
-                        ::trace(&storage.#name);
+                        ::trace(&storage.#name, tracer);
                 }
                 })
                 .collect();
@@ -92,13 +92,14 @@ fn impl_into_heap_for_struct(ast: &syn::DeriveInput, data: &syn::VariantData) ->
                         }
                     }
 
-                    unsafe fn trace(storage: &Self::In) {
-                        let ptr = ::cell_gc::ptr::Pointer::new(storage);
+                    unsafe fn trace<R>(storage: &Self::In, tracer: &mut R)
+                        where R: ::cell_gc::traits::Tracer
+                    {
+                        #( #trace_fields )*
 
-                        if !::cell_gc::Heap::get_mark_bit::<Self>(ptr) {
-                            ::cell_gc::Heap::set_mark_bit::<Self>(ptr);
-                            #( #trace_fields )*
-                        }
+                        // Quiet unused variable warnings when `$(...)*` expands
+                        // to nothing.
+                        let _ = tracer;
                     }
 
                     unsafe fn from_heap(storage: &Self::In) -> Self {
@@ -151,10 +152,11 @@ fn impl_into_heap_for_struct(ast: &syn::DeriveInput, data: &syn::VariantData) ->
                         self.0.ptr()
                     }
 
-                    unsafe fn trace(storage: &Self::In) {
+                    unsafe fn trace<R>(storage: &Self::In, tracer: &mut R)
+                        where R: ::cell_gc::traits::Tracer
+                    {
                         if !storage.is_null() {
-                            <#name #ty_generics as ::cell_gc::traits::IntoHeap<#heap_lifetime>>
-                                ::trace(storage.as_ref());
+                            tracer.visit::<#name #ty_generics>(*storage);
                         }
                     }
 
@@ -382,7 +384,7 @@ fn impl_into_heap_for_enum(ast: &syn::DeriveInput, variants: &[syn::Variant]) ->
                 quote! {
                     #storage_type_name::#ident { #(ref #field_names),* } => {
                         #(
-                            <#field_types as ::cell_gc::traits::IntoHeap>::trace(#field_names);
+                            <#field_types as ::cell_gc::traits::IntoHeap>::trace(#field_names, tracer);
                         )*
                     }
                 }
@@ -395,7 +397,7 @@ fn impl_into_heap_for_enum(ast: &syn::DeriveInput, variants: &[syn::Variant]) ->
                 quote! {
                     #storage_type_name::#ident( #(ref #bindings),* ) => {
                         #(
-                            <#field_types as ::cell_gc::traits::IntoHeap>::trace(#bindings);
+                            <#field_types as ::cell_gc::traits::IntoHeap>::trace(#bindings, tracer);
                         )*
                     }
                 }
@@ -426,10 +428,16 @@ fn impl_into_heap_for_enum(ast: &syn::DeriveInput, variants: &[syn::Variant]) ->
                 }
             }
 
-            unsafe fn trace(storage: &Self::In) {
+            unsafe fn trace<R>(storage: &Self::In, tracer: &mut R)
+                where R: ::cell_gc::traits::Tracer
+            {
                 match *storage {
                     #( #trace_arms ),*
                 }
+
+                // Quiet unused variable warnings when `$(...)*` expands to
+                // nothing.
+                let _ = tracer;
             }
         }
     };
