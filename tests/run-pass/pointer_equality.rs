@@ -1,6 +1,6 @@
 //! Test equality properties of GCRef values.
 
-#[macro_use] extern crate cell_gc;
+extern crate cell_gc;
 #[macro_use] extern crate cell_gc_derive;
 
 /// A linked list of valueless nodes that lives in the GC heap.

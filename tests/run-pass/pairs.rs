@@ -1,4 +1,4 @@
-#[macro_use] extern crate cell_gc;
+extern crate cell_gc;
 #[macro_use] extern crate cell_gc_derive;
 mod pairs_aux;
 use pairs_aux::*;

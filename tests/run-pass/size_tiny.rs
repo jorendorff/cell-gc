@@ -1,6 +1,6 @@
 //! The GC can work with objects that only take up one byte.
 
-#[macro_use] extern crate cell_gc;
+extern crate cell_gc;
 #[macro_use] extern crate cell_gc_derive;
 
 use std::marker::PhantomData;

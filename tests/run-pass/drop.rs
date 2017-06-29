@@ -1,6 +1,6 @@
 //! Destructors are called.
 
-#[macro_use] extern crate cell_gc;
+extern crate cell_gc;
 #[macro_use] extern crate cell_gc_derive;
 
 #[derive(IntoHeap)]

@@ -1,6 +1,6 @@
 //! Basic tuple-like enum variants are supported.
 
-#[macro_use] extern crate cell_gc;
+extern crate cell_gc;
 #[macro_use] extern crate cell_gc_derive;
 
 use cell_gc::collections::VecRef;

@@ -1,6 +1,6 @@
 //! If you use enough force, you can actually use this GC to implement a toy VM.
 
-#[macro_use] extern crate cell_gc;
+extern crate cell_gc;
 #[macro_use] extern crate cell_gc_derive;
 use cell_gc::{HeapSession, with_heap, GCLeaf};
 use std::rc::Rc;

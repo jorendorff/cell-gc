@@ -1,6 +1,6 @@
 //! The GC can work with objects that take up most of a page.
 
-#[macro_use] extern crate cell_gc;
+extern crate cell_gc;
 #[macro_use] extern crate cell_gc_derive;
 
 type Big32 = (u64, u64, u64, u64);

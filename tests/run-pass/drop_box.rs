@@ -1,6 +1,6 @@
 //! Destructors are called when a heap struct with a Box field is dropped.
 
-#[macro_use] extern crate cell_gc;
+extern crate cell_gc;
 #[macro_use] extern crate cell_gc_derive;
 
 #[derive(Clone, Debug)]

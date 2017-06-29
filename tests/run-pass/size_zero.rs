@@ -1,6 +1,6 @@
 //! The GC can allocate objects that are zero-size.
 
-#[macro_use] extern crate cell_gc;
+extern crate cell_gc;
 #[macro_use] extern crate cell_gc_derive;
 use std::marker::PhantomData;
 
