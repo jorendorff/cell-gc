@@ -1,15 +1,15 @@
-use traits::IntoHeap;
+use traits::IntoHeapAllocation;
 use heap::{Heap, HeapSessionId};
 use ptr::Pointer;
 use std::fmt;
 use std::marker::PhantomData;
 
-pub struct GcRef<'h, T: IntoHeap<'h>> {
+pub struct GcRef<'h, T: IntoHeapAllocation<'h>> {
     ptr: Pointer<T::In>,
     heap_id: HeapSessionId<'h>,
 }
 
-impl<'h, T: IntoHeap<'h>> GcRef<'h, T> {
+impl<'h, T: IntoHeapAllocation<'h>> GcRef<'h, T> {
     /// Pin an object, returning a new `GcRef` that will unpin it when
     /// dropped. Unsafe because if `p` is not a pointer to a live allocation of
     /// type `T::In` --- and a complete allocation, not a sub-object of one ---
@@ -36,7 +36,7 @@ impl<'h, T: IntoHeap<'h>> GcRef<'h, T> {
     }
 }
 
-impl<'h, T: IntoHeap<'h>> Drop for GcRef<'h, T> {
+impl<'h, T: IntoHeapAllocation<'h>> Drop for GcRef<'h, T> {
     fn drop(&mut self) {
         unsafe {
             let heap = Heap::from_allocation::<T>(self.ptr);
@@ -45,7 +45,7 @@ impl<'h, T: IntoHeap<'h>> Drop for GcRef<'h, T> {
     }
 }
 
-impl<'h, T: IntoHeap<'h>> Clone for GcRef<'h, T> {
+impl<'h, T: IntoHeapAllocation<'h>> Clone for GcRef<'h, T> {
     fn clone(&self) -> GcRef<'h, T> {
         let &GcRef { ptr, heap_id } = self;
         unsafe {
@@ -59,16 +59,16 @@ impl<'h, T: IntoHeap<'h>> Clone for GcRef<'h, T> {
     }
 }
 
-impl<'h, T: IntoHeap<'h>> fmt::Debug for GcRef<'h, T> {
+impl<'h, T: IntoHeapAllocation<'h>> fmt::Debug for GcRef<'h, T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "GcRef {{ ptr: {:p} }}", self.ptr.as_raw())
     }
 }
 
-impl<'h, T: IntoHeap<'h>> PartialEq for GcRef<'h, T> {
+impl<'h, T: IntoHeapAllocation<'h>> PartialEq for GcRef<'h, T> {
     fn eq(&self, other: &GcRef<'h, T>) -> bool {
         self.ptr == other.ptr
     }
 }
 
-impl<'h, T: IntoHeap<'h>> Eq for GcRef<'h, T> {}
+impl<'h, T: IntoHeapAllocation<'h>> Eq for GcRef<'h, T> {}

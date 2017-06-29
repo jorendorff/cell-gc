@@ -3,7 +3,7 @@
 use heap::Heap;
 use pages::PageHeader;
 use ptr::{Pointer, UntypedPointer};
-use traits::{IntoHeap, Tracer};
+use traits::{IntoHeapAllocation, Tracer};
 
 
 /// Perform all the marking for a collection.
@@ -80,7 +80,7 @@ impl<'h> MarkingTracer {
 impl Tracer for MarkingTracer {
     fn visit<'h, T>(&mut self, ptr: Pointer<T::In>)
     where
-        T: IntoHeap<'h>,
+        T: IntoHeapAllocation<'h>,
     {
         let is_marked = unsafe { Heap::get_mark_bit::<T>(ptr) };
         if is_marked {

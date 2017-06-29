@@ -77,7 +77,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::ptr;
-use traits::{IntoHeap, IntoHeapAllocation};
+use traits::IntoHeapAllocation;
 use pages::{heap_type_id, TypedPage, PageBox};
 use ptr::{Pointer, UntypedPointer};
 use gcref::GcRef;
@@ -146,7 +146,7 @@ impl Heap {
     /// # Safety
     ///
     /// `p` must point to a live allocation of type `T` in this heap.
-    pub unsafe fn pin<'h, T: IntoHeap<'h>>(&self, p: Pointer<T::In>) {
+    pub unsafe fn pin<'h, T: IntoHeapAllocation<'h>>(&self, p: Pointer<T::In>) {
         let mut pins = self.pins.borrow_mut();
         let entry = pins.entry(p.into()).or_insert(0);
         *entry += 1;
@@ -157,7 +157,7 @@ impl Heap {
     /// # Safety
     ///
     /// `p` must point to a pinned allocation of type `T` in this heap.
-    pub unsafe fn unpin<'h, T: IntoHeap<'h>>(&self, p: Pointer<T::In>) {
+    pub unsafe fn unpin<'h, T: IntoHeapAllocation<'h>>(&self, p: Pointer<T::In>) {
         let mut pins = self.pins.borrow_mut();
         let done = {
             let entry = pins.entry(p.into()).or_insert(0);
@@ -180,15 +180,15 @@ impl Heap {
         }
     }
 
-    pub unsafe fn from_allocation<'h, T: IntoHeap<'h>>(ptr: Pointer<T::In>) -> *const Heap {
+    pub unsafe fn from_allocation<'h, T: IntoHeapAllocation<'h>>(ptr: Pointer<T::In>) -> *const Heap {
         (*TypedPage::find(ptr)).header.heap
     }
 
-    pub unsafe fn get_mark_bit<'h, T: IntoHeap<'h>>(ptr: Pointer<T::In>) -> bool {
+    pub unsafe fn get_mark_bit<'h, T: IntoHeapAllocation<'h>>(ptr: Pointer<T::In>) -> bool {
         (*TypedPage::find(ptr)).get_mark_bit(ptr)
     }
 
-    pub unsafe fn set_mark_bit<'h, T: IntoHeap<'h>>(ptr: Pointer<T::In>) {
+    pub unsafe fn set_mark_bit<'h, T: IntoHeapAllocation<'h>>(ptr: Pointer<T::In>) {
         (*TypedPage::find(ptr)).set_mark_bit(ptr);
     }
 
@@ -255,7 +255,7 @@ impl<'h> HeapSession<'h> {
         }
     }
 
-    fn get_page<'a, T: IntoHeap<'h> + 'a>(&'a mut self) -> &'a mut TypedPage<T::In> {
+    fn get_page<'a, T: IntoHeapAllocation<'h> + 'a>(&'a mut self) -> &'a mut TypedPage<T::In> {
         let key = heap_type_id::<T>();
         let heap_ptr = self.heap as *mut Heap;
         self.heap

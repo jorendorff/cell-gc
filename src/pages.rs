@@ -4,14 +4,17 @@
 use std::{cmp, mem, ptr};
 use std::marker::PhantomData;
 use bit_vec::BitVec;
-use traits::{IntoHeap, Tracer};
+use traits::{IntoHeapAllocation, Tracer};
 use heap::Heap;
 use marking::MarkingTracer;
 use ptr::{Pointer, UntypedPointer};
 
 /// Non-inlined function that serves as an entry point to marking. This is used
 /// for marking root set entries.
-unsafe fn mark_entry_point<'h, T: IntoHeap<'h>>(addr: UntypedPointer, tracer: &mut MarkingTracer) {
+unsafe fn mark_entry_point<'h, T>(addr: UntypedPointer, tracer: &mut MarkingTracer)
+where
+    T: IntoHeapAllocation<'h>
+{
     let addr = addr.as_typed_ptr::<T::In>();
 
     if Heap::get_mark_bit::<T>(addr) {
@@ -28,7 +31,7 @@ unsafe fn mark_entry_point<'h, T: IntoHeap<'h>>(addr: UntypedPointer, tracer: &m
     }
 }
 
-pub fn heap_type_id<'h, T: IntoHeap<'h>>() -> usize {
+pub fn heap_type_id<'h, T: IntoHeapAllocation<'h>>() -> usize {
     mark_entry_point::<T> as *const () as usize
 }
 
@@ -78,7 +81,10 @@ impl PageHeader {
         self.mark_fn as usize
     }
 
-    pub fn downcast_mut<'h, T: IntoHeap<'h>>(&mut self) -> Option<&mut TypedPage<T::In>> {
+    pub fn downcast_mut<'h, T>(&mut self) -> Option<&mut TypedPage<T::In>>
+    where
+        T: IntoHeapAllocation<'h>
+    {
         if heap_type_id::<T>() == self.type_id() {
             let ptr = self as *mut PageHeader as *mut TypedPage<T::In>;
             Some(unsafe { &mut *ptr })
@@ -217,14 +223,14 @@ impl<U> TypedPage<U> {
     }
 }
 
-unsafe fn sweep_entry_point<'h, T: IntoHeap<'h>>(header: &mut PageHeader) {
+unsafe fn sweep_entry_point<'h, T: IntoHeapAllocation<'h>>(header: &mut PageHeader) {
     header.downcast_mut::<T>().unwrap().sweep();
 }
 
 pub struct PageBox(*mut PageHeader);
 
 impl PageBox {
-    pub fn new<'h, T: IntoHeap<'h>>(heap: *mut Heap) -> PageBox {
+    pub fn new<'h, T: IntoHeapAllocation<'h>>(heap: *mut Heap) -> PageBox {
         assert!(
             mem::size_of::<TypedPage<T::In>>() <= TypedPage::<T::In>::first_allocation_offset()
         );

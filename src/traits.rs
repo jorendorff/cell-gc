@@ -102,7 +102,7 @@ pub trait IntoHeapAllocation<'h>: IntoHeap<'h> {
 pub trait Tracer {
     fn visit<'h, T>(&mut self, Pointer<T::In>)
     where
-        T: IntoHeap<'h>;
+        T: IntoHeapAllocation<'h>;
 }
 
 // === Provided implmentations for primitive types
