@@ -1,20 +1,21 @@
 //! Basic tuple-like enum variants are supported.
 
 extern crate cell_gc;
-#[macro_use] extern crate cell_gc_derive;
+#[macro_use]
+extern crate cell_gc_derive;
 
 use cell_gc::collections::VecRef;
 
 #[derive(IntoHeap)]
 struct ThingBox<'h> {
-    thing: Thing<'h>
+    thing: Thing<'h>,
 }
 
 #[derive(IntoHeap)]
 enum Thing<'h> {
     Zero,
     One(ThingBoxRef<'h>),
-    Two(ThingBoxRef<'h>, ThingBoxRef<'h>)
+    Two(ThingBoxRef<'h>, ThingBoxRef<'h>),
 }
 
 fn main() {
@@ -42,7 +43,7 @@ fn main() {
         }
 
         let mut out = String::new();
-        for i in 0 .. 3 {
+        for i in 0..3 {
             log(&mut out, v.get(i));
         }
         assert_eq!(out, "*(*)[*(*)]");

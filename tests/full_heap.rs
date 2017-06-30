@@ -2,12 +2,16 @@
 //! reachable.
 
 extern crate cell_gc;
-#[macro_use] extern crate cell_gc_derive;
+#[macro_use]
+extern crate cell_gc_derive;
 mod aux;
 use aux::pairs::*;
 
 fn null_pair<'h>() -> Pair<'h> {
-    Pair { head: Value::Null, tail: Value::Null }
+    Pair {
+        head: Value::Null,
+        tail: Value::Null,
+    }
 }
 
 fn main() {
@@ -16,13 +20,13 @@ fn main() {
 
         // Fill up the heap by allocating HEAP_SIZE objects.
         let mut v = Value::Null;
-        for _ in 0 .. cell_gc::page_capacity::<Pair>() {
+        for _ in 0..cell_gc::page_capacity::<Pair>() {
             v = Value::Pair(alloc_pair(hs, Value::Null, v));
         }
 
         // The whole heap is reachable.  Now try_alloc() should return null every
         // time it's called.
-        for _ in 0 .. 4 {
+        for _ in 0..4 {
             let attempt: Option<PairRef> = hs.try_alloc(null_pair());
             assert_eq!(attempt, None);
         }

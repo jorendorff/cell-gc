@@ -1,7 +1,8 @@
 //! Test that the GC is not confused by cycles that are garbage.
 
 extern crate cell_gc;
-#[macro_use] extern crate cell_gc_derive;
+#[macro_use]
+extern crate cell_gc_derive;
 mod aux;
 use aux::pairs::*;
 
@@ -18,13 +19,13 @@ fn main() {
             p2 = obj2.as_mut_ptr();
             obj2.set_tail(Value::Pair(obj1.clone()));
             obj1.set_tail(Value::Pair(obj2.clone()));
-        }  // Make the cycle unreachable.
+        } // Make the cycle unreachable.
 
         // Allocation should eventually recycle both objects.
         let mut recycled1 = 0;
         let mut recycled2 = 0;
         let mut root = Value::Null;
-        for _ in 0 .. cell_gc::page_capacity::<Pair>() {
+        for _ in 0..cell_gc::page_capacity::<Pair>() {
             let p = alloc_pair(hs, Value::Null, root);
             root = Value::Pair(p.clone());
             if p.as_mut_ptr() == p1 {

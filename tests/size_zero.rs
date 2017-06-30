@@ -1,15 +1,16 @@
 //! The GC can allocate objects that are zero-size.
 
 extern crate cell_gc;
-#[macro_use] extern crate cell_gc_derive;
+#[macro_use]
+extern crate cell_gc_derive;
 use std::marker::PhantomData;
 
 #[derive(IntoHeap)]
 struct Unit<'h> {
-    phantom: PhantomData<&'h u8>
+    phantom: PhantomData<&'h u8>,
 }
 
-fn main () {
+fn main() {
     assert_eq!(std::mem::size_of::<UnitStorage>(), 0);
 
     cell_gc::with_heap(|hs| {
@@ -20,14 +21,12 @@ fn main () {
         assert!(n >= 500);
         assert!(n <= 1024);
 
-        let _: Vec<UnitRef> =
-            (0 .. n)
+        let _: Vec<UnitRef> = (0..n)
             .map(|_| hs.alloc(Unit { phantom: PhantomData }))
             .collect();
 
         hs.force_gc();
 
-        assert_eq!(hs.try_alloc(Unit { phantom: PhantomData }),
-                   None);
+        assert_eq!(hs.try_alloc(Unit { phantom: PhantomData }), None);
     });
 }

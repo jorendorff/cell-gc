@@ -1,7 +1,8 @@
 //! The GC can work with objects that are a few hundred bytes big.
 
 extern crate cell_gc;
-#[macro_use] extern crate cell_gc_derive;
+#[macro_use]
+extern crate cell_gc_derive;
 
 #[derive(IntoHeap)]
 struct Chunk<'h> {
@@ -13,7 +14,7 @@ struct Chunk<'h> {
     field_160: (u64, u64, u64, u64),
     field_192: (u64, u64, u64, u64),
     field_224: (u64, u64, u64, u64),
-    next: Option<ChunkRef<'h>>
+    next: Option<ChunkRef<'h>>,
 }
 
 fn main() {
@@ -30,7 +31,7 @@ fn main() {
         assert!(n <= 15);
 
         let mut root = None;
-        for i in 0 .. n as u64 {
+        for i in 0..n as u64 {
             root = Some(hs.alloc(Chunk {
                 field_0: (i, i, i, i),
                 field_32: (i, i, i, i),
@@ -40,26 +41,29 @@ fn main() {
                 field_160: (i, i, i, i),
                 field_192: (i, i, i, i),
                 field_224: (i, i, i, i),
-                next: root
+                next: root,
             }));
         }
 
         // Heap is full.
-        assert_eq!(hs.try_alloc(Chunk {
-            field_0: (99, 99, 99, 99),
-            field_32: (99, 99, 99, 99),
-            field_64: (99, 99, 99, 99),
-            field_96: (99, 99, 99, 99),
-            field_128: (99, 99, 99, 99),
-            field_160: (99, 99, 99, 99),
-            field_192: (99, 99, 99, 99),
-            field_224: (99, 99, 99, 99),
-            next: root.clone()
-        }), None);
+        assert_eq!(
+            hs.try_alloc(Chunk {
+                field_0: (99, 99, 99, 99),
+                field_32: (99, 99, 99, 99),
+                field_64: (99, 99, 99, 99),
+                field_96: (99, 99, 99, 99),
+                field_128: (99, 99, 99, 99),
+                field_160: (99, 99, 99, 99),
+                field_192: (99, 99, 99, 99),
+                field_224: (99, 99, 99, 99),
+                next: root.clone(),
+            }),
+            None
+        );
 
         // Spot-check that the objects are still good.
         let mut j = n as u64;
-        for _ in 0 .. n {
+        for _ in 0..n {
             j -= 1;
             let chunk = root.expect("references aren't working or something");
             assert_eq!(chunk.field_0().0, j);
@@ -78,8 +82,11 @@ fn main() {
             field_160: (99, 99, 99, 99),
             field_192: (99, 99, 99, 99),
             field_224: (99, 99, 99, 99),
-            next: root
+            next: root,
         });
-        assert_eq!(root.expect("gc should have freed up memory").field_128().1, 99);
+        assert_eq!(
+            root.expect("gc should have freed up memory").field_128().1,
+            99
+        );
     });
 }

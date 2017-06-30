@@ -1,5 +1,6 @@
 extern crate cell_gc;
-#[macro_use] extern crate cell_gc_derive;
+#[macro_use]
+extern crate cell_gc_derive;
 mod aux;
 use aux::pairs::*;
 

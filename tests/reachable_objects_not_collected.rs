@@ -2,7 +2,8 @@
 //! collected.
 
 extern crate cell_gc;
-#[macro_use] extern crate cell_gc_derive;
+#[macro_use]
+extern crate cell_gc_derive;
 mod aux;
 use aux::pairs::*;
 
@@ -29,25 +30,25 @@ fn main() {
 
         let h = match obj1.head() {
             Value::Pair(p) => p,
-            _ => panic!("expected pair in obj1.head")
+            _ => panic!("expected pair in obj1.head"),
         };
         assert_eq!(h.as_mut_ptr(), p2);
 
         let t = match obj1.tail() {
             Value::Pair(p) => p,
-            _ => panic!("expected pair in obj1.tail")
+            _ => panic!("expected pair in obj1.tail"),
         };
         assert_eq!(t.as_mut_ptr(), p3);
 
         let hh = match h.head() {
             Value::Pair(p) => p,
-            _ => panic!("expected pair in obj1.head.head")
+            _ => panic!("expected pair in obj1.head.head"),
         };
         assert_eq!(hh.as_mut_ptr(), p4);
 
         let ht = match h.tail() {
             Value::Pair(p) => p,
-            _ => panic!("expected pair in obj1.head.tail")
+            _ => panic!("expected pair in obj1.head.tail"),
         };
         assert_eq!(ht.as_mut_ptr(), p5);
     });

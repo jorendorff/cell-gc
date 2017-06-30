@@ -1,18 +1,19 @@
 //! Destructors are called.
 
 extern crate cell_gc;
-#[macro_use] extern crate cell_gc_derive;
+#[macro_use]
+extern crate cell_gc_derive;
 
 #[derive(IntoHeap)]
 struct Dropper<'h> {
     addr: usize,
-    ignore: SomethingWithLifetime<'h>
+    ignore: SomethingWithLifetime<'h>,
 }
 
 #[derive(IntoHeap)]
 enum SomethingWithLifetime<'h> {
     Another(DropperRef<'h>),
-    Nothing
+    Nothing,
 }
 
 use SomethingWithLifetime::Nothing;
@@ -31,9 +32,15 @@ fn main() {
 
         let ptr: *mut i32 = &mut drop_count;
 
-        let mut r = hs.alloc(Dropper { addr: ptr as usize, ignore: Nothing });
+        let mut r = hs.alloc(Dropper {
+            addr: ptr as usize,
+            ignore: Nothing,
+        });
         for _ in 1..7 {
-            r = hs.alloc(Dropper { addr: ptr as usize, ignore: Nothing });
+            r = hs.alloc(Dropper {
+                addr: ptr as usize,
+                ignore: Nothing,
+            });
         }
 
         assert_eq!(drop_count, 0);
