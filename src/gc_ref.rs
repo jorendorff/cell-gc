@@ -3,6 +3,7 @@ use ptr::Pointer;
 use std::fmt;
 use std::marker::PhantomData;
 use traits::IntoHeapAllocation;
+use gc_leaf::GcLeaf;
 
 pub struct GcRef<'h, T: IntoHeapAllocation<'h>> {
     ptr: Pointer<T::In>, // never null
@@ -33,6 +34,22 @@ impl<'h, T: IntoHeapAllocation<'h>> GcRef<'h, T> {
 
     pub fn as_mut_ptr(&self) -> *mut T::In {
         self.ptr.as_raw() as *mut T::In
+    }
+}
+
+impl<'h, T: Clone + 'static> GcRef<'h, GcLeaf<T>> {
+    pub fn get(&self) -> T {
+        // XXX TODO I think this `unsafe` block is sound, I'm not totally
+        // sure. It's OK as long as we can't trigger GC in the middle of
+        // cloning...  which would ordinarily be the case since the 'static
+        // type T won't contain a reference to the HeapSession<'h>.
+        //
+        // But one can imagine some kind of wrapper type that could store a
+        // HeapSession<'h> within it, then let you get it back out as an Option
+        // if we're somehow sure the lifetime `'h` isn't expired yet.  If that
+        // primitive is safe, then this is unsound, and we'd have to restrict
+        // GcLeaf to Copy types (ewww!)
+        T::clone(unsafe { self.ptr.as_ref() })
     }
 }
 

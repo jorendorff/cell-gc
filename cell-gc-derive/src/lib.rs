@@ -156,20 +156,22 @@ fn impl_into_heap_for_struct(ast: &syn::DeriveInput, data: &syn::VariantData) ->
                     for #ref_type_name #ty_generics
                     #where_clause
                 {
-                    type In = ::cell_gc::ptr::Pointer<#storage_type_name #ty_generics>;
+                    type In = <::cell_gc::GcRef<#heap_lifetime, #name #ty_generics>
+                               as ::cell_gc::traits::IntoHeapBase>::In;
 
                     fn into_heap(self) -> Self::In {
-                        self.0.ptr()
+                        self.0.into_heap()
+                    }
+
+                    unsafe fn from_heap(storage: &Self::In) -> Self {
+                        #ref_type_name(::cell_gc::GcRef::<#heap_lifetime, #name #ty_generics>::new(*storage))
                     }
 
                     unsafe fn trace<R>(storage: &Self::In, tracer: &mut R)
                         where R: ::cell_gc::traits::Tracer
                     {
-                        tracer.visit::<#name #ty_generics>(*storage);
-                    }
-
-                    unsafe fn from_heap(storage: &Self::In) -> #ref_type_name #ty_generics {
-                        #ref_type_name(::cell_gc::GcRef::<#name #ty_generics>::new(*storage))
+                        <::cell_gc::GcRef<#heap_lifetime, #name #ty_generics>
+                            as ::cell_gc::traits::IntoHeapBase>::trace(storage, tracer)
                     }
                 }
 
@@ -213,7 +215,7 @@ fn impl_into_heap_for_struct(ast: &syn::DeriveInput, data: &syn::VariantData) ->
 
                     ///// Get all fields at once.
                     //pub fn get(&self) -> #name {
-                    //    ::cell_gc::traits::IntoHeapBase::from_heap(ptr)
+                    //    ::cell_gc::traits::IntoHeapBase::from_heap(self.0.ptr())
                     //}
 
                     #[allow(dead_code)]

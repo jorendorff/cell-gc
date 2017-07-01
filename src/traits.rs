@@ -149,6 +149,10 @@ macro_rules! gc_trivial_impl {
             unsafe fn trace<R>(_storage: &$t, _tracer: &mut R) where R: Tracer {}
         }
         unsafe impl<'h> IntoHeap<'h> for $t {}
+        impl<'h> IntoHeapAllocation<'h> for $t {
+            type Ref = GcRef<'h, Self>;
+            fn wrap_gc_ref(gc_ref: GcRef<'h, Self>) -> Self::Ref { gc_ref }
+        }
     }
 }
 
@@ -185,6 +189,13 @@ macro_rules! gc_generic_trivial_impl {
             @as_item
             unsafe impl<'h, $($x)*> IntoHeap<'h> for $t {}
         }
+        gc_generic_trivial_impl! {
+            @as_item
+            impl<'h, $($x)*> IntoHeapAllocation<'h> for $t {
+                type Ref = GcRef<'h, Self>;
+                fn wrap_gc_ref(gc_ref: Self::Ref) -> Self::Ref { gc_ref }
+            }
+        }
     }
 }
 
@@ -193,6 +204,25 @@ gc_generic_trivial_impl!([T: ?Sized] ::std::marker::PhantomData<T>);
 gc_generic_trivial_impl!([T: Clone + 'static] ::GcLeaf<T>);
 gc_generic_trivial_impl!([T: Clone + 'static] Box<T>);
 gc_generic_trivial_impl!([T: Clone + 'static] ::std::rc::Rc<T>);
+
+// GCRef has a special implementation.
+impl<'h, T: IntoHeapAllocation<'h>> IntoHeapBase for GcRef<'h, T> {
+    type In = Pointer<T::In>;
+
+    fn into_heap(self) -> Self::In {
+        self.ptr()
+    }
+
+    unsafe fn from_heap(storage: &Self::In) -> Self {
+        Self::new(*storage)
+    }
+
+    unsafe fn trace<R: Tracer>(storage: &Self::In, tracer: &mut R) {
+        tracer.visit::<T>(*storage);
+    }
+}
+
+unsafe impl<'h, T: IntoHeapAllocation<'h>> IntoHeap<'h> for GcRef<'h, T> {}
 
 // Transitive implementations ("this particular kind of struct/enum is IntoHeap
 // if all its fields are") are slightly less trivial.
