@@ -1,6 +1,6 @@
 //! Collections for use with GC references.
 
-use gcref::GcRef;
+use gc_ref::GcRef;
 use ptr::Pointer;
 use std::cmp::Ordering;
 use std::mem;
@@ -32,8 +32,8 @@ unsafe impl<'h, T: IntoHeap<'h>> IntoHeap<'h> for Vec<T> {}
 impl<'h, T: IntoHeap<'h>> IntoHeapAllocation<'h> for Vec<T> {
     type Ref = VecRef<'h, T>;
 
-    fn wrap_gcref(gcref: GcRef<'h, Vec<T>>) -> VecRef<'h, T> {
-        VecRef(gcref)
+    fn wrap_gc_ref(gc_ref: GcRef<'h, Vec<T>>) -> VecRef<'h, T> {
+        VecRef(gc_ref)
     }
 }
 

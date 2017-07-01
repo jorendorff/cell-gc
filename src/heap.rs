@@ -73,7 +73,7 @@
 //! avoid reading pointer fields while dropping, and avoid calling into
 //! arbitrary code.
 
-use gcref::GcRef;
+use gc_ref::GcRef;
 use marking::{MarkingTracer, mark};
 use pages::{PageSet, PageSetRef, TypedPage, heap_type_id};
 use ptr::{Pointer, UntypedPointer};
@@ -325,7 +325,7 @@ impl<'h> HeapSession<'h> {
                 })
                 .map(move |p| {
                     ptr::write(p.as_raw() as *mut _, u);
-                    T::wrap_gcref(GcRef::new(p))
+                    T::wrap_gc_ref(GcRef::new(p))
                 })
         }
     }

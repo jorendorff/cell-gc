@@ -232,14 +232,14 @@ extern crate bit_vec;
 pub mod traits;
 mod pages;
 mod heap;
-mod gcref;
+mod gc_ref;
 mod gc_leaf;
 pub mod collections;
 pub mod ptr;
 mod marking;
 
 pub use gc_leaf::GcLeaf;
-pub use gcref::GcRef;
+pub use gc_ref::GcRef;
 pub use heap::{Heap, HeapSession, with_heap};
 
 /// Return the number of allocations of a given type that fit in a "page".
