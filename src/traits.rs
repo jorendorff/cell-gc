@@ -190,7 +190,7 @@ macro_rules! gc_generic_trivial_impl {
 
 gc_generic_trivial_impl!([T: ?Sized] &'static T);
 gc_generic_trivial_impl!([T: ?Sized] ::std::marker::PhantomData<T>);
-gc_generic_trivial_impl!([T: Clone + 'static] ::GCLeaf<T>);
+gc_generic_trivial_impl!([T: Clone + 'static] ::GcLeaf<T>);
 gc_generic_trivial_impl!([T: Clone + 'static] Box<T>);
 gc_generic_trivial_impl!([T: Clone + 'static] ::std::rc::Rc<T>);
 

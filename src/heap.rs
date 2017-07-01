@@ -149,7 +149,7 @@ impl Heap {
     ///
     /// # Example
     ///
-    ///     use cell_gc::{Heap, GCLeaf};
+    ///     use cell_gc::{Heap, GcLeaf};
     ///
     ///     let mut heap = Heap::new();
     ///     heap.enter(|hs| {
