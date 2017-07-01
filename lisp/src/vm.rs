@@ -1,7 +1,7 @@
 //! If you use enough force, you can actually use this GC to implement a toy VM.
 
+use builtins::{self, BuiltinFnPtr};
 use cell_gc::{GcLeaf, HeapSession};
-use std::fmt;
 use std::sync::Arc;
 
 #[derive(Debug, IntoHeap)]
@@ -13,6 +13,7 @@ pub struct Pair<'h> {
 #[derive(Clone, Debug, PartialEq, IntoHeap)]
 pub enum Value<'h> {
     Nil,
+    Bool(bool),
     Int(i32),
     Symbol(Arc<String>),
     Cons(PairRef<'h>),
@@ -22,26 +23,24 @@ pub enum Value<'h> {
 
 pub use self::Value::*;
 
-pub struct BuiltinFnPtr(pub for<'b> fn(Vec<Value<'b>>) -> Result<Value<'b>, String>);
+impl<'h> Value<'h> {
+    pub fn default_env(hs: &mut HeapSession<'h>) -> Value<'h> {
+        let mut env = Nil;
 
-// This can't be #[derive]d because function pointers aren't Clone.
-// But they are Copy. A very weird thing about Rust.
-impl Clone for BuiltinFnPtr {
-    fn clone(&self) -> BuiltinFnPtr {
-        BuiltinFnPtr(self.0)
-    }
-}
+        macro_rules! builtin {
+            ( $lisp_ident:expr , $func:expr ) => {
+                env.push_env(hs,
+                             Arc::new($lisp_ident.to_string()),
+                             Builtin(GcLeaf::new(BuiltinFnPtr($func))));
+            }
+        }
 
-impl PartialEq for BuiltinFnPtr {
-    fn eq(&self, other: &BuiltinFnPtr) -> bool {
-        self.0 as usize == other.0 as usize
-    }
-}
+        builtin!("+", builtins::add);
+        builtin!("*", builtins::mul);
+        builtin!("assert", builtins::assert);
+        builtin!("eq?", builtins::eq_question);
 
-impl fmt::Debug for BuiltinFnPtr {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "BuiltinFn({:p})", self.0 as usize as *mut ())?;
-        Ok(())
+        env
     }
 }
 
@@ -194,18 +193,6 @@ pub fn eval<'h>(
         Builtin(_) => Err(format!("builtin function found in source code")),
         _ => Ok(expr),  // nil and numbers are self-evaluating
     }
-}
-
-pub fn add<'h>(args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
-    let mut total = 0;
-    for v in args {
-        if let Int(n) = v {
-            total += n;
-        } else {
-            return Err("add: non-numeric argument".to_string());
-        }
-    }
-    Ok(Int(total))
 }
 
 #[cfg(test)]
