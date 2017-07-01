@@ -32,8 +32,15 @@ where
     }
 }
 
-pub fn heap_type_id<'h, T: IntoHeapAllocation<'h>>() -> usize {
-    mark_entry_point::<T> as *const () as usize
+/// A unique id for each type that implements `IntoHeapAllocation`.
+///
+/// Implementation note: function types don't support Eq, so we cast to a
+/// meaningless pointer type.
+#[derive(Debug, Hash, PartialEq, Eq)]
+pub struct TypeId(*const ());
+
+pub fn heap_type_id<'h, T: IntoHeapAllocation<'h>>() -> TypeId {
+    TypeId(mark_entry_point::<T> as *const ())
 }
 
 pub(crate) const PAGE_SIZE: usize = 0x1000;
@@ -74,8 +81,8 @@ impl PageHeader {
         (self.mark_fn)(ptr, tracer);
     }
 
-    pub fn type_id(&self) -> usize {
-        self.mark_fn as usize
+    pub fn type_id(&self) -> TypeId {
+        TypeId(self.mark_fn as *const ())
     }
 
     pub fn downcast_mut<'h, T>(&mut self) -> Option<&mut TypedPage<T::In>>

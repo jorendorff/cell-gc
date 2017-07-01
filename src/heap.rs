@@ -82,9 +82,10 @@ use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::ptr;
 use traits::IntoHeapAllocation;
+use pages::TypeId;
 
 pub struct Heap {
-    page_sets: HashMap<usize, PageSet>,
+    page_sets: HashMap<TypeId, PageSet>,
     pins: RefCell<HashMap<UntypedPointer, usize>>,
     marking_tracer: Option<MarkingTracer>,
 }
