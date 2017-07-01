@@ -33,3 +33,4 @@ macro_rules! test {
 
 test!(closure);
 test!(double);
+test!(y_combinator);

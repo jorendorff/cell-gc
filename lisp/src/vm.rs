@@ -183,7 +183,11 @@ pub fn eval<'h>(
                         _ => return Err("too many arguments in (if) expression".to_string()),
                     };
                     let cond_result = eval(hs, cond, env)?;
-                    let selected_expr = if cond_result == Nil { f_expr } else { t_expr };
+                    let selected_expr = if cond_result == Nil || cond_result == Bool(false) {
+                        f_expr
+                    } else {
+                        t_expr
+                    };
                     return eval(hs, selected_expr, env);
                 }
             }
