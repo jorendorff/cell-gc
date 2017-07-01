@@ -63,12 +63,6 @@ impl<T> Pointer<T> {
         }
     }
 
-    /// Is this pointer null?
-    #[inline]
-    pub fn is_null(&self) -> bool {
-        self.ptr.is_null()
-    }
-
     /// Get a reference to the pointed-to `T` instance.
     ///
     /// # Safety
@@ -78,13 +72,9 @@ impl<T> Pointer<T> {
     ///
     /// If this pointer doesn't point at a valid `T` instance, then all hell
     /// will break loose.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the pointer is null.
     #[inline]
     pub unsafe fn as_ref(&self) -> &T {
-        assert!(!self.is_null());
+        assert!(!self.ptr.0.is_null());
         &*self.as_raw()
     }
 
@@ -157,6 +147,8 @@ pub struct UntypedPointer(*const ());
 impl UntypedPointer {
     #[inline]
     unsafe fn new(ptr: *const ()) -> UntypedPointer {
+        assert!(!ptr.is_null(),
+                "GC heap pointers can't be null.");
         assert_eq!(
             ptr as usize & (mem::size_of::<usize>() - 1),
             0,
@@ -184,12 +176,6 @@ impl UntypedPointer {
     #[inline]
     pub unsafe fn as_typed_ptr<T>(&self) -> Pointer<T> {
         Pointer::new(self.0 as *const T)
-    }
-
-    /// Is this pointer null?
-    #[inline]
-    pub fn is_null(&self) -> bool {
-        self.0.is_null()
     }
 
     /// Get the underlying raw pointer.

@@ -165,9 +165,7 @@ fn impl_into_heap_for_struct(ast: &syn::DeriveInput, data: &syn::VariantData) ->
                     unsafe fn trace<R>(storage: &Self::In, tracer: &mut R)
                         where R: ::cell_gc::traits::Tracer
                     {
-                        if !storage.is_null() {
-                            tracer.visit::<#name #ty_generics>(*storage);
-                        }
+                        tracer.visit::<#name #ty_generics>(*storage);
                     }
 
                     unsafe fn from_heap(storage: &Self::In) -> #ref_type_name #ty_generics {

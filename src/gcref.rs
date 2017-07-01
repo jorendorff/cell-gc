@@ -5,7 +5,7 @@ use std::marker::PhantomData;
 use traits::IntoHeapAllocation;
 
 pub struct GcRef<'h, T: IntoHeapAllocation<'h>> {
-    ptr: Pointer<T::In>,
+    ptr: Pointer<T::In>, // never null
     heap_id: HeapSessionId<'h>,
 }
 
