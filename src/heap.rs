@@ -84,9 +84,18 @@ use std::ptr;
 use traits::IntoHeapAllocation;
 use pages::TypeId;
 
+/// A `Heap` is a universe in which you can store values that implement
+/// `IntoHeapAllocation`. The values are mutable and they can point to each
+/// other, in cycles.
 pub struct Heap {
+    /// Map from heap types to the set of pages for that type.
     page_sets: HashMap<TypeId, PageSet>,
+
+    /// The root set. This tracks allocations that are "pinned", referred to
+    /// from outside the heap.
     pins: RefCell<HashMap<UntypedPointer, usize>>,
+
+    /// Tracer for the mark phase of GC.
     marking_tracer: Option<MarkingTracer>,
 }
 
