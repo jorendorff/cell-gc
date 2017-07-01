@@ -1,9 +1,7 @@
 //! If you use enough force, you can actually use this GC to implement a toy VM.
 
-extern crate cell_gc;
-#[macro_use]
-extern crate cell_gc_derive;
 use cell_gc::{GCLeaf, HeapSession};
+use std::fmt;
 use std::rc::Rc;
 
 #[derive(Debug, IntoHeap)]
@@ -22,7 +20,7 @@ pub enum Value<'h> {
     Builtin(GCLeaf<BuiltinFnPtr>),
 }
 
-use Value::*;
+pub use self::Value::*;
 
 pub struct BuiltinFnPtr(pub for<'b> fn(Vec<Value<'b>>) -> Result<Value<'b>, String>);
 
@@ -40,8 +38,8 @@ impl PartialEq for BuiltinFnPtr {
     }
 }
 
-impl std::fmt::Debug for BuiltinFnPtr {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+impl fmt::Debug for BuiltinFnPtr {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "BuiltinFn({:p})", self.0 as usize as *mut ())?;
         Ok(())
     }

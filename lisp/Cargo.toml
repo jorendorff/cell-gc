@@ -1,8 +1,13 @@
 [package]
+authors = ["Nick Fitzgerald <fitzgen@gmail.com>"]
 name = "lisp"
 version = "0.1.0"
-authors = ["Nick Fitzgerald <fitzgen@gmail.com>"]
 
 [dependencies]
-cell-gc = { path = ".." }
-cell-gc-derive = { path = "../cell-gc-derive" }
+asexp = "0.3.1"
+
+[dependencies.cell-gc]
+path = ".."
+
+[dependencies.cell-gc-derive]
+path = "../cell-gc-derive"
