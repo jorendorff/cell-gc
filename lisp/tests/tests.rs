@@ -31,4 +31,5 @@ macro_rules! test {
     }
 }
 
+test!(closure);
 test!(double);
