@@ -36,6 +36,7 @@ impl<'h> Value<'h> {
         }
 
         builtin!("+", builtins::add);
+        builtin!("-", builtins::sub);
         builtin!("*", builtins::mul);
         builtin!("assert", builtins::assert);
         builtin!("eq?", builtins::eq_question);

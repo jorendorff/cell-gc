@@ -73,8 +73,34 @@ pub fn mul<'h>(args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
         if let Int(n) = v {
             total *= n;
         } else {
-            return Err("add: non-numeric argument".to_string());
+            return Err("mul: non-numeric argument".to_string());
         }
     }
     Ok(Int(total))
+}
+
+pub fn sub<'h>(args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
+    if args.len() == 0 {
+        Err("sub: need at least one argument".into())
+    } else if args.len() == 1 {
+        if let Int(n) = args[0] {
+            Ok(Int(-n))
+        } else {
+            Err("sub: non-numeric argument".into())
+        }
+    } else {
+        let mut total = if let Int(n) = args[0] {
+            n
+        } else {
+            return Err("sub: non-numeric argument".into());
+        };
+        for v in &args[1..] {
+            if let Int(n) = *v {
+                total -= n;
+            } else {
+                return Err("add: non-numeric argument".to_string());
+            }
+        }
+        Ok(Int(total))
+    }
 }
