@@ -10,15 +10,11 @@ use std::sync::mpsc::channel;
 fn main() {
     let (sender, receiver) = channel();
     let j = thread::spawn(move || {
-        //~^ ERROR: the trait bound `*const (): std::marker::Send` is not satisfied in `cell_gc::pages::TypeId`
-        //~| ERROR: the trait bound `*mut cell_gc::Heap: std::marker::Send` is not satisfied in `cell_gc::pages::PageSet`
-        //~| ERROR: the trait bound `*mut cell_gc::pages::PageHeader: std::marker::Send` is not satisfied in `cell_gc::pages::PageSet`
-
-
         let mut heap = Heap::new();
         let r = Rc::new(true);
         heap.enter(|hs| {
             let _ = hs.alloc(GcLeaf::new(r.clone()));
+            //~^ ERROR: the trait bound `std::rc::Rc<bool>: std::marker::Send` is not satisfied
         });
         sender.send(heap).unwrap();
         for i in 0..1000 {

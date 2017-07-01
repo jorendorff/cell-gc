@@ -3,7 +3,7 @@
 #![allow(dead_code)] // Tests don't ordinarily use every feature and every accessor.
 
 use cell_gc::HeapSession;
-use std::rc::Rc;
+use std::sync::Arc;
 
 #[derive(Clone, Debug, IntoHeap)]
 pub struct Pair<'h> {
@@ -15,7 +15,7 @@ pub struct Pair<'h> {
 pub enum Value<'h> {
     Null,
     Int(i32),
-    Str(Rc<String>), // <-- equality is by value
+    Str(Arc<String>), // <-- equality is by value
     Pair(PairRef<'h>), // <-- equality is by pointer
 }
 

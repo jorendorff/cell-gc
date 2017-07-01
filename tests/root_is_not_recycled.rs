@@ -5,7 +5,7 @@ extern crate cell_gc;
 extern crate cell_gc_derive;
 mod aux;
 use aux::pairs::*;
-use std::rc::Rc;
+use std::sync::Arc;
 
 fn main() {
     cell_gc::with_heap(|hs| {
@@ -13,7 +13,7 @@ fn main() {
         let root = alloc_pair(
             hs,
             Value::Int(1),
-            Value::Str(Rc::new("hello world".to_string())),
+            Value::Str(Arc::new("hello world".to_string())),
         );
 
         // Subsequent allocations never return root.

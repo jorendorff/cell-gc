@@ -3,6 +3,7 @@
 //! Application code does not need to use these traits. They are public only so
 //! that `#[derive(IntoHeap)]` can use it. Use the friendly macro!
 
+use gc_leaf::GcLeaf;
 use gc_ref::GcRef;
 use ptr::Pointer;
 
@@ -117,6 +118,13 @@ pub trait IntoHeapBase: Sized {
 ///     likely to lead to dangling pointers and hard-to-debug crashes down the
 ///     road.
 ///
+/// *   `Heap` implements `Send`. This means any value that can be stored in the
+///     heap can be sent to other threads (by sending the whole heap). So don't
+///     implement this trait for any type that isn't itself already `Send`.
+///     (The reason this trait doesn't *require* `Send` is that at present,
+///     `Ref` types must *not* be `Send` but must implement `IntoHeap`.)  It's
+///     OK to store non-`Sync` values in the heap.
+///
 /// *   And this probably goes without saying, but none of these methods may
 ///     allocate or do anything else that could trigger garbage collection.
 ///
@@ -199,11 +207,11 @@ macro_rules! gc_generic_trivial_impl {
     }
 }
 
-gc_generic_trivial_impl!([T: ?Sized] &'static T);
-gc_generic_trivial_impl!([T: ?Sized] ::std::marker::PhantomData<T>);
-gc_generic_trivial_impl!([T: Clone + 'static] ::GcLeaf<T>);
-gc_generic_trivial_impl!([T: Clone + 'static] Box<T>);
-gc_generic_trivial_impl!([T: Clone + 'static] ::std::rc::Rc<T>);
+gc_generic_trivial_impl!([T: ?Sized + Sync] &'static T);
+gc_generic_trivial_impl!([T: ?Sized + Send] ::std::marker::PhantomData<T>);
+gc_generic_trivial_impl!([T: Clone + Send + 'static] GcLeaf<T>);
+gc_generic_trivial_impl!([T: Clone + Send + 'static] Box<T>);
+gc_generic_trivial_impl!([T: Clone + Sync + 'static] ::std::sync::Arc<T>);
 
 // GCRef has a special implementation.
 impl<'h, T: IntoHeapAllocation<'h>> IntoHeapBase for GcRef<'h, T> {

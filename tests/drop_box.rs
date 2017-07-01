@@ -17,6 +17,8 @@ impl Drop for Dropper {
     }
 }
 
+unsafe impl Send for Dropper {}
+
 #[derive(IntoHeap)]
 struct Obj<'h> {
     frob: Box<Dropper>,

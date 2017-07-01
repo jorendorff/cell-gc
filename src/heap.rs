@@ -99,6 +99,8 @@ pub struct Heap {
     marking_tracer: Option<MarkingTracer>,
 }
 
+unsafe impl Send for Heap {}
+
 // What does this do? You'll never guess!
 pub type HeapSessionId<'h> = PhantomData<::std::cell::Cell<&'h mut ()>>;
 

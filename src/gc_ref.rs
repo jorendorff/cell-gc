@@ -37,7 +37,7 @@ impl<'h, T: IntoHeapAllocation<'h>> GcRef<'h, T> {
     }
 }
 
-impl<'h, T: Clone + 'static> GcRef<'h, GcLeaf<T>> {
+impl<'h, T: Clone + Send + 'static> GcRef<'h, GcLeaf<T>> {
     pub fn get(&self) -> T {
         // XXX TODO I think this `unsafe` block is sound, I'm not totally
         // sure. It's OK as long as we can't trigger GC in the middle of
