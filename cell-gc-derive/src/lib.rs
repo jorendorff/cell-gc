@@ -14,7 +14,10 @@ pub fn derive_into_heap(input: TokenStream) -> TokenStream {
     let source = input.to_string();
     let ast = syn::parse_derive_input(&source).unwrap();
     let expanded = impl_into_heap(&ast);
-    println!("{:?}", expanded);
+
+    // Uncomment to debug the generated code...
+    // println!("{:?}", expanded);
+
     expanded.parse().unwrap()
 }
 
