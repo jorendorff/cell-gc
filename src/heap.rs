@@ -66,7 +66,7 @@
 //!
 //! To make this scheme safe, `from_heap()` and `drop()` must be tightly controlled.
 //! `from_heap()` is therefore in an unsafe trait; users are expected to use
-//! the `gc_heap_type!` to autogenerate instances.
+//! `#[derive(IntoHeap)]` to autogenerate instances.
 //!
 //! However, **we leave it up to the user to exercise care with `drop()`.**
 //! We suggest *never* implementing `Drop` for a heap type. If you must,

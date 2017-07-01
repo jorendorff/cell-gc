@@ -1,45 +1,94 @@
 //! The traits defined here are implementation details of cell_gc.
 //!
 //! Application code does not need to use these traits. They are public only so
-//! that `gc_heap_type!` can use it. Use the friendly macro!
+//! that `#[derive(IntoHeap)]` can use it. Use the friendly macro!
 
 use gcref::GcRef;
 use ptr::Pointer;
+
+/// Base trait for values that can be moved into a GC heap.
+pub trait IntoHeapBase: Sized {
+    /// The type of the value when it is physically stored in the heap.
+    ///
+    /// GC types come in pairs: an `IntoHeap` type and an `In` type. Both
+    /// types have the same layout, bit for bit.
+    ///
+    /// The `In` type is stored physically inside the heap, and may be packed
+    /// with pointer fields and unsafe methods. The `IntoHeap` type is safe, is
+    /// used in application code, and lives on the stack.
+    ///
+    /// *   For primitive types, like `i32`, the two types are the same.
+    ///
+    /// *   Macro-generated "Ref" types are `IntoHeap` types; the corresponding
+    ///     in-heap types are effectively raw pointers.
+    ///
+    /// *   For user-defined structs and enums, the `#[derive(IntoHeap)]` macro
+    ///     autogenerates an `In` type for you. It has identical fields or
+    ///     variants, but fields of the `IntoHeap` type are `IntoHeap`, and
+    ///     fields of the `In` type are the corresponding `In` types.
+    ///
+    /// (The word "safe" above means that, as with everything generally in Rust, you
+    /// can hack without fear. `IntoHeap` types don't expose raw Rust pointers or
+    /// references to GC memory, they don't expose the unsafe in-heap types, and
+    /// they obey Rust's safety and aliasing rules.)
+    ///
+    /// Users never get a direct `&` reference to any in-heap value. All access is
+    /// through safe `IntoHeap` types, like the `Ref` type that is automatically
+    /// declared for you when you use `#[derive(IntoHeap)]` on a struct or union.
+    type In;
+
+    /// Convert the value to the form it should have in the heap.
+    /// This is for cell-gc to call.
+    ///
+    /// This method must not be called while any direct Rust references to
+    /// heap objects exist. (However, user code never runs while such
+    /// references exist, so the method is not marked `unsafe`.)
+    fn into_heap(self) -> Self::In;
+
+    /// Extract the value from the heap. This turns any raw pointers in the
+    /// in-heap value into safe references, so while it's an unsafe function,
+    /// the result of a correct call can be safely handed out to user code.
+    ///
+    /// # Safety
+    ///
+    /// It is impossible for ordinary users to call this safely, because `self`
+    /// must be a direct, unwrapped reference to a value stored in the GC heap,
+    /// which ordinary users cannot obtain.
+    unsafe fn from_heap(&Self::In) -> Self;
+
+    /// Traverse a value in the heap.
+    ///
+    /// This calls `tracer.visit(ptr)` for each edge from this value
+    /// to other heap values.
+    ///
+    /// For user-defined structs, this is achieved by calling the
+    /// `field.trace(tracer)` method of each field of this value. (They are
+    /// typically all `In` types.) The implementation of this method for
+    /// `Pointer<T>` calls `tracer.visit()` (if the pointer is non-null?).
+    ///
+    /// # Safety
+    ///
+    /// It is impossible for ordinary users to call this safely, because `self`
+    /// must be a direct, unwrapped reference to a value stored in the GC heap,
+    /// which ordinary users cannot obtain.
+    unsafe fn trace<R>(&Self::In, tracer: &mut R)
+    where
+        R: Tracer;
+}
 
 /// Trait for values that can be moved into a GC heap.
 ///
 /// Cell-gc does not support GC allocation of arbitrary values: only values of
 /// types that implement `IntoHeap`. This trait is **not** meant to be
-/// implemented by hand: use the `gc_heap_type!` macro instead. All primitive
-/// types and many standard types support `IntoHeap`.
+/// implemented by hand: use `#[derive(IntoHeap)]` instead. All primitive types
+/// and many standard types support `IntoHeap`.
 ///
-/// GC types come in pairs: an *in-heap* type, which is stored physically inside
-/// the heap, and may be packed with pointer fields and unsafe methods; and an
-/// `IntoHeap` type, which is safe, is used in application code, and lives on
-/// the stack. Both types have the same layout, bit for bit.
-///
-/// (The word "safe" above means that, as with everything generally in Rust, you
-/// can hack without fear. `IntoHeap` types don't expose raw Rust pointers or
-/// references to GC memory, they don't expose the unsafe in-heap types, and
-/// they obey Rust's safety and aliasing rules.)
-///
-/// Users never get a direct `&` reference to any in-heap value. All access is
-/// through safe `IntoHeap` types, like the `Ref` type that is automatically
-/// declared for you when you use `gc_heap_type!` to declare a struct.
-///
-/// *   For primitive types, like `i32`, the two types are the same.
-///
-/// *   Macro-generated "Ref" types are `IntoHeap` types; the corresponding
-///     in-heap types are effectively raw pointers.
-///
-/// *   For macro-generated structs and enums, the user specifies the names of
-///     both types. Both types have identical fields or variants, but fields of
-///     the in-heap type are in-heap, and fields of the `IntoHeap` type are
-///     `IntoHeap`.
+/// That is all you need to know in order to use cell-gc. The rest is really
+/// implementation detail.
 ///
 /// Implementation note: every type with `'static` lifetime should be safe to
-/// store in the heap, because ref types are never `'static`. Unfortunately I
-/// can't make rustc understand this. It would be *legal* to write this:
+/// store in the heap, because ref types are never `'static`. Unfortunately
+/// rustc cannot be made to understand this. It would be *legal* to write this:
 ///
 /// ```ignore
 /// unsafe impl<'h, T: Clone + 'static> IntoHeap<'h> for T { ...trivial... }
@@ -56,49 +105,28 @@ use ptr::Pointer;
 ///
 /// # Safety
 ///
-/// In-heap objects are full of pointers; if `into_heap` puts garbage into
-/// them, GC will crash.
+/// Implementing `IntoHeap<'h>` tells cell-gc that a type integrates with
+/// garbage collection. All the methods in the type's `IntoHeapBase` impl must
+/// be correct or it will explode.
 ///
-/// `trace` must be implemented with care in order to preserve the invariants
-/// of the GC graph-walking algorithm. Bugs there are very likely to lead to
-/// dangling pointers and hard-to-debug crashes down the road.
+/// *   In-heap values are typically full of pointers; if `into_heap` puts
+///     garbage into them, GC will crash.
 ///
-/// And this maybe goes without saying, but none of these methods may allocate
-/// or do anything else that could trigger garbage collection.
+/// *   `trace` must be implemented with care in order to preserve the
+///     invariants of the GC graph-walking algorithm. Bugs there are very
+///     likely to lead to dangling pointers and hard-to-debug crashes down the
+///     road.
 ///
-pub unsafe trait IntoHeap<'h>: Sized {
-    /// The type of the value when it is physically stored in the heap.
-    type In;
-
-    /// Convert the value to the form it should have in the heap.
-    /// This is for macro-generated code to call.
-    ///
-    /// This method must not be called while any direct Rust references to
-    /// heap objects exist. (However, user code never runs while such
-    /// references exist, so the method is not marked `unsafe`.)
-    fn into_heap(self) -> Self::In;
-
-    /// Extract the value from the heap. This turns any raw pointers in the
-    /// in-heap value into safe references, so while it's an unsafe function,
-    /// the result of a correct call can be safely handed out to user code.
-    ///
-    /// Unsafe to call: It is impossible for ordinary users to call this
-    /// safely, because `self` must be a direct, unwrapped reference to a value
-    /// stored in the GC heap, which ordinary users cannot obtain.
-    unsafe fn from_heap(&Self::In) -> Self;
-
-    /// # Safety
-    ///
-    /// It is impossible for ordinary users to call this safely, because `self`
-    /// must be a direct, unwrapped reference to a value stored in the GC heap,
-    /// which ordinary users cannot obtain.
-    unsafe fn trace<R>(&Self::In, tracer: &mut R)
-    where
-        R: Tracer;
+/// *   And this probably goes without saying, but none of these methods may
+///     allocate or do anything else that could trigger garbage collection.
+///
+pub unsafe trait IntoHeap<'h>: IntoHeapBase {
 }
 
-/// Relate an `IntoHeap` type to the corresponding safe reference type.
+/// Types that can be allocated in the heap.
 pub trait IntoHeapAllocation<'h>: IntoHeap<'h> {
+    /// The safe reference type that's returned when a value of this type is
+    /// moved into the heap (allocated).
     type Ref: IntoHeap<'h>;
 
     fn wrap_gcref(gcref: GcRef<'h, Self>) -> Self::Ref;
@@ -114,12 +142,13 @@ pub trait Tracer {
 
 macro_rules! gc_trivial_impl {
     ($t:ty) => {
-        unsafe impl<'h> IntoHeap<'h> for $t {
+        impl IntoHeapBase for $t {
             type In = $t;
             fn into_heap(self) -> $t { self }
             unsafe fn from_heap(storage: &$t) -> $t { storage.clone() }
             unsafe fn trace<R>(_storage: &$t, _tracer: &mut R) where R: Tracer {}
         }
+        unsafe impl<'h> IntoHeap<'h> for $t {}
     }
 }
 
@@ -145,12 +174,16 @@ macro_rules! gc_generic_trivial_impl {
     ([$($x:tt)*] $t:ty) => {
         gc_generic_trivial_impl! {
             @as_item
-            unsafe impl<'h, $($x)*> IntoHeap<'h> for $t {
+            impl<$($x)*> IntoHeapBase for $t {
                 type In = $t;
                 fn into_heap(self) -> $t { self }
                 unsafe fn from_heap(storage: &$t) -> $t { (*storage).clone() }
                 unsafe fn trace<R>(_storage: &$t, _tracer: &mut R) where R: Tracer {}
             }
+        }
+        gc_generic_trivial_impl! {
+            @as_item
+            unsafe impl<'h, $($x)*> IntoHeap<'h> for $t {}
         }
     }
 }
@@ -164,7 +197,7 @@ gc_generic_trivial_impl!([T: Clone + 'static] ::std::rc::Rc<T>);
 // Transitive implementations ("this particular kind of struct/enum is IntoHeap
 // if all its fields are") are slightly less trivial.
 
-unsafe impl<'h, T: IntoHeap<'h>> IntoHeap<'h> for Option<T> {
+impl<T: IntoHeapBase> IntoHeapBase for Option<T> {
     type In = Option<T::In>;
 
     fn into_heap(self) -> Option<T::In> {
@@ -189,12 +222,14 @@ unsafe impl<'h, T: IntoHeap<'h>> IntoHeap<'h> for Option<T> {
     }
 }
 
+unsafe impl<'h, T: IntoHeap<'h>> IntoHeap<'h> for Option<T> {}
+
 macro_rules! gc_trivial_tuple_impl {
     (@as_item $it:item) => { $it };
     ($($t:ident),*) => {
         gc_trivial_tuple_impl! {
             @as_item
-            unsafe impl<'h, $($t: IntoHeap<'h>,)*> IntoHeap<'h> for ($($t,)*) {
+            impl<$($t: IntoHeapBase,)*> IntoHeapBase for ($($t,)*) {
                 type In = ($($t::In,)*);
 
                 #[allow(non_snake_case)]  // because we use the type names as variable names (!)
@@ -210,7 +245,7 @@ macro_rules! gc_trivial_tuple_impl {
                     let &($(ref $t,)*) = storage;
 
                     $(
-                        <$t as $crate::traits::IntoHeap>::trace($t, tracer);
+                        <$t as $crate::traits::IntoHeapBase>::trace($t, tracer);
                     )*
 
                     // If the above `$(...)*` expansion is empty, we need this
@@ -221,9 +256,14 @@ macro_rules! gc_trivial_tuple_impl {
                 #[allow(non_snake_case)]
                 unsafe fn from_heap(storage: &Self::In) -> Self {
                     let &($(ref $t,)*) = storage;
-                    ($( <$t as $crate::traits::IntoHeap>::from_heap($t), )*)
+                    ($( <$t as $crate::traits::IntoHeapBase>::from_heap($t), )*)
                 }
             }
+        }
+
+        gc_trivial_tuple_impl! {
+            @as_item
+            unsafe impl<'h, $($t: IntoHeap<'h>,)*> IntoHeap<'h> for ($($t,)*) {}
         }
     }
 }

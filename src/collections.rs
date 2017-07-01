@@ -4,9 +4,9 @@ use gcref::GcRef;
 use ptr::Pointer;
 use std::cmp::Ordering;
 use std::mem;
-use traits::{IntoHeap, IntoHeapAllocation, Tracer};
+use traits::{IntoHeapBase, IntoHeap, IntoHeapAllocation, Tracer};
 
-unsafe impl<'h, T: IntoHeap<'h>> IntoHeap<'h> for Vec<T> {
+impl<T: IntoHeapBase> IntoHeapBase for Vec<T> {
     type In = Vec<T::In>;
 
     fn into_heap(self) -> Vec<T::In> {
@@ -26,6 +26,8 @@ unsafe impl<'h, T: IntoHeap<'h>> IntoHeap<'h> for Vec<T> {
         }
     }
 }
+
+unsafe impl<'h, T: IntoHeap<'h>> IntoHeap<'h> for Vec<T> {}
 
 impl<'h, T: IntoHeap<'h>> IntoHeapAllocation<'h> for Vec<T> {
     type Ref = VecRef<'h, T>;
@@ -56,7 +58,7 @@ impl<'h, T: IntoHeap<'h>> IntoHeapAllocation<'h> for Vec<T> {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VecRef<'h, T: IntoHeap<'h>>(GcRef<'h, Vec<T>>);
 
-unsafe impl<'h, T: IntoHeap<'h>> IntoHeap<'h> for VecRef<'h, T> {
+impl<'h, T: IntoHeap<'h>> IntoHeapBase for VecRef<'h, T> {
     type In = Pointer<Vec<T::In>>;
 
     fn into_heap(self) -> Pointer<Vec<T::In>> {
@@ -78,6 +80,8 @@ unsafe impl<'h, T: IntoHeap<'h>> IntoHeap<'h> for VecRef<'h, T> {
         }
     }
 }
+
+unsafe impl<'h, T: IntoHeap<'h>> IntoHeap<'h> for VecRef<'h, T> {}
 
 impl<'h, T: IntoHeap<'h>> VecRef<'h, T> {
     /// Run the given closure, passing it a reference to the heap-internal
@@ -130,7 +134,7 @@ impl<'h, T: IntoHeap<'h>> VecRef<'h, T> {
     ///
     /// Panics if `index` is out of bounds.
     pub fn get(&self, index: usize) -> T {
-        unsafe { self.with_storage(|v| IntoHeap::from_heap(&v[index])) }
+        unsafe { self.with_storage(|v| T::from_heap(&v[index])) }
     }
 
     /// Copy the vector out of the GC-managed heap. This returns an ordinary,
@@ -150,7 +154,7 @@ impl<'h, T: IntoHeap<'h>> VecRef<'h, T> {
     /// # });
     /// ```
     pub fn get_all(&self) -> Vec<T> {
-        unsafe { IntoHeap::from_heap(&*self.0.as_ptr()) }
+        unsafe { <Vec<T>>::from_heap(&*self.0.as_ptr()) }
     }
 
     /// Set element `index` of the vector to `value`.
@@ -196,7 +200,7 @@ impl<'h, T: IntoHeap<'h>> VecRef<'h, T> {
     pub fn swap_remove(&self, index: usize) -> T {
         unsafe {
             let u = self.with_storage_mut(|v| v.swap_remove(index));
-            IntoHeap::from_heap(&u)
+            T::from_heap(&u)
         }
     }
 
@@ -210,7 +214,7 @@ impl<'h, T: IntoHeap<'h>> VecRef<'h, T> {
     pub fn remove(&self, index: usize) -> T {
         unsafe {
             let u = self.with_storage_mut(|v| v.remove(index));
-            IntoHeap::from_heap(&u)
+            T::from_heap(&u)
         }
     }
 
@@ -222,7 +226,7 @@ impl<'h, T: IntoHeap<'h>> VecRef<'h, T> {
     }
 
     pub fn pop(&self) -> Option<T> {
-        unsafe { self.with_storage_mut(|v| v.pop().map(|u| IntoHeap::from_heap(&u))) }
+        unsafe { self.with_storage_mut(|v| v.pop().map(|u| T::from_heap(&u))) }
     }
 
     pub fn append(&self, other: &VecRef<'h, T>) {
@@ -253,14 +257,14 @@ impl<'h, T: IntoHeap<'h>> VecRef<'h, T> {
     /// but cell-gc never hands out Rust references to heap values. Instead
     /// this returns a clone of the value.
     pub fn first(&self) -> Option<T> {
-        unsafe { self.with_storage(|v| v.first().map(|u| IntoHeap::from_heap(u))) }
+        unsafe { self.with_storage(|v| v.first().map(|u| T::from_heap(u))) }
     }
 
     /// Get the last element of the vector, or `None` if the vector is empty.
     ///
     /// Like `first()`, this clones the value.
     pub fn last(&self) -> Option<T> {
-        unsafe { self.with_storage(|v| v.last().map(|u| IntoHeap::from_heap(u))) }
+        unsafe { self.with_storage(|v| v.last().map(|u| T::from_heap(u))) }
     }
 
     /// Sort the vector in place.
@@ -283,8 +287,8 @@ impl<'h, T: IntoHeap<'h>> VecRef<'h, T> {
             self.with_storage_mut(|v| mem::swap(&mut tmp, v));
         }
         tmp.sort_by(|ru1, ru2| {
-            let t1 = unsafe { IntoHeap::from_heap(ru1) };
-            let t2 = unsafe { IntoHeap::from_heap(ru2) };
+            let t1 = unsafe { T::from_heap(ru1) };
+            let t2 = unsafe { T::from_heap(ru2) };
             compare(&t1, &t2)
         });
         unsafe {

@@ -50,8 +50,8 @@ fn impl_into_heap_for_struct(ast: &syn::DeriveInput, data: &syn::VariantData) ->
                 .map(|f| {
                     let field_ty = &f.ty;
                     quote! {
-                    <#field_ty as ::cell_gc::traits::IntoHeap<#heap_lifetime>>::In
-                }
+                        <#field_ty as ::cell_gc::traits::IntoHeapBase>::In
+                    }
                 })
                 .collect();
 
@@ -70,7 +70,7 @@ fn impl_into_heap_for_struct(ast: &syn::DeriveInput, data: &syn::VariantData) ->
                     let name = &f.ident;
                     let ty = &f.ty;
                     quote! {
-                    <#ty as ::cell_gc::traits::IntoHeap<#heap_lifetime>>
+                    <#ty as ::cell_gc::traits::IntoHeapBase>
                         ::trace(&storage.#name, tracer);
                 }
                 })
@@ -81,7 +81,7 @@ fn impl_into_heap_for_struct(ast: &syn::DeriveInput, data: &syn::VariantData) ->
             let field_names_1 = field_names;
 
             let into_heap = quote! {
-                unsafe impl #impl_generics ::cell_gc::traits::IntoHeap<#heap_lifetime>
+                impl #impl_generics ::cell_gc::traits::IntoHeapBase
                     for #name #ty_generics
                     #where_clause
                 {
@@ -91,7 +91,7 @@ fn impl_into_heap_for_struct(ast: &syn::DeriveInput, data: &syn::VariantData) ->
                         #storage_type_name {
                             #(
                                 #field_names:
-                                    ::cell_gc::traits::IntoHeap::into_heap(
+                                    ::cell_gc::traits::IntoHeapBase::into_heap(
                                         self.#field_names_1)
                             ),*
                         }
@@ -111,12 +111,17 @@ fn impl_into_heap_for_struct(ast: &syn::DeriveInput, data: &syn::VariantData) ->
                         #name {
                             #(
                                 #field_names:
-                                    ::cell_gc::traits::IntoHeap::from_heap(
+                                    ::cell_gc::traits::IntoHeapBase::from_heap(
                                         &storage.#field_names_1)
                             ),*
                         }
                     }
                 }
+
+                unsafe impl #impl_generics ::cell_gc::traits::IntoHeap<#heap_lifetime>
+                    for #name #ty_generics
+                    #where_clause
+                {}
             };
 
             // 3. IntoHeapAllocation implementation.
@@ -147,7 +152,7 @@ fn impl_into_heap_for_struct(ast: &syn::DeriveInput, data: &syn::VariantData) ->
 
             // 5. The ref type also gets an IntoHeap impl...
             let ref_type_into_heap = quote! {
-                unsafe impl #impl_generics ::cell_gc::traits::IntoHeap<#heap_lifetime>
+                impl #impl_generics ::cell_gc::traits::IntoHeapBase
                     for #ref_type_name #ty_generics
                     #where_clause
                 {
@@ -169,6 +174,11 @@ fn impl_into_heap_for_struct(ast: &syn::DeriveInput, data: &syn::VariantData) ->
                         #ref_type_name(::cell_gc::GcRef::<#name #ty_generics>::new(*storage))
                     }
                 }
+
+                unsafe impl #impl_generics ::cell_gc::traits::IntoHeap<#heap_lifetime>
+                    for #ref_type_name #ty_generics
+                    #where_clause
+                {}
             };
 
             // 6. Getters and setters.
@@ -186,7 +196,7 @@ fn impl_into_heap_for_struct(ast: &syn::DeriveInput, data: &syn::VariantData) ->
                         #field_vis fn #field_names(&self) -> #field_types {
                             let ptr = self.0.as_ptr();
                             unsafe {
-                                ::cell_gc::traits::IntoHeap::from_heap(
+                                ::cell_gc::traits::IntoHeapBase::from_heap(
                                     &(*ptr).#field_names_1)
                             }
                         }
@@ -196,7 +206,7 @@ fn impl_into_heap_for_struct(ast: &syn::DeriveInput, data: &syn::VariantData) ->
                         #[allow(dead_code)]
                         #field_vis fn #field_setter_names(&self, v: #field_types) {
                             let ptr = self.0.as_mut_ptr();
-                            let u = ::cell_gc::traits::IntoHeap::into_heap(v);
+                            let u = ::cell_gc::traits::IntoHeapBase::into_heap(v);
                             unsafe {
                                 (*ptr).#field_names = u;
                             }
@@ -205,7 +215,7 @@ fn impl_into_heap_for_struct(ast: &syn::DeriveInput, data: &syn::VariantData) ->
 
                     ///// Get all fields at once.
                     //pub fn get(&self) -> #name {
-                    //    ::cell_gc::traits::IntoHeap::from_heap(ptr)
+                    //    ::cell_gc::traits::IntoHeapBase::from_heap(ptr)
                     //}
 
                     #[allow(dead_code)]
@@ -261,7 +271,7 @@ fn impl_into_heap_for_enum(ast: &syn::DeriveInput, variants: &[syn::Variant]) ->
                     quote! {
                         #( #field_attrs )*
                         #field_name:
-                            <#field_ty as ::cell_gc::traits::IntoHeap<#heap_lifetime>>::In
+                            <#field_ty as ::cell_gc::traits::IntoHeapBase>::In
                     }
                 });
                 quote! {
@@ -275,7 +285,7 @@ fn impl_into_heap_for_enum(ast: &syn::DeriveInput, variants: &[syn::Variant]) ->
                     let field_attrs = &f.attrs;
                     quote! {
                         #( #field_attrs )*
-                        <#field_ty as ::cell_gc::traits::IntoHeap<#heap_lifetime>>::In
+                        <#field_ty as ::cell_gc::traits::IntoHeapBase>::In
                     }
                 });
                 quote! {
@@ -303,21 +313,18 @@ fn impl_into_heap_for_enum(ast: &syn::DeriveInput, variants: &[syn::Variant]) ->
             syn::VariantData::Struct(ref fields) => {
                 let field_names: &Vec<_> = &fields.iter().map(|f| &f.ident).collect();
                 let field_names_1 = field_names;
-                let field_types = fields.iter().map(|f| &f.ty);
                 quote! {
                     #name::#ident { #(#field_names),* } => {
                         #storage_type_name::#ident {
                             #(
                                 #field_names:
-                                    <#field_types as ::cell_gc::traits::IntoHeap>
-                                    ::into_heap(#field_names_1)
+                                    ::cell_gc::traits::IntoHeapBase::into_heap(#field_names_1)
                             ),*
                         }
                     }
                 }
             }
             syn::VariantData::Tuple(ref fields) => {
-                let field_types = fields.iter().map(|f| &f.ty);
                 let bindings: &Vec<Ident> = &(0..fields.len())
                     .map(|n| Ident::from(format!("x{}", n)))
                     .collect();
@@ -325,8 +332,7 @@ fn impl_into_heap_for_enum(ast: &syn::DeriveInput, variants: &[syn::Variant]) ->
                     #name::#ident( #(#bindings),* ) => {
                         #storage_type_name::#ident(
                             #(
-                                <#field_types as ::cell_gc::traits::IntoHeap>
-                                    ::into_heap(#bindings)
+                                ::cell_gc::traits::IntoHeapBase::into_heap(#bindings)
                             ),*
                         )
                     }
@@ -352,7 +358,7 @@ fn impl_into_heap_for_enum(ast: &syn::DeriveInput, variants: &[syn::Variant]) ->
                         #name::#ident {
                             #(
                                 #field_names:
-                                    <#field_types as ::cell_gc::traits::IntoHeap>
+                                    <#field_types as ::cell_gc::traits::IntoHeapBase>
                                     ::from_heap(#field_names_1)
                             ),*
                         }
@@ -368,7 +374,7 @@ fn impl_into_heap_for_enum(ast: &syn::DeriveInput, variants: &[syn::Variant]) ->
                     #storage_type_name::#ident( #(ref #bindings),* ) => {
                         #name::#ident(
                             #(
-                                <#field_types as ::cell_gc::traits::IntoHeap>
+                                <#field_types as ::cell_gc::traits::IntoHeapBase>
                                     ::from_heap(#bindings)
                             ),*
                         )
@@ -392,7 +398,7 @@ fn impl_into_heap_for_enum(ast: &syn::DeriveInput, variants: &[syn::Variant]) ->
                 quote! {
                     #storage_type_name::#ident { #(ref #field_names),* } => {
                         #(
-                            <#field_types as ::cell_gc::traits::IntoHeap>
+                            <#field_types as ::cell_gc::traits::IntoHeapBase>
                                 ::trace(#field_names, tracer);
                         )*
                     }
@@ -406,7 +412,7 @@ fn impl_into_heap_for_enum(ast: &syn::DeriveInput, variants: &[syn::Variant]) ->
                 quote! {
                     #storage_type_name::#ident( #(ref #bindings),* ) => {
                         #(
-                            <#field_types as ::cell_gc::traits::IntoHeap>
+                            <#field_types as ::cell_gc::traits::IntoHeapBase>
                                 ::trace(#bindings, tracer);
                         )*
                     }
@@ -419,8 +425,8 @@ fn impl_into_heap_for_enum(ast: &syn::DeriveInput, variants: &[syn::Variant]) ->
     });
 
     let into_heap = quote! {
-        unsafe impl #impl_generics
-            ::cell_gc::traits::IntoHeap<#heap_lifetime>
+        impl #impl_generics
+            ::cell_gc::traits::IntoHeapBase
             for #name #ty_generics
             #where_clause
         {
@@ -450,6 +456,12 @@ fn impl_into_heap_for_enum(ast: &syn::DeriveInput, variants: &[syn::Variant]) ->
                 let _ = tracer;
             }
         }
+
+        unsafe impl #impl_generics
+            ::cell_gc::traits::IntoHeap<#heap_lifetime>
+            for #name #ty_generics
+            #where_clause
+        {}
     };
 
     quote! {
