@@ -1,3 +1,4 @@
+use print::print as print_value;
 use std::fmt;
 use vm::Value;
 use vm::Value::*;
@@ -77,6 +78,14 @@ pub fn mul<'h>(args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
         }
     }
     Ok(Int(total))
+}
+
+pub fn print<'h>(args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
+    for v in args {
+        print_value(v);
+        println!();
+    }
+    Ok(Nil)
 }
 
 pub fn sub<'h>(args: Vec<Value<'h>>) -> Result<Value<'h>, String> {

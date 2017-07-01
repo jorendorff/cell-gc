@@ -40,6 +40,7 @@ impl<'h> Value<'h> {
         builtin!("*", builtins::mul);
         builtin!("assert", builtins::assert);
         builtin!("eq?", builtins::eq_question);
+        builtin!("print", builtins::print);
 
         env
     }
