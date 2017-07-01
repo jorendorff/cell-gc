@@ -3,17 +3,17 @@
 extern crate cell_gc;
 #[macro_use]
 extern crate cell_gc_derive;
-use cell_gc::{GCLeaf, HeapSession, with_heap};
+use cell_gc::{GCLeaf, HeapSession};
 use std::rc::Rc;
 
 #[derive(Debug, IntoHeap)]
-struct Pair<'h> {
-    car: Value<'h>,
-    cdr: Value<'h>,
+pub struct Pair<'h> {
+    pub car: Value<'h>,
+    pub cdr: Value<'h>,
 }
 
 #[derive(Clone, Debug, PartialEq, IntoHeap)]
-enum Value<'h> {
+pub enum Value<'h> {
     Nil,
     Int(i32),
     Symbol(Rc<String>),
@@ -24,7 +24,7 @@ enum Value<'h> {
 
 use Value::*;
 
-struct BuiltinFnPtr(for<'b> fn(Vec<Value<'b>>) -> Result<Value<'b>, String>);
+pub struct BuiltinFnPtr(pub for<'b> fn(Vec<Value<'b>>) -> Result<Value<'b>, String>);
 
 // This can't be #[derive]d because function pointers aren't Clone.
 // But they are Copy. A very weird thing about Rust.
@@ -48,7 +48,7 @@ impl std::fmt::Debug for BuiltinFnPtr {
 }
 
 impl<'h> Value<'h> {
-    fn push_env(&mut self, hs: &mut HeapSession<'h>, key: Rc<String>, value: Value<'h>) {
+    pub fn push_env(&mut self, hs: &mut HeapSession<'h>, key: Rc<String>, value: Value<'h>) {
         let pair = Cons(hs.alloc(Pair {
             car: Symbol(key),
             cdr: value,
@@ -60,6 +60,7 @@ impl<'h> Value<'h> {
     }
 }
 
+#[macro_export]
 macro_rules! lisp {
     { ( ) , $_hs:expr } => {
         Nil
@@ -159,7 +160,7 @@ fn apply<'h>(
     }
 }
 
-fn eval<'h>(
+pub fn eval<'h>(
     hs: &mut HeapSession<'h>,
     expr: Value<'h>,
     env: &Value<'h>,
@@ -197,7 +198,7 @@ fn eval<'h>(
     }
 }
 
-fn add<'h>(args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
+pub fn add<'h>(args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
     let mut total = 0;
     for v in args {
         if let Int(n) = v {
@@ -209,18 +210,5 @@ fn add<'h>(args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
     Ok(Int(total))
 }
 
-fn main() {
-    with_heap(|hs| {
-        let mut env = Nil;
-        env.push_env(
-            hs,
-            Rc::new("+".to_string()),
-            Builtin(GCLeaf::new(BuiltinFnPtr(add))),
-        );
-        let program = lisp!(
-            ((lambda (x y z) (+ x (+ y z))) 3 4 5)
-            , hs);
-        let result = eval(hs, program, &env);
-        assert_eq!(result, Ok(Int(12)));
-    });
-}
+#[cfg(test)]
+include!("tests.rs");
