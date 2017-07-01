@@ -76,7 +76,7 @@ struct IntList<'h> {
     If you try to use anything else, you'll get bizarre error messages
     from `rustc`.
 
-*   It declare a `Ref` type for you, in this case `IntListRef`.
+*   It declares a `Ref` type for you, in this case `IntListRef`.
     `cell_gc` names this type by gluing `Ref` to the end of the struct
     name. `IntListRef` is a smart pointer to a GC-managed `IntList`. You
     need this because `cell_gc` doesn't let you have normal Rust references
