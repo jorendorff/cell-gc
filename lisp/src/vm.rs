@@ -39,6 +39,9 @@ impl<'h> Value<'h> {
         builtin!("-", builtins::sub);
         builtin!("*", builtins::mul);
         builtin!("assert", builtins::assert);
+        builtin!("car", builtins::car);
+        builtin!("cdr", builtins::cdr);
+        builtin!("cons", builtins::cons);
         builtin!("eq?", builtins::eq_question);
         builtin!("print", builtins::print);
 
@@ -121,7 +124,7 @@ fn apply<'h>(
     args: Vec<Value<'h>>,
 ) -> Result<Value<'h>, String> {
     match fval {
-        Builtin(f) => (f.0)(args),
+        Builtin(f) => (f.0)(hs, args),
         Lambda(pair) => {
             let mut env = pair.cdr();
             let (mut params, rest) = parse_pair(pair.car(), "syntax error in lambda")?;
