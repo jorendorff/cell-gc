@@ -1,8 +1,8 @@
 //! If you use enough force, you can actually use this GC to implement a toy VM.
 
-use cell_gc::{GCLeaf, HeapSession};
+use cell_gc::{GcLeaf, HeapSession};
 use std::fmt;
-use std::rc::Rc;
+use std::sync::Arc;
 
 #[derive(Debug, IntoHeap)]
 pub struct Pair<'h> {
@@ -14,10 +14,10 @@ pub struct Pair<'h> {
 pub enum Value<'h> {
     Nil,
     Int(i32),
-    Symbol(Rc<String>),
+    Symbol(Arc<String>),
     Cons(PairRef<'h>),
     Lambda(PairRef<'h>),
-    Builtin(GCLeaf<BuiltinFnPtr>),
+    Builtin(GcLeaf<BuiltinFnPtr>),
 }
 
 pub use self::Value::*;
@@ -46,7 +46,7 @@ impl fmt::Debug for BuiltinFnPtr {
 }
 
 impl<'h> Value<'h> {
-    pub fn push_env(&mut self, hs: &mut HeapSession<'h>, key: Rc<String>, value: Value<'h>) {
+    pub fn push_env(&mut self, hs: &mut HeapSession<'h>, key: Arc<String>, value: Value<'h>) {
         let pair = Cons(hs.alloc(Pair {
             car: Symbol(key),
             cdr: value,
@@ -76,7 +76,7 @@ macro_rules! lisp {
             if s.starts_with(|c: char| c.is_digit(10)) {
                 Int(s.parse().expect("invalid numeric literal in `lisp!`"))
             } else {
-                Symbol(Rc::new(s.to_string()))
+                Symbol(Arc::new(s.to_string()))
             }
         }
     };
@@ -89,7 +89,7 @@ fn parse_pair<'h>(v: Value<'h>, msg: &'static str) -> Result<(Value<'h>, Value<'
     }
 }
 
-fn lookup<'h>(mut env: Value<'h>, name: Rc<String>) -> Result<Value<'h>, String> {
+fn lookup<'h>(mut env: Value<'h>, name: Arc<String>) -> Result<Value<'h>, String> {
     let v = Symbol(name.clone());
     while let Cons(p) = env {
         let (key, value) = parse_pair(p.car(), "internal error: bad environment structure")?;

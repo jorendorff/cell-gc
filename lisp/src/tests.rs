@@ -6,8 +6,8 @@ fn add_in_lambda() {
         let mut env = Nil;
         env.push_env(
             hs,
-            Rc::new("+".to_string()),
-            Builtin(GCLeaf::new(BuiltinFnPtr(add))),
+            Arc::new("+".to_string()),
+            Builtin(GcLeaf::new(BuiltinFnPtr(add))),
         );
         let program = lisp!(
             ((lambda (x y z) (+ x (+ y z))) 3 4 5)

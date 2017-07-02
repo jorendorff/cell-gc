@@ -2,7 +2,7 @@
 
 use asexp::{Atom, Sexp};
 use cell_gc::HeapSession;
-use std::rc::Rc;
+use std::sync::Arc;
 use vm::{Pair, Value};
 
 /// Top level entry point to s-expression parsing. Takes a source string and
@@ -18,7 +18,7 @@ pub fn sexp_to_value<'h>(hs: &mut HeapSession<'h>, sexp: Sexp) -> Result<Value<'
     match sexp {
         Sexp::Atom(atom) => {
             match atom {
-                Atom::Str(s) => Ok(Value::Symbol(Rc::new(s))),
+                Atom::Str(s) => Ok(Value::Symbol(Arc::new(s))),
                 Atom::SInt(s) => Ok(Value::Int(s as _)),
                 Atom::UInt(u) => Ok(Value::Int(u as _)),
                 Atom::Float(_) => Err("floats aren't supported"),

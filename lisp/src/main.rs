@@ -5,7 +5,7 @@ extern crate cell_gc_derive;
 
 use std::io::{self, Write};
 use std::process;
-use std::rc::Rc;
+use std::sync::Arc;
 
 pub mod parser;
 pub mod vm;
@@ -22,8 +22,8 @@ fn repl() -> io::Result<()> {
         let mut env = vm::Nil;
         env.push_env(
             hs,
-            Rc::new("+".to_string()),
-            vm::Builtin(cell_gc::GCLeaf::new(vm::BuiltinFnPtr(vm::add))),
+            Arc::new("+".to_string()),
+            vm::Builtin(cell_gc::GcLeaf::new(vm::BuiltinFnPtr(vm::add))),
         );
 
         loop {
