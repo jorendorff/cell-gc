@@ -258,10 +258,12 @@ impl Heap {
         }
     }
 
+    /// Perform GC. This is called from `<Heap as Drop>::drop()`, so
+    /// unreachable values found by GC must be dropped synchronously, before
+    /// this returns.
     fn gc(&mut self) {
         mark(self);
 
-        // sweep phase
         for page_set in self.page_sets.values_mut() {
             unsafe {
                 page_set.sweep();
@@ -273,7 +275,10 @@ impl Heap {
 impl Drop for Heap {
     fn drop(&mut self) {
         // Perform a final GC to call destructors on any remaining allocations.
-        assert!(self.pins.borrow().is_empty());
+        // We do not mark anything. This is safe because nothing that's pinned
+        // will ever be touched again; allocations can be pinned when we get
+        // here, but only if we leaked a `GcRef`.
+        self.pins.borrow_mut().clear();
         self.gc();
 
         for page_set in self.page_sets.values() {
