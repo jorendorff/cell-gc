@@ -4,7 +4,7 @@ use gc_ref::GcRef;
 use ptr::Pointer;
 use std::cmp::Ordering;
 use std::mem;
-use traits::{IntoHeapBase, IntoHeap, IntoHeapAllocation, Tracer};
+use traits::{IntoHeap, IntoHeapAllocation, IntoHeapBase, Tracer};
 
 impl<T: IntoHeapBase> IntoHeapBase for Vec<T> {
     type In = Vec<T::In>;

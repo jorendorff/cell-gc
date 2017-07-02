@@ -4,7 +4,7 @@ extern crate cell_gc;
 #[macro_use]
 extern crate cell_gc_derive;
 
-use cell_gc::{Heap, GcLeaf};
+use cell_gc::{GcLeaf, Heap};
 use std::marker::PhantomData;
 use std::sync::Arc;
 
@@ -53,9 +53,7 @@ fn test_gc_leaf_drop() {
     let mut heaps = vec![];
     for _ in 0..2 {
         let mut heap = Heap::new();
-        heap.enter(|hs| {
-            let _ = hs.alloc(GcLeaf::new(point.clone()));
-        });
+        heap.enter(|hs| { let _ = hs.alloc(GcLeaf::new(point.clone())); });
         heaps.push(heap);
     }
     assert_eq!(Arc::strong_count(&point), 3);

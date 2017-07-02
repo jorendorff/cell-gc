@@ -1,9 +1,10 @@
+
+use gc_leaf::GcLeaf;
 use heap::{Heap, HeapSessionId};
 use ptr::Pointer;
 use std::fmt;
 use std::marker::PhantomData;
 use traits::IntoHeapAllocation;
-use gc_leaf::GcLeaf;
 
 pub struct GcRef<'h, T: IntoHeapAllocation<'h>> {
     ptr: Pointer<T::In>, // never null

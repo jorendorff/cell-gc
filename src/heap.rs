@@ -76,13 +76,13 @@
 use gc_ref::GcRef;
 use marking::{MarkingTracer, mark};
 use pages::{PageSet, PageSetRef, TypedPage, heap_type_id};
+use pages::TypeId;
 use ptr::{Pointer, UntypedPointer};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::ptr;
 use traits::IntoHeapAllocation;
-use pages::TypeId;
 
 /// A `Heap` is a universe in which you can store values that implement
 /// `IntoHeapAllocation`. The values are mutable and they can point to each

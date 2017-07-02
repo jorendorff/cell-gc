@@ -128,8 +128,7 @@ pub trait IntoHeapBase: Sized {
 /// *   And this probably goes without saying, but none of these methods may
 ///     allocate or do anything else that could trigger garbage collection.
 ///
-pub unsafe trait IntoHeap<'h>: IntoHeapBase {
-}
+pub unsafe trait IntoHeap<'h>: IntoHeapBase {}
 
 /// Types that can be allocated in the heap.
 pub trait IntoHeapAllocation<'h>: IntoHeap<'h> {
