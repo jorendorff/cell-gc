@@ -1,5 +1,6 @@
 use cell_gc;
 use parser::parse;
+use print::print;
 use std::io::{self, Write};
 use vm;
 
@@ -25,7 +26,8 @@ pub fn repl() -> io::Result<()> {
             let result = vm::eval(hs, expr, &env);
 
             // Print
-            println!("{:?}", result);
+            print(val);
+            println!();
 
             // Loop...
         }
