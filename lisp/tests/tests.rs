@@ -12,11 +12,13 @@ fn eval_test_file(file: path::PathBuf) {
     let mut source = String::new();
     file.read_to_string(&mut source)
         .expect("Should read file OK");
+    println!("source =");
+    println!("{}", source);
 
     cell_gc::with_heap(|hs| {
         let expr = lisp::parser::parse(hs, &source).expect("Should parse s-exp OK");
-        let env = lisp::vm::Value::default_env(hs);
-        let _ = lisp::vm::eval(hs, expr, &env).expect("Should eval expr OK");
+        let env = lisp::vm::Environment::default_env(hs);
+        let _ = lisp::vm::eval(hs, expr, env).expect("Should eval expr OK");
     });
 }
 
@@ -35,3 +37,4 @@ test!(closure);
 test!(cons);
 test!(double);
 test!(y_combinator);
+test!(define);

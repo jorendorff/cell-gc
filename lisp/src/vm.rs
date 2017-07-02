@@ -23,15 +23,18 @@ pub enum Value<'h> {
 
 pub use self::Value::*;
 
-impl<'h> Value<'h> {
-    pub fn default_env(hs: &mut HeapSession<'h>) -> Value<'h> {
-        let mut env = Nil;
+#[derive(Clone, Debug, PartialEq)]
+pub struct Environment<'h>(pub Value<'h>);
+
+impl<'h> Environment<'h> {
+    pub fn default_env(hs: &mut HeapSession<'h>) -> Environment<'h> {
+        let mut env = Environment(Nil);
 
         macro_rules! builtin {
             ( $lisp_ident:expr , $func:expr ) => {
-                env.push_env(hs,
-                             Arc::new($lisp_ident.to_string()),
-                             Builtin(GcLeaf::new(BuiltinFnPtr($func))));
+                env.push(hs,
+                         Arc::new($lisp_ident.to_string()),
+                         Builtin(GcLeaf::new(BuiltinFnPtr($func))));
             }
         }
 
@@ -47,18 +50,29 @@ impl<'h> Value<'h> {
 
         env
     }
-}
 
-impl<'h> Value<'h> {
-    pub fn push_env(&mut self, hs: &mut HeapSession<'h>, key: Arc<String>, value: Value<'h>) {
+    pub fn push(&mut self, hs: &mut HeapSession<'h>, key: Arc<String>, value: Value<'h>) {
         let pair = Cons(hs.alloc(Pair {
             car: Symbol(key),
             cdr: value,
         }));
-        *self = Cons(hs.alloc(Pair {
+        *self = Environment(Cons(hs.alloc(Pair {
             car: pair,
-            cdr: self.clone(),
-        }));
+            cdr: self.0.clone(),
+        })));
+    }
+
+    pub fn lookup(&self, name: Arc<String>) -> Result<Value<'h>, String> {
+        let mut env = self.0.clone();
+        let v = Symbol(name.clone());
+        while let Cons(p) = env {
+            let (key, value) = parse_pair(p.car(), "internal error: bad environment structure")?;
+            if key == v {
+                return Ok(value);
+            }
+            env = p.cdr();
+        }
+        Err(format!("undefined symbol: {:?}", *name))
     }
 }
 
@@ -93,29 +107,19 @@ fn parse_pair<'h>(v: Value<'h>, msg: &'static str) -> Result<(Value<'h>, Value<'
     }
 }
 
-fn lookup<'h>(mut env: Value<'h>, name: Arc<String>) -> Result<Value<'h>, String> {
-    let v = Symbol(name.clone());
-    while let Cons(p) = env {
-        let (key, value) = parse_pair(p.car(), "internal error: bad environment structure")?;
-        if key == v {
-            return Ok(value);
-        }
-        env = p.cdr();
-    }
-    Err(format!("undefined symbol: {:?}", *name))
-}
-
 fn map_eval<'h>(
     hs: &mut HeapSession<'h>,
     mut exprs: Value<'h>,
-    env: &Value<'h>,
-) -> Result<Vec<Value<'h>>, String> {
+    mut env: Environment<'h>,
+) -> Result<(Vec<Value<'h>>, Environment<'h>), String> {
     let mut v = vec![];
     while let Cons(pair) = exprs {
-        v.push(eval(hs, pair.car(), env)?);
+        let (val, new_env) = eval(hs, pair.car(), env)?;
+        env = new_env;
+        v.push(val);
         exprs = pair.cdr();
     }
-    Ok(v)
+    Ok((v, env))
 }
 
 fn apply<'h>(
@@ -126,12 +130,8 @@ fn apply<'h>(
     match fval {
         Builtin(f) => (f.0)(hs, args),
         Lambda(pair) => {
-            let mut env = pair.cdr();
-            let (mut params, rest) = parse_pair(pair.car(), "syntax error in lambda")?;
-            let (body, rest) = parse_pair(rest, "syntax error in lambda")?;
-            if rest != Nil {
-                return Err("syntax error in lambda".to_string());
-            }
+            let mut env = Environment(pair.cdr());
+            let (mut params, body) = parse_pair(pair.car(), "syntax error in lambda")?;
 
             let mut i = 0;
             while let Cons(pair) = params {
@@ -143,10 +143,10 @@ fn apply<'h>(
                         car: Symbol(s),
                         cdr: args[i].clone(),
                     }));
-                    env = Cons(hs.alloc(Pair {
+                    env = Environment(Cons(hs.alloc(Pair {
                         car: pair,
-                        cdr: env,
-                    }));
+                        cdr: env.0,
+                    })));
                 } else {
                     return Err("syntax error in lambda arguments".to_string());
                 }
@@ -156,27 +156,33 @@ fn apply<'h>(
             if i < args.len() {
                 return Err("apply: too many arguments".to_string());
             }
-            eval(hs, body, &env)
+            let (results, _) = map_eval(hs, body, env)?;
+            Ok(results.last().cloned().unwrap_or(Nil))
         }
         _ => Err("apply: not a function".to_string()),
     }
 }
 
+/// Evaluate the give expression in the given environment, and return the
+/// resulting value and new environment.
 pub fn eval<'h>(
     hs: &mut HeapSession<'h>,
     expr: Value<'h>,
-    env: &Value<'h>,
-) -> Result<Value<'h>, String> {
+    env: Environment<'h>,
+) -> Result<(Value<'h>, Environment<'h>), String> {
     match expr {
-        Symbol(s) => lookup(env.clone(), s),
+        Symbol(s) => Ok((env.lookup(s)?, env)),
         Cons(p) => {
             let f = p.car();
             if let Symbol(ref s) = f {
                 if &**s == "lambda" {
-                    return Ok(Lambda(hs.alloc(Pair {
-                        car: p.cdr(),
-                        cdr: env.clone(),
-                    })));
+                    return Ok((
+                        Lambda(hs.alloc(Pair {
+                            car: p.cdr(),
+                            cdr: env.0.clone(),
+                        })),
+                        env,
+                    ));
                 } else if &**s == "if" {
                     let (cond, rest) = parse_pair(p.cdr(), "(if) with no arguments")?;
                     let (t_expr, rest) = parse_pair(rest, "missing arguments after (if COND)")?;
@@ -186,21 +192,37 @@ pub fn eval<'h>(
                         Nil => {}
                         _ => return Err("too many arguments in (if) expression".to_string()),
                     };
-                    let cond_result = eval(hs, cond, env)?;
+                    let (cond_result, env) = eval(hs, cond, env)?;
                     let selected_expr = if cond_result == Nil || cond_result == Bool(false) {
                         f_expr
                     } else {
                         t_expr
                     };
                     return eval(hs, selected_expr, env);
+                } else if &**s == "define" {
+                    let (name, rest) = parse_pair(p.cdr(), "(define) with no name")?;
+                    let name = match name {
+                        Symbol(s) => s,
+                        _ => return Err("(define) with a non-symbol name".to_string()),
+                    };
+
+                    let (val, rest) = parse_pair(rest, "(define) with no value")?;
+                    match rest {
+                        Nil => {}
+                        _ => return Err("too many items in (define) special form".to_string()),
+                    };
+
+                    let (val, mut env) = eval(hs, val, env)?;
+                    env.push(hs, name, val);
+                    return Ok((Nil, env));
                 }
             }
-            let fval = eval(hs, f, env)?;
-            let args = map_eval(hs, p.cdr(), env)?;
-            apply(hs, fval, args)
+            let (fval, env) = eval(hs, f, env)?;
+            let (args, env) = map_eval(hs, p.cdr(), env)?;
+            Ok((apply(hs, fval, args)?, env))
         }
         Builtin(_) => Err(format!("builtin function found in source code")),
-        _ => Ok(expr),  // nil and numbers are self-evaluating
+        _ => Ok((expr, env)),  // nil and numbers are self-evaluating
     }
 }
 

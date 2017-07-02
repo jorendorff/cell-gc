@@ -1,4 +1,3 @@
-
 use gc_leaf::GcLeaf;
 use heap::{Heap, HeapSessionId};
 use ptr::Pointer;

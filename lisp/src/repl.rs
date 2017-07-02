@@ -6,7 +6,7 @@ use vm;
 
 pub fn repl() -> io::Result<()> {
     cell_gc::with_heap(|hs| {
-        let env = vm::Value::default_env(hs);
+        let mut env = vm::Environment::default_env(hs);
 
         loop {
             {
@@ -23,7 +23,9 @@ pub fn repl() -> io::Result<()> {
                 .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
 
             // Eval
-            let result = vm::eval(hs, expr, &env);
+            let (val, new_env) = vm::eval(hs, expr, env)
+                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+            env = new_env;
 
             // Print
             print(val);
