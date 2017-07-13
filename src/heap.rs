@@ -270,6 +270,12 @@ impl Heap {
             }
         }
     }
+
+    fn is_empty(&self) -> bool {
+        self.page_sets
+            .values()
+            .all(|page_set| page_set.all_pages_are_empty())
+    }
 }
 
 impl Drop for Heap {
@@ -282,7 +288,7 @@ impl Drop for Heap {
         self.gc();
 
         for page_set in self.page_sets.values() {
-            page_set.assert_no_allocations();
+            assert!(page_set.all_pages_are_empty());
         }
     }
 }
@@ -351,5 +357,16 @@ impl<'h> HeapSession<'h> {
     /// Do garbage collection.
     pub fn force_gc(&mut self) {
         self.heap.gc();
+    }
+
+    /// Returns true if all allocations have been collected. This implies that
+    /// no `GcRef`s into the heap exist. You may need to call `hs.force_gc()`
+    /// before this, to get predictable results.
+    ///
+    /// This method is provided for testing only and may disappear without
+    /// warning.
+    #[doc(hidden)]
+    pub fn is_empty(&self) -> bool {
+        self.heap.is_empty()
     }
 }

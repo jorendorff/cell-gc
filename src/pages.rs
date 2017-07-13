@@ -344,14 +344,17 @@ impl PageSet {
     }
 
     /// Assert that nothing is allocated in this set of pages.
-    pub fn assert_no_allocations(&self) {
+    pub fn all_pages_are_empty(&self) -> bool {
         unsafe {
             let mut page = self.pages;
             while !page.is_null() {
-                assert!((*page).is_empty());
+                if !(*page).is_empty() {
+                    return false;
+                }
                 page = (*page).next_page;
             }
         }
+        true
     }
 }
 
