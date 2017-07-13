@@ -73,7 +73,7 @@
 //! avoid reading pointer fields while dropping, and avoid calling into
 //! arbitrary code.
 
-use gc_ref::GcRef;
+use gc_ref::{GcFrozenRef, GcRef};
 use marking::{MarkingTracer, mark};
 use pages::{PageSet, PageSetRef, TypedPage, heap_type_id};
 use pages::TypeId;
@@ -81,7 +81,9 @@ use ptr::{Pointer, UntypedPointer};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::marker::PhantomData;
+use std::mem;
 use std::ptr;
+use std::sync::{Arc, Mutex, Weak};
 use traits::IntoHeapAllocation;
 
 /// A `Heap` is a universe in which you can store values that implement
@@ -97,15 +99,32 @@ pub struct Heap {
 
     /// Tracer for the mark phase of GC.
     marking_tracer: Option<MarkingTracer>,
+
+    /// List of pointers that should be unpinned before the next GC cycle. The
+    /// `GcFrozenRef` destructor uses this to unpin pointers even though frozen
+    /// refs can be sent across thread boundaries.
+    ///
+    /// The address of this `Mutex` also serves as a unique id for this heap.
+    /// `GcFrozenRef` uses it to prevent you from freezing a reference into
+    /// one heap, then thawing it in a different heap, you monster.
+    dropped_frozen_ptrs: Arc<Mutex<Vec<UntypedPointer>>>,
 }
 
 unsafe impl Send for Heap {}
+
+/// An opaque unique id for heaps.
+#[derive(Clone)]
+pub struct HeapId(Weak<Mutex<Vec<UntypedPointer>>>);
 
 // What does this do? You'll never guess!
 pub type HeapSessionId<'h> = PhantomData<::std::cell::Cell<&'h mut ()>>;
 
 pub struct HeapSession<'h> {
     id: HeapSessionId<'h>,
+
+    /// The heap. It's important that this is an exclusive reference and is
+    /// *not* exposed to other code. If other code could call heap.enter() and
+    /// create another session at the same time, we could crash.
     heap: &'h mut Heap,
 }
 
@@ -128,6 +147,35 @@ impl Heap {
             page_sets: HashMap::new(),
             pins: RefCell::new(HashMap::new()),
             marking_tracer: Some(MarkingTracer::default()),
+            dropped_frozen_ptrs: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+
+    /// Get this heap's unique id.
+    fn id(&self) -> HeapId {
+        HeapId(Arc::downgrade(&self.dropped_frozen_ptrs))
+    }
+
+    /// Panic if `heap_id` isn't this heap's id.
+    fn check_id(&self, heap_id: HeapId) {
+        // Panic if thawing across heaps.
+        let heap_id_arc = heap_id
+            .0
+            .upgrade()
+            .expect("can't thaw a reference into a heap that has been dropped");
+        assert!(
+            Arc::ptr_eq(&heap_id_arc, &self.dropped_frozen_ptrs),
+            "can't thaw a frozen reference into a different heap"
+        );
+    }
+
+    pub(crate) fn drop_frozen_ptr(heap_id: HeapId, ptr: UntypedPointer) {
+        // If the heap still exists, add ptr to its internal list of dropped
+        // pointers. If not, do nothing; the value was already unpinned and
+        // dropped when the heap was dropped.
+        if let Some(heap_id_arc) = heap_id.0.upgrade() {
+            let mut guard = heap_id_arc.lock().unwrap();
+            guard.push(ptr);
         }
     }
 
@@ -186,10 +234,19 @@ impl Heap {
     ///
     /// `p` must point to a pinned allocation of type `T` in this heap.
     pub unsafe fn unpin<'h, T: IntoHeapAllocation<'h>>(&self, p: Pointer<T::In>) {
+        self.unpin_untyped(p.into());
+    }
+
+    /// Unpin a heap allocation.
+    ///
+    /// # Safety
+    ///
+    /// `p` must point to a pinned allocation in this heap.
+    unsafe fn unpin_untyped(&self, p: UntypedPointer) {
         let mut pins = self.pins.borrow_mut();
         let done = {
             let entry = pins.entry(p.into()).or_insert(0);
-            assert!(*entry != 0);
+            assert!(*entry != 0, "unpin: allocation not pinned");
             *entry -= 1;
             *entry == 0
         };
@@ -258,10 +315,27 @@ impl Heap {
         }
     }
 
+    fn unpin_dropped_ptrs(&mut self) {
+        let dropped_ptrs = {
+            let mut guard = self.dropped_frozen_ptrs.lock().unwrap();
+            let main: &mut Vec<UntypedPointer> = &mut guard;
+            let mut tmp: Vec<UntypedPointer> = Vec::new();
+            mem::swap(main, &mut tmp);
+            tmp
+        };
+
+        for p in dropped_ptrs {
+            unsafe {
+                self.unpin_untyped(p);
+            }
+        }
+    }
+
     /// Perform GC. This is called from `<Heap as Drop>::drop()`, so
     /// unreachable values found by GC must be dropped synchronously, before
     /// this returns.
     fn gc(&mut self) {
+        self.unpin_dropped_ptrs();
         mark(self);
 
         for page_set in self.page_sets.values_mut() {
@@ -357,6 +431,22 @@ impl<'h> HeapSession<'h> {
     /// Do garbage collection.
     pub fn force_gc(&mut self) {
         self.heap.gc();
+    }
+
+    pub fn freeze<T: IntoHeapAllocation<'h>>(&self, t: T::Ref) -> GcFrozenRef<T> {
+        GcFrozenRef::new(&self, t)
+    }
+
+    pub fn thaw<T: IntoHeapAllocation<'h>>(&self, t: GcFrozenRef<T>) -> T::Ref {
+        T::wrap_gc_ref(t.thaw(&self))
+    }
+
+    pub(crate) fn heap_id(&self) -> HeapId {
+        self.heap.id()
+    }
+
+    pub(crate) fn check_heap_id(&self, heap_id: HeapId) {
+        self.heap.check_id(heap_id);
     }
 
     /// Returns true if all allocations have been collected. This implies that

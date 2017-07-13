@@ -1,13 +1,14 @@
 use gc_leaf::GcLeaf;
-use heap::{Heap, HeapSessionId};
+use heap::{Heap, HeapId, HeapSession, HeapSessionId};
 use ptr::Pointer;
 use std::fmt;
 use std::marker::PhantomData;
-use traits::IntoHeapAllocation;
+use std::mem;
+use traits::{IntoHeapAllocation, IntoHeapBase};
 
 pub struct GcRef<'h, T: IntoHeapAllocation<'h>> {
-    ptr: Pointer<T::In>, // never null
     heap_id: HeapSessionId<'h>,
+    ptr: Pointer<T::In>, // never null
 }
 
 impl<'h, T: IntoHeapAllocation<'h>> GcRef<'h, T> {
@@ -34,6 +35,12 @@ impl<'h, T: IntoHeapAllocation<'h>> GcRef<'h, T> {
 
     pub fn as_mut_ptr(&self) -> *mut T::In {
         self.ptr.as_raw() as *mut T::In
+    }
+
+    pub fn into_pinned_ptr(self) -> Pointer<T::In> {
+        let ptr = self.ptr;
+        mem::forget(self); // skip unpinning destructor
+        ptr
     }
 }
 
@@ -89,3 +96,68 @@ impl<'h, T: IntoHeapAllocation<'h>> PartialEq for GcRef<'h, T> {
 }
 
 impl<'h, T: IntoHeapAllocation<'h>> Eq for GcRef<'h, T> {}
+
+
+/// References into the heap that survive across sessions. A `GcFrozenRef<T>`
+/// can't access the `T` value it points to, but it keeps it alive so you can
+/// access it again later.
+///
+/// Use `HeapSession::freeze()` to convert normal `GcRef` values to
+/// `GcFrozenRef`. Use `HeapSession::thaw()` to convert the frozen reference
+/// back to a `GcRef` later, either in the same session or a different one.
+///
+/// Dropping a `GcFrozenRef` is slightly inefficient, as the pointer is added
+/// to an internal buffer. The assumption is that dropping frozen references
+/// will be rare, as they're typically stored with the intention of thawing and
+/// using them later.
+///
+/// `GcFrozenRef`s, like `Heap`s, are `Send` (they can be moved from one thread
+/// to another).
+pub struct GcFrozenRef<T: IntoHeapBase> {
+    /// Identifies the heap into which this frozen ref points.
+    ///
+    /// Implementation note: This has to be an Option in order to support both
+    /// thaw() and drop(), annoyingly.
+    heap_id: Option<HeapId>,
+
+    /// Actual pointer to the referent.
+    ptr: Pointer<T::In>,
+}
+
+unsafe impl<T: IntoHeapBase> Send for GcFrozenRef<T> {}
+
+impl<T: IntoHeapBase> GcFrozenRef<T> {
+    pub(crate) fn new<'h>(session: &HeapSession<'h>, t: T::Ref) -> GcFrozenRef<T>
+    where
+        T: IntoHeapAllocation<'h>,
+    {
+        GcFrozenRef {
+            heap_id: Some(session.heap_id()),
+            ptr: T::into_gc_ref(t).into_pinned_ptr(),
+        }
+    }
+
+    /// Convert back to a GcRef.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `**heap` is not the heap where this reference was frozen.
+    pub(crate) fn thaw<'h>(mut self, session: &HeapSession<'h>) -> GcRef<'h, T>
+    where
+        T: IntoHeapAllocation<'h>,
+    {
+        session.check_heap_id(self.heap_id.take().unwrap());
+        GcRef {
+            heap_id: PhantomData,
+            ptr: self.ptr,
+        }
+    }
+}
+
+impl<T: IntoHeapBase> Drop for GcFrozenRef<T> {
+    fn drop(&mut self) {
+        if let Some(heap_id) = self.heap_id.take() {
+            Heap::drop_frozen_ptr(heap_id, self.ptr.into());
+        }
+    }
+}
