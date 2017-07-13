@@ -1,4 +1,4 @@
-// It's OK to destroy a heap when some GcRefs still exist. (!)
+// It's OK to destroy a heap when some GcRefs have not been dropped. (!)
 //
 // Rust's safety rules ensure that the GcRefs won't still be accessible
 // afterwards, so if this happens, it means the values were leaked.
