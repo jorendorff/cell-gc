@@ -133,10 +133,12 @@ pub unsafe trait IntoHeap<'h>: IntoHeapBase {}
 /// Types that can be allocated in the heap.
 pub trait IntoHeapAllocation<'h>: IntoHeap<'h> {
     /// The safe reference type that's returned when a value of this type is
-    /// moved into the heap (allocated).
+    /// moved into the heap (i.e. when it's allocated).
     type Ref: IntoHeap<'h>;
 
     fn wrap_gc_ref(gc_ref: GcRef<'h, Self>) -> Self::Ref;
+
+    fn into_gc_ref(r: Self::Ref) -> GcRef<'h, Self>;
 }
 
 pub trait Tracer {
@@ -159,6 +161,7 @@ macro_rules! gc_trivial_impl {
         impl<'h> IntoHeapAllocation<'h> for $t {
             type Ref = GcRef<'h, Self>;
             fn wrap_gc_ref(gc_ref: GcRef<'h, Self>) -> Self::Ref { gc_ref }
+            fn into_gc_ref(gc_ref: Self::Ref) -> GcRef<'h, Self> { gc_ref }
         }
     }
 }
@@ -200,7 +203,8 @@ macro_rules! gc_generic_trivial_impl {
             @as_item
             impl<'h, $($x)*> IntoHeapAllocation<'h> for $t {
                 type Ref = GcRef<'h, Self>;
-                fn wrap_gc_ref(gc_ref: Self::Ref) -> Self::Ref { gc_ref }
+                fn wrap_gc_ref(gc_ref: GcRef<'h, Self>) -> Self::Ref { gc_ref }
+                fn into_gc_ref(gc_ref: Self::Ref) -> GcRef<'h, Self> { gc_ref }
             }
         }
     }

@@ -133,11 +133,16 @@ fn impl_into_heap_for_struct(ast: &syn::DeriveInput, data: &syn::VariantData) ->
                 {
                     type Ref = #ref_type_name #ty_generics;
 
-                    fn wrap_gc_ref(gc_ref: ::cell_gc::GcRef<#heap_lifetime,
-                                                            #name #ty_generics>)
-                        -> #ref_type_name #ty_generics
+                    fn wrap_gc_ref(gc_ref: ::cell_gc::GcRef<#heap_lifetime, #name #ty_generics>)
+                        -> Self::Ref
                     {
                         #ref_type_name(gc_ref)
+                    }
+
+                    fn into_gc_ref(wrapped_ref: Self::Ref)
+                        -> ::cell_gc::GcRef<#heap_lifetime, #name #ty_generics>
+                    {
+                        wrapped_ref.0
                     }
                 }
             };

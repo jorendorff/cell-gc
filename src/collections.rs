@@ -35,6 +35,10 @@ impl<'h, T: IntoHeap<'h>> IntoHeapAllocation<'h> for Vec<T> {
     fn wrap_gc_ref(gc_ref: GcRef<'h, Vec<T>>) -> VecRef<'h, T> {
         VecRef(gc_ref)
     }
+
+    fn into_gc_ref(wrapped_ref: VecRef<'h, T>) -> GcRef<'h, Vec<T>> {
+        wrapped_ref.0
+    }
 }
 
 /// A reference to a GC-heap-allocated `Vec`.
