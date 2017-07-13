@@ -4,7 +4,7 @@
 #[macro_use] extern crate cell_gc_derive;
 
 mod flowers {
-    use cell_gc::HeapSession;
+    use cell_gc::GcHeapSession;
 
     #[derive(IntoHeap)]
     pub struct Clade<'h> {
@@ -13,7 +13,7 @@ mod flowers {
     }
 
     impl<'h> Clade<'h> {
-        pub fn new(hs: &HeapSession<'h>,
+        pub fn new(hs: &GcHeapSession<'h>,
                    supertype: Option<CladeRef<'h>>,
                    name: String)
             -> CladeRef<'h>

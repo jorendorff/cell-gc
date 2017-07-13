@@ -2,7 +2,7 @@
 
 extern crate cell_gc;
 
-use cell_gc::{Heap, GcLeaf};
+use cell_gc::{GcHeap, GcLeaf};
 use std::rc::Rc;
 use std::thread;
 use std::sync::mpsc::channel;
@@ -10,7 +10,7 @@ use std::sync::mpsc::channel;
 fn main() {
     let (sender, receiver) = channel();
     let j = thread::spawn(move || {
-        let mut heap = Heap::new();
+        let mut heap = GcHeap::new();
         let r = Rc::new(true);
         heap.enter(|hs| {
             let _ = hs.alloc(GcLeaf::new(r.clone()));

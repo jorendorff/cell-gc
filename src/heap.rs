@@ -86,10 +86,10 @@ use std::ptr;
 use std::sync::{Arc, Mutex, Weak};
 use traits::IntoHeapAllocation;
 
-/// A `Heap` is a universe in which you can store values that implement
+/// A universe in which you can store values that implement
 /// `IntoHeapAllocation`. The values are mutable and they can point to each
 /// other, in cycles.
-pub struct Heap {
+pub struct GcHeap {
     /// Map from heap types to the set of pages for that type.
     page_sets: HashMap<TypeId, PageSet>,
 
@@ -110,7 +110,7 @@ pub struct Heap {
     dropped_frozen_ptrs: Arc<Mutex<Vec<UntypedPointer>>>,
 }
 
-unsafe impl Send for Heap {}
+unsafe impl Send for GcHeap {}
 
 /// An opaque unique id for heaps.
 #[derive(Clone)]
@@ -119,13 +119,13 @@ pub struct HeapId(Weak<Mutex<Vec<UntypedPointer>>>);
 // What does this do? You'll never guess!
 pub type HeapSessionId<'h> = PhantomData<::std::cell::Cell<&'h mut ()>>;
 
-pub struct HeapSession<'h> {
+pub struct GcHeapSession<'h> {
     id: HeapSessionId<'h>,
 
     /// The heap. It's important that this is an exclusive reference and is
     /// *not* exposed to other code. If other code could call heap.enter() and
     /// create another session at the same time, we could crash.
-    heap: &'h mut Heap,
+    heap: &'h mut GcHeap,
 }
 
 /// Create a heap, pass it to a callback, then destroy the heap.
@@ -135,15 +135,15 @@ pub struct HeapSession<'h> {
 /// creating?)
 pub fn with_heap<R, F>(f: F) -> R
 where
-    F: for<'h> FnOnce(&mut HeapSession<'h>) -> R,
+    F: for<'h> FnOnce(&mut GcHeapSession<'h>) -> R,
 {
-    Heap::new().enter(f)
+    GcHeap::new().enter(f)
 }
 
-impl Heap {
+impl GcHeap {
     /// Create a new, empty heap.
-    pub fn new() -> Heap {
-        Heap {
+    pub fn new() -> GcHeap {
+        GcHeap {
             page_sets: HashMap::new(),
             pins: RefCell::new(HashMap::new()),
             marking_tracer: Some(MarkingTracer::default()),
@@ -181,27 +181,28 @@ impl Heap {
 
     /// Start a session to access this heap.
     ///
-    /// You need a `HeapSession` in order to do anything interesting with a heap.
-    /// Each heap has either 0 or 1 `HeapSession` at a time, and a `HeapSession`
-    /// is bound to a stack lifetime, so Rust can enforce safety rules.
+    /// You need a `GcHeapSession` in order to do anything interesting with a
+    /// heap.  Each heap has either 0 or 1 `GcHeapSession` at a time, and a
+    /// `GcHeapSession` is bound to a stack lifetime, so Rust can enforce
+    /// safety rules.
     ///
     /// It would be safe to make this method public, but it's a pain in
-    /// practice. You'll want to pass a `&mut HeapSession<'h>` around, not a
-    /// `HeapSession<'h>`, since `HeapSession` is not `Copy`. Use `enter`.
-    fn open<'h>(&'h mut self) -> HeapSession<'h> {
-        HeapSession {
+    /// practice. You'll want to pass a `&mut GcHeapSession<'h>` around, not a
+    /// `GcHeapSession<'h>`, since `GcHeapSession` is not `Copy`. Use `enter`.
+    fn open<'h>(&'h mut self) -> GcHeapSession<'h> {
+        GcHeapSession {
             id: PhantomData,
             heap: self,
         }
     }
 
-    /// Run some code using this Heap.
+    /// Run some code using this GcHeap.
     ///
     /// # Example
     ///
-    ///     use cell_gc::{Heap, GcLeaf};
+    ///     use cell_gc::{GcHeap, GcLeaf};
     ///
-    ///     let mut heap = Heap::new();
+    ///     let mut heap = GcHeap::new();
     ///     heap.enter(|hs| {
     ///         // ... hs.alloc(MyHeapStruct { ... }) ...
     ///         # hs.force_gc();
@@ -209,7 +210,7 @@ impl Heap {
     ///
     pub fn enter<R, F>(&mut self, f: F) -> R
     where
-        F: for<'h> FnOnce(&mut HeapSession<'h>) -> R,
+        F: for<'h> FnOnce(&mut GcHeapSession<'h>) -> R,
     {
         f(&mut self.open())
     }
@@ -267,7 +268,7 @@ impl Heap {
 
     pub unsafe fn from_allocation<'h, T: IntoHeapAllocation<'h>>(
         ptr: Pointer<T::In>,
-    ) -> *const Heap {
+    ) -> *const GcHeap {
         (*TypedPage::find(ptr)).header.heap
     }
 
@@ -331,7 +332,7 @@ impl Heap {
         }
     }
 
-    /// Perform GC. This is called from `<Heap as Drop>::drop()`, so
+    /// Perform GC. This is called from `<GcHeap as Drop>::drop()`, so
     /// unreachable values found by GC must be dropped synchronously, before
     /// this returns.
     fn gc(&mut self) {
@@ -352,7 +353,7 @@ impl Heap {
     }
 }
 
-impl Drop for Heap {
+impl Drop for GcHeap {
     fn drop(&mut self) {
         // Perform a final GC to call destructors on any remaining allocations.
         // We do not mark anything. This is safe because nothing that's pinned
@@ -367,10 +368,10 @@ impl Drop for Heap {
     }
 }
 
-impl<'h> HeapSession<'h> {
+impl<'h> GcHeapSession<'h> {
     fn get_page_set<'a, T: IntoHeapAllocation<'h> + 'a>(&'a mut self) -> PageSetRef<'a, 'h, T> {
         let key = heap_type_id::<T>();
-        let heap: *mut Heap = self.heap;
+        let heap: *mut GcHeap = self.heap;
         self.heap
             .page_sets
             .entry(key)

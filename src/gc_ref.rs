@@ -1,5 +1,5 @@
 use gc_leaf::GcLeaf;
-use heap::{Heap, HeapId, HeapSession, HeapSessionId};
+use heap::{GcHeap, HeapId, GcHeapSession, HeapSessionId};
 use ptr::Pointer;
 use std::fmt;
 use std::marker::PhantomData;
@@ -17,7 +17,7 @@ impl<'h, T: IntoHeapAllocation<'h>> GcRef<'h, T> {
     /// type `T::In` --- and a complete allocation, not a sub-object of one ---
     /// then later unsafe code will explode.
     pub unsafe fn new(p: Pointer<T::In>) -> GcRef<'h, T> {
-        let heap: *const Heap = Heap::from_allocation::<T>(p);
+        let heap: *const GcHeap = GcHeap::from_allocation::<T>(p);
         (*heap).pin::<T>(p);
         GcRef {
             ptr: p,
@@ -49,10 +49,10 @@ impl<'h, T: Clone + Send + 'static> GcRef<'h, GcLeaf<T>> {
         // XXX TODO I think this `unsafe` block is sound, I'm not totally
         // sure. It's OK as long as we can't trigger GC in the middle of
         // cloning...  which would ordinarily be the case since the 'static
-        // type T won't contain a reference to the HeapSession<'h>.
+        // type T won't contain a reference to the GcHeapSession<'h>.
         //
         // But one can imagine some kind of wrapper type that could store a
-        // HeapSession<'h> within it, then let you get it back out as an Option
+        // GcHeapSession<'h> within it, then let you get it back out as an Option
         // if we're somehow sure the lifetime `'h` isn't expired yet.  If that
         // primitive is safe, then this is unsound, and we'd have to restrict
         // GcLeaf to Copy types (ewww!)
@@ -63,7 +63,7 @@ impl<'h, T: Clone + Send + 'static> GcRef<'h, GcLeaf<T>> {
 impl<'h, T: IntoHeapAllocation<'h>> Drop for GcRef<'h, T> {
     fn drop(&mut self) {
         unsafe {
-            let heap = Heap::from_allocation::<T>(self.ptr);
+            let heap = GcHeap::from_allocation::<T>(self.ptr);
             (*heap).unpin::<T>(self.ptr);
         }
     }
@@ -73,7 +73,7 @@ impl<'h, T: IntoHeapAllocation<'h>> Clone for GcRef<'h, T> {
     fn clone(&self) -> GcRef<'h, T> {
         let &GcRef { ptr, heap_id } = self;
         unsafe {
-            let heap = Heap::from_allocation::<T>(ptr);
+            let heap = GcHeap::from_allocation::<T>(ptr);
             (*heap).pin::<T>(ptr);
         }
         GcRef {
@@ -102,8 +102,8 @@ impl<'h, T: IntoHeapAllocation<'h>> Eq for GcRef<'h, T> {}
 /// can't access the `T` value it points to, but it keeps it alive so you can
 /// access it again later.
 ///
-/// Use `HeapSession::freeze()` to convert normal `GcRef` values to
-/// `GcFrozenRef`. Use `HeapSession::thaw()` to convert the frozen reference
+/// Use `GcHeapSession::freeze()` to convert normal `GcRef` values to
+/// `GcFrozenRef`. Use `GcHeapSession::thaw()` to convert the frozen reference
 /// back to a `GcRef` later, either in the same session or a different one.
 ///
 /// Dropping a `GcFrozenRef` is slightly inefficient, as the pointer is added
@@ -111,7 +111,7 @@ impl<'h, T: IntoHeapAllocation<'h>> Eq for GcRef<'h, T> {}
 /// will be rare, as they're typically stored with the intention of thawing and
 /// using them later.
 ///
-/// `GcFrozenRef`s, like `Heap`s, are `Send` (they can be moved from one thread
+/// `GcFrozenRef`s, like `GcHeap`s, are `Send` (they can be moved from one thread
 /// to another).
 pub struct GcFrozenRef<T: IntoHeapBase> {
     /// Identifies the heap into which this frozen ref points.
@@ -127,7 +127,7 @@ pub struct GcFrozenRef<T: IntoHeapBase> {
 unsafe impl<T: IntoHeapBase> Send for GcFrozenRef<T> {}
 
 impl<T: IntoHeapBase> GcFrozenRef<T> {
-    pub(crate) fn new<'h>(session: &HeapSession<'h>, t: T::Ref) -> GcFrozenRef<T>
+    pub(crate) fn new<'h>(session: &GcHeapSession<'h>, t: T::Ref) -> GcFrozenRef<T>
     where
         T: IntoHeapAllocation<'h>,
     {
@@ -142,7 +142,7 @@ impl<T: IntoHeapBase> GcFrozenRef<T> {
     /// # Panics
     ///
     /// Panics if `**heap` is not the heap where this reference was frozen.
-    pub(crate) fn thaw<'h>(mut self, session: &HeapSession<'h>) -> GcRef<'h, T>
+    pub(crate) fn thaw<'h>(mut self, session: &GcHeapSession<'h>) -> GcRef<'h, T>
     where
         T: IntoHeapAllocation<'h>,
     {
@@ -157,7 +157,7 @@ impl<T: IntoHeapBase> GcFrozenRef<T> {
 impl<T: IntoHeapBase> Drop for GcFrozenRef<T> {
     fn drop(&mut self) {
         if let Some(heap_id) = self.heap_id.take() {
-            Heap::drop_frozen_ptr(heap_id, self.ptr.into());
+            GcHeap::drop_frozen_ptr(heap_id, self.ptr.into());
         }
     }
 }

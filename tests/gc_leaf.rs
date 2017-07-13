@@ -4,7 +4,7 @@ extern crate cell_gc;
 #[macro_use]
 extern crate cell_gc_derive;
 
-use cell_gc::{GcLeaf, Heap};
+use cell_gc::{GcLeaf, GcHeap};
 use std::marker::PhantomData;
 use std::sync::Arc;
 
@@ -15,7 +15,7 @@ struct Point2d(f64, f64);
 fn test_allocating_gc_leaf() {
     let p = Point2d(3.0, 4.0);
 
-    let mut heap = Heap::new();
+    let mut heap = GcHeap::new();
     heap.enter(|hs| {
         let point = hs.alloc(GcLeaf::new(p));
         assert_eq!(point.get(), Point2d(3.0, 4.0));
@@ -37,7 +37,7 @@ fn test_gc_leaf_field() {
         ignore: PhantomData,
     };
 
-    let mut heap = Heap::new();
+    let mut heap = GcHeap::new();
     heap.enter(|hs| {
         let hrect = hs.alloc(rect);
         assert_eq!(*hrect.point0(), Point2d(3.0, 4.0));
@@ -47,12 +47,12 @@ fn test_gc_leaf_field() {
 
 #[test]
 fn test_gc_leaf_drop() {
-    // GcLeaf values are dropped when the Heap is dropped.
+    // GcLeaf values are dropped when the GcHeap is dropped.
     let point = Arc::new(Point2d(3.0, 4.0));
 
     let mut heaps = vec![];
     for _ in 0..2 {
-        let mut heap = Heap::new();
+        let mut heap = GcHeap::new();
         heap.enter(|hs| { let _ = hs.alloc(GcLeaf::new(point.clone())); });
         heaps.push(heap);
     }

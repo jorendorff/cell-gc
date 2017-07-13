@@ -1,5 +1,5 @@
-//! A GCRef must not outlive the HeapSession it points into, so it can't be returned
-//! from the `with_heap` callback.
+//! A GcRef must not outlive the GcHeapSession it points into, so it can't be
+//! returned from the `with_heap` callback.
 
 #[macro_use] extern crate cell_gc;
 #[macro_use] extern crate cell_gc_derive;

@@ -1,11 +1,11 @@
-use cell_gc::HeapSession;
+use cell_gc::GcHeapSession;
 use print::print as print_value;
 use std::fmt;
 use vm::{Pair, Value};
 use vm::Value::*;
 
 pub struct BuiltinFnPtr(
-    pub for<'b> fn(&mut HeapSession<'b>, Vec<Value<'b>>)
+    pub for<'b> fn(&mut GcHeapSession<'b>, Vec<Value<'b>>)
         -> Result<Value<'b>, String>
 );
 
@@ -32,7 +32,7 @@ impl fmt::Debug for BuiltinFnPtr {
 
 // Builtin function definitions ////////////////////////////////////////////////
 
-pub fn add<'h>(_hs: &mut HeapSession<'h>, args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
+pub fn add<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
     let mut total = 0;
     for v in args {
         if let Int(n) = v {
@@ -44,7 +44,7 @@ pub fn add<'h>(_hs: &mut HeapSession<'h>, args: Vec<Value<'h>>) -> Result<Value<
     Ok(Int(total))
 }
 
-pub fn assert<'h>(_hs: &mut HeapSession<'h>, args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
+pub fn assert<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
     if args.len() < 1 || args.len() > 2 {
         return Err(format!(
             "assert: wrong number of args, expected 1 or 2, found {}",
@@ -67,7 +67,7 @@ pub fn assert<'h>(_hs: &mut HeapSession<'h>, args: Vec<Value<'h>>) -> Result<Val
     }
 }
 
-pub fn cons<'h>(hs: &mut HeapSession<'h>, args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
+pub fn cons<'h>(hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
     if args.len() != 2 {
         Err("cons: require exactly 2 arguments".into())
     } else {
@@ -79,7 +79,7 @@ pub fn cons<'h>(hs: &mut HeapSession<'h>, args: Vec<Value<'h>>) -> Result<Value<
     }
 }
 
-pub fn car<'h>(_hs: &mut HeapSession<'h>, args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
+pub fn car<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
     if args.len() != 1 {
         Err("car: require exactly 1 argument".into())
     } else {
@@ -91,7 +91,7 @@ pub fn car<'h>(_hs: &mut HeapSession<'h>, args: Vec<Value<'h>>) -> Result<Value<
     }
 }
 
-pub fn cdr<'h>(_hs: &mut HeapSession<'h>, args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
+pub fn cdr<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
     if args.len() != 1 {
         Err("car: require exactly 1 argument".into())
     } else {
@@ -104,14 +104,14 @@ pub fn cdr<'h>(_hs: &mut HeapSession<'h>, args: Vec<Value<'h>>) -> Result<Value<
 }
 
 pub fn eq_question<'h>(
-    _hs: &mut HeapSession<'h>,
+    _hs: &mut GcHeapSession<'h>,
     args: Vec<Value<'h>>,
 ) -> Result<Value<'h>, String> {
     let first = args.get(0);
     Ok(Bool(args.iter().all(|arg| Some(arg) == first)))
 }
 
-pub fn mul<'h>(_hs: &mut HeapSession<'h>, args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
+pub fn mul<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
     let mut total = 1;
     for v in args {
         if let Int(n) = v {
@@ -123,7 +123,7 @@ pub fn mul<'h>(_hs: &mut HeapSession<'h>, args: Vec<Value<'h>>) -> Result<Value<
     Ok(Int(total))
 }
 
-pub fn print<'h>(_hs: &mut HeapSession<'h>, args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
+pub fn print<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
     for v in args {
         print_value(v);
         println!();
@@ -131,7 +131,7 @@ pub fn print<'h>(_hs: &mut HeapSession<'h>, args: Vec<Value<'h>>) -> Result<Valu
     Ok(Nil)
 }
 
-pub fn sub<'h>(_hs: &mut HeapSession<'h>, args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
+pub fn sub<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
     if args.len() == 0 {
         Err("sub: need at least one argument".into())
     } else if args.len() == 1 {

@@ -5,7 +5,7 @@
 
 extern crate cell_gc;
 
-use cell_gc::Heap;
+use cell_gc::GcHeap;
 use std::mem;
 use std::sync::Arc;
 
@@ -14,7 +14,7 @@ fn test_leaked_ref() {
     let counted = Arc::new(false);
     assert_eq!(Arc::strong_count(&counted), 1);
 
-    let mut heap = Heap::new();
+    let mut heap = GcHeap::new();
     heap.enter(|hs| {
         let a = hs.alloc(counted.clone());
         assert_eq!(Arc::strong_count(&counted), 2);

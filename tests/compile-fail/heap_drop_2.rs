@@ -8,7 +8,7 @@ use cell_gc::*;
 use pairs_aux::*;
 
 fn main() {
-    let mut heap = Heap::new();
+    let mut heap = GcHeap::new();
     heap.enter(|hs| {
         let obj = alloc_null_pair(hs);
 

@@ -118,12 +118,12 @@ pub trait IntoHeapBase: Sized {
 ///     likely to lead to dangling pointers and hard-to-debug crashes down the
 ///     road.
 ///
-/// *   `Heap` implements `Send`. This means any value that can be stored in the
-///     heap can be sent to other threads (by sending the whole heap). So don't
-///     implement this trait for any type that isn't itself already `Send`.
-///     (The reason this trait doesn't *require* `Send` is that at present,
-///     `Ref` types must *not* be `Send` but must implement `IntoHeap`.)  It's
-///     OK to store non-`Sync` values in the heap.
+/// *   `GcHeap` implements `Send`. This means any value that can be stored in
+///     the heap can be sent to other threads (by sending the whole heap). So
+///     don't implement this trait for any type that isn't itself already
+///     `Send`. (The reason this trait doesn't *require* `Send` is that at
+///     present, `Ref` types must *not* be `Send` but must implement
+///     `IntoHeap`.)  It's OK to store non-`Sync` values in the heap.
 ///
 /// *   And this probably goes without saying, but none of these methods may
 ///     allocate or do anything else that could trigger garbage collection.

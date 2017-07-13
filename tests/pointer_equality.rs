@@ -1,4 +1,4 @@
-//! Test equality properties of GCRef values.
+//! Test equality properties of GcRef values.
 
 extern crate cell_gc;
 #[macro_use]

@@ -1,20 +1,20 @@
 //! Parsing of s-expressions.
 
 use asexp::{Atom, Sexp};
-use cell_gc::HeapSession;
+use cell_gc::GcHeapSession;
 use std::sync::Arc;
 use vm::{Pair, Value};
 
 /// Top level entry point to s-expression parsing. Takes a source string and
 /// returns a `Value` which can contain `Pair`s allocated in the GC heap.
-pub fn parse<'h>(hs: &mut HeapSession<'h>, source: &str) -> Result<Value<'h>, &'static str> {
+pub fn parse<'h>(hs: &mut GcHeapSession<'h>, source: &str) -> Result<Value<'h>, &'static str> {
     let sexp = Sexp::parse(source).map_err(|_| "s-exp parsing failed")?;
     sexp_to_value(hs, sexp)
 }
 
 /// Given an `asexp::Sexp` value and a GC heap, convert it into a `Value` which
 /// can point to `Pair`s inside the GC heap.
-pub fn sexp_to_value<'h>(hs: &mut HeapSession<'h>, sexp: Sexp) -> Result<Value<'h>, &'static str> {
+pub fn sexp_to_value<'h>(hs: &mut GcHeapSession<'h>, sexp: Sexp) -> Result<Value<'h>, &'static str> {
     match sexp {
         Sexp::Atom(atom) => {
             match atom {

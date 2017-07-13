@@ -1,7 +1,7 @@
 //! If you use enough force, you can actually use this GC to implement a toy VM.
 
 use builtins::{self, BuiltinFnPtr};
-use cell_gc::{GcLeaf, HeapSession};
+use cell_gc::{GcLeaf, GcHeapSession};
 use std::sync::Arc;
 
 #[derive(Debug, IntoHeap)]
@@ -27,7 +27,7 @@ pub use self::Value::*;
 pub struct Environment<'h>(pub Value<'h>);
 
 impl<'h> Environment<'h> {
-    pub fn default_env(hs: &mut HeapSession<'h>) -> Environment<'h> {
+    pub fn default_env(hs: &mut GcHeapSession<'h>) -> Environment<'h> {
         let mut env = Environment(Nil);
 
         macro_rules! builtin {
@@ -51,7 +51,7 @@ impl<'h> Environment<'h> {
         env
     }
 
-    pub fn push(&mut self, hs: &mut HeapSession<'h>, key: Arc<String>, value: Value<'h>) {
+    pub fn push(&mut self, hs: &mut GcHeapSession<'h>, key: Arc<String>, value: Value<'h>) {
         let pair = Cons(hs.alloc(Pair {
             car: Symbol(key),
             cdr: value,
@@ -108,7 +108,7 @@ fn parse_pair<'h>(v: Value<'h>, msg: &'static str) -> Result<(Value<'h>, Value<'
 }
 
 fn map_eval<'h>(
-    hs: &mut HeapSession<'h>,
+    hs: &mut GcHeapSession<'h>,
     mut exprs: Value<'h>,
     mut env: Environment<'h>,
 ) -> Result<(Vec<Value<'h>>, Environment<'h>), String> {
@@ -123,7 +123,7 @@ fn map_eval<'h>(
 }
 
 fn apply<'h>(
-    hs: &mut HeapSession<'h>,
+    hs: &mut GcHeapSession<'h>,
     fval: Value<'h>,
     args: Vec<Value<'h>>,
 ) -> Result<Value<'h>, String> {
@@ -166,7 +166,7 @@ fn apply<'h>(
 /// Evaluate the give expression in the given environment, and return the
 /// resulting value and new environment.
 pub fn eval<'h>(
-    hs: &mut HeapSession<'h>,
+    hs: &mut GcHeapSession<'h>,
     expr: Value<'h>,
     env: Environment<'h>,
 ) -> Result<(Value<'h>, Environment<'h>), String> {

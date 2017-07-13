@@ -107,11 +107,11 @@
 //! #     head: i64,
 //! #     tail: Option<IntListRef<'h>>
 //! # }
-//! use cell_gc::Heap;
+//! use cell_gc::GcHeap;
 //!
 //! fn main() {
 //!     // Create a heap (you'll only do this once in your whole program)
-//!     let mut heap = Heap::new();
+//!     let mut heap = GcHeap::new();
 //!
 //!     heap.enter(|hs| {
 //!         // Allocate an object (returns an IntListRef)
@@ -127,7 +127,7 @@
 //! }
 //! ```
 //!
-//! Use `Heap::new()` in your `main()` function to create a heap.
+//! Use `GcHeap::new()` in your `main()` function to create a heap.
 //! Use `heap.enter()` to gain access to the heap (opening a "heap session", `hs`).
 //! Use `hs.alloc(v)` to allocate values in the heap.
 //!
@@ -240,7 +240,7 @@ mod marking;
 
 pub use gc_leaf::GcLeaf;
 pub use gc_ref::{GcFrozenRef, GcRef};
-pub use heap::{Heap, HeapSession, with_heap};
+pub use heap::{GcHeap, GcHeapSession, with_heap};
 
 /// Return the number of allocations of a given type that fit in a "page".
 /// (Unstable. This is a temporary hack for testing.)

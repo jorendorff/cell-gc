@@ -2,7 +2,7 @@
 //! allocations.
 
 use bit_vec::BitVec;
-use heap::{Heap, HeapSessionId};
+use heap::{GcHeap, HeapSessionId};
 use marking::MarkingTracer;
 use ptr::{Pointer, UntypedPointer};
 use std::{cmp, mem, ptr};
@@ -18,7 +18,7 @@ where
 {
     let addr = addr.as_typed_ptr::<T::In>();
 
-    if Heap::get_mark_bit::<T>(addr) {
+    if GcHeap::get_mark_bit::<T>(addr) {
         // If the mark bit is set, then this object is gray in the classic
         // tri-color sense: seen but we just popped it off the mark stack and
         // have't finished enumerating its outgoing edges.
@@ -54,7 +54,7 @@ fn is_aligned(ptr: *const ()) -> bool {
 }
 
 pub struct PageHeader {
-    pub heap: *mut Heap,
+    pub heap: *mut GcHeap,
     next_page: *mut PageHeader,
     mark_bits: BitVec,
     allocated_bits: BitVec,
@@ -253,7 +253,7 @@ unsafe fn sweep_entry_point<'h, T: IntoHeapAllocation<'h>>(header: &mut PageHead
 
 /// An unordered collection of memory pages that all share an allocation type.
 pub struct PageSet {
-    heap: *mut Heap,
+    heap: *mut GcHeap,
 
     sweep_fn: unsafe fn(&mut PageHeader),
 
@@ -287,7 +287,7 @@ impl PageSet {
     /// # Safety
     ///
     /// Safe as long as `heap` is a valid pointer.
-    pub unsafe fn new<'h, T: IntoHeapAllocation<'h>>(heap: *mut Heap) -> PageSet {
+    pub unsafe fn new<'h, T: IntoHeapAllocation<'h>>(heap: *mut GcHeap) -> PageSet {
         PageSet {
             heap,
             sweep_fn: sweep_entry_point::<T>,
