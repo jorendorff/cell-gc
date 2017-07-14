@@ -23,6 +23,22 @@ pub enum Value<'h> {
 
 pub use self::Value::*;
 
+impl<'h> Value<'h> {
+    fn null(&self) -> bool {
+        match *self {
+            Nil => true,
+            _ => false
+        }
+    }
+
+    fn as_symbol(self, error_msg: &str) -> Result<Arc<String>, String> {
+        match self {
+            Symbol(s) => Ok(s),
+            _ => Err(error_msg.to_string())
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Environment<'h>(pub Value<'h>);
 
@@ -62,17 +78,33 @@ impl<'h> Environment<'h> {
         })));
     }
 
-    pub fn lookup(&self, name: Arc<String>) -> Result<Value<'h>, String> {
+    pub fn lookup(&self, name: Arc<String>) -> Result<PairRef<'h>, String> {
         let mut env = self.0.clone();
         let v = Symbol(name.clone());
         while let Cons(p) = env {
-            let (key, value) = parse_pair(p.car(), "internal error: bad environment structure")?;
-            if key == v {
-                return Ok(value);
+            match p.car() {
+                Cons(rib) => {
+                    if rib.car() == v {
+                        return Ok(rib);
+                    }
+                }
+                _ => {
+                    panic!("internal error: bad environment structure");
+                }
             }
             env = p.cdr();
         }
+        assert!(env.null(), "internal error: bad environment structure (improper list)");
         Err(format!("undefined symbol: {:?}", *name))
+    }
+
+    pub fn get(&self, name: Arc<String>) -> Result<Value<'h>, String> {
+        Ok(self.lookup(name)?.cdr())
+    }
+
+    pub fn set(&self, name: Arc<String>, value: Value<'h>) -> Result<(), String> {
+        self.lookup(name)?.set_cdr(value);
+        Ok(())
     }
 }
 
@@ -196,7 +228,7 @@ pub fn eval<'h>(
     env: Environment<'h>,
 ) -> Result<(Value<'h>, Environment<'h>), String> {
     match expr {
-        Symbol(s) => Ok((env.lookup(s)?, env)),
+        Symbol(s) => Ok((env.get(s)?, env)),
         Cons(p) => {
             let f = p.car();
             if let Symbol(ref s) = f {
@@ -259,6 +291,16 @@ pub fn eval<'h>(
                             return Err("(define) with a non-symbol name".to_string());
                         }
                     }
+                } else if &**s == "set!" {
+                    let (first, rest) = parse_pair(p.cdr(), "(set!) with no name")?;
+                    let name = first.as_symbol("(set!) first argument must be a name")?;
+                    let (expr, rest) = parse_pair(rest, "(set!) with no value")?;
+                    if !rest.null() {
+                        return Err("(set!): too many arguments".to_string());
+                    }
+                    let (val, _) = eval(hs, expr, env.clone())?;
+                    env.set(name, val)?;
+                    return Ok((Nil, env));
                 }
             }
             let (fval, env) = eval(hs, f, env)?;

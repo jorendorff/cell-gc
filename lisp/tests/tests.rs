@@ -43,3 +43,4 @@ test!(double);
 test!(y_combinator);
 test!(y_combinator_2);
 test!(define);
+test!(set);

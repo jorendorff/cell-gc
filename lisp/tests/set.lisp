@@ -1,0 +1,10 @@
+(define x 1)
+(assert (eq? x 1))
+(set! x 2)
+(assert (eq? x 2))
+
+((lambda (x)
+   (assert (eq? x 3))
+   (set! x (+ x 1))
+   (assert (eq? x 4)))
+ 3)
