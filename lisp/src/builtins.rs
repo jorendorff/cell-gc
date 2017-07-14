@@ -32,41 +32,7 @@ impl fmt::Debug for BuiltinFnPtr {
 
 // Builtin function definitions ////////////////////////////////////////////////
 
-pub fn add<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
-    let mut total = 0;
-    for v in args {
-        if let Int(n) = v {
-            total += n;
-        } else {
-            return Err("add: non-numeric argument".to_string());
-        }
-    }
-    Ok(Int(total))
-}
-
-pub fn assert<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
-    if args.len() < 1 || args.len() > 2 {
-        return Err(format!(
-            "assert: wrong number of args, expected 1 or 2, found {}",
-            args.len()
-        ));
-    }
-
-    let v = &args[0];
-
-    if let Bool(true) = *v {
-        Ok(Nil)
-    } else if let Bool(false) = *v {
-        if let Some(msg) = args.get(1) {
-            Err(format!("assert: assertion failed: {:?}", msg))
-        } else {
-            Err("assert: assertion failed".into())
-        }
-    } else {
-        Err("assert: non-boolean argument".into())
-    }
-}
-
+// 6.1 Booleans
 fn simple_predicate<'h, F>(fn_name: &str, mut args: Vec<Value<'h>>, f: F)
     -> Result<Value<'h>, String>
     where F: FnOnce(Value<'h>) -> bool
@@ -77,6 +43,20 @@ fn simple_predicate<'h, F>(fn_name: &str, mut args: Vec<Value<'h>>, f: F)
     Ok(Bool(f(args.pop().unwrap())))
 }
 
+pub fn boolean_question<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
+    simple_predicate("boolean?", args, |v| v.is_boolean())
+}
+
+// 6.2 Equivalence predicates
+pub fn eq_question<'h>(
+    _hs: &mut GcHeapSession<'h>,
+    args: Vec<Value<'h>>,
+) -> Result<Value<'h>, String> {
+    let first = args.get(0);
+    Ok(Bool(args.iter().all(|arg| Some(arg) == first)))
+}
+
+// 6.3 Pairs and lists
 pub fn pair_question<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>)
     -> Result<Value<'h>, String>
 {
@@ -119,12 +99,17 @@ pub fn cdr<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Valu
     }
 }
 
-pub fn eq_question<'h>(
-    _hs: &mut GcHeapSession<'h>,
-    args: Vec<Value<'h>>,
-) -> Result<Value<'h>, String> {
-    let first = args.get(0);
-    Ok(Bool(args.iter().all(|arg| Some(arg) == first)))
+// 6.5 Numbers
+pub fn add<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
+    let mut total = 0;
+    for v in args {
+        if let Int(n) = v {
+            total += n;
+        } else {
+            return Err("add: non-numeric argument".to_string());
+        }
+    }
+    Ok(Int(total))
 }
 
 pub fn mul<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
@@ -137,14 +122,6 @@ pub fn mul<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Valu
         }
     }
     Ok(Int(total))
-}
-
-pub fn print<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
-    for v in args {
-        print_value(v);
-        println!();
-    }
-    Ok(Nil)
 }
 
 pub fn sub<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
@@ -173,6 +150,35 @@ pub fn sub<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Valu
     }
 }
 
-pub fn boolean_question<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
-    simple_predicate("boolean?", args, |v| v.is_boolean())
+// Extensions
+pub fn print<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
+    for v in args {
+        print_value(v);
+        println!();
+    }
+    Ok(Nil)
 }
+
+pub fn assert<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
+    if args.len() < 1 || args.len() > 2 {
+        return Err(format!(
+            "assert: wrong number of args, expected 1 or 2, found {}",
+            args.len()
+        ));
+    }
+
+    let v = &args[0];
+
+    if let Bool(true) = *v {
+        Ok(Nil)
+    } else if let Bool(false) = *v {
+        if let Some(msg) = args.get(1) {
+            Err(format!("assert: assertion failed: {:?}", msg))
+        } else {
+            Err("assert: assertion failed".into())
+        }
+    } else {
+        Err("assert: non-boolean argument".into())
+    }
+}
+
