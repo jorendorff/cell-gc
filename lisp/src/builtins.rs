@@ -67,6 +67,22 @@ pub fn assert<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<V
     }
 }
 
+fn simple_predicate<'h, F>(fn_name: &str, mut args: Vec<Value<'h>>, f: F)
+    -> Result<Value<'h>, String>
+    where F: FnOnce(Value<'h>) -> bool
+{
+    if args.len() != 1 {
+        return Err(format!("{}: exactly 1 argument required", fn_name));
+    }
+    Ok(Bool(f(args.pop().unwrap())))
+}
+
+pub fn pair_question<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>)
+    -> Result<Value<'h>, String>
+{
+    simple_predicate("pair?", args, |v| v.is_pair())
+}
+
 pub fn cons<'h>(hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
     if args.len() != 2 {
         Err("cons: require exactly 2 arguments".into())
@@ -157,9 +173,6 @@ pub fn sub<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Valu
     }
 }
 
-pub fn boolean_p<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
-    if args.len() != 1 {
-        return Err("boolean?: exactly 1 argument required".into())
-    }
-    Ok(Bool(args[0].is_boolean()))
+pub fn boolean_question<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
+    simple_predicate("boolean?", args, |v| v.is_boolean())
 }

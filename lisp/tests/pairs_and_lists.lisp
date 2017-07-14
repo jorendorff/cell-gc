@@ -1,8 +1,8 @@
 ;; `pair?` returns #t if obj is a pair, and otherwise returns #f.
 
-;;(assert (eq? (pair? '(a . b)) #t))
-;;(assert (eq? (pair? '(a b c)) #t))
-;;(assert (eq? (pair? '()) #f))
+(assert (eq? (pair? '(a . b)) #t))
+(assert (eq? (pair? '(a b c)) #t))
+(assert (eq? (pair? '()) #f))
 ;;(assert (eq? (pair? '#(a b)) #f))
 
 

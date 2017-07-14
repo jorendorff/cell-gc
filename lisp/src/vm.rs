@@ -48,6 +48,13 @@ impl<'h> Value<'h> {
         }
     }
 
+    pub fn is_pair(&self) -> bool {
+        match *self {
+            Cons(_) => true,
+            _ => false
+        }
+    }
+
     fn as_symbol(self, error_msg: &str) -> Result<Arc<String>, String> {
         match self {
             Symbol(s) => Ok(s),
@@ -80,7 +87,8 @@ impl<'h> Environment<'h> {
         builtin!("cons", builtins::cons);
         builtin!("eq?", builtins::eq_question);
         builtin!("print", builtins::print);
-        builtin!("boolean?", builtins::boolean_p);
+        builtin!("boolean?", builtins::boolean_question);
+        builtin!("pair?", builtins::pair_question);
 
         const PRELUDE: &'static str = include_str!("prelude.sch");
         let prelude = match parser::parse(hs, PRELUDE) {
