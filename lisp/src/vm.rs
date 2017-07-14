@@ -2,6 +2,7 @@
 
 use builtins::{self, BuiltinFnPtr};
 use cell_gc::{GcLeaf, GcHeapSession};
+use cell_gc::collections::VecRef;
 use parser;
 use std::sync::Arc;
 
@@ -17,9 +18,10 @@ pub enum Value<'h> {
     Bool(bool),
     Int(i32),
     Symbol(Arc<String>),
-    Cons(PairRef<'h>),
     Lambda(PairRef<'h>),
     Builtin(GcLeaf<BuiltinFnPtr>),
+    Cons(PairRef<'h>),
+    Vector(VecRef<'h, Value<'h>>),
 }
 
 pub use self::Value::*;
@@ -350,6 +352,7 @@ pub fn eval<'h>(
             Ok((apply(hs, fval, args)?, env))
         }
         Builtin(_) => Err(format!("builtin function found in source code")),
+        Vector(_) => Err(format!("vectors are not expressions")),
         _ => Ok((expr, env)),  // nil and numbers are self-evaluating
     }
 }

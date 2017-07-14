@@ -322,13 +322,33 @@ named!(
     vector(&str) -> Datum,
     map!(
         delimited!(
-            open_vector,
-            many0!(datum),
-            preceded!(intertoken_space, close)
+            terminated!(open_vector, intertoken_space),
+            many0!(terminated!(datum, intertoken_space)),
+            close
         ),
         Datum::Vector
     )
 );
+
+#[test]
+fn test_parse_vector() {
+    use nom::ErrorKind;
+
+    assert_eq!(
+        vector("#()"),
+        IResult::Done("", Datum::Vector(vec![]))
+    );
+    assert_eq!(
+        vector("#(a)"),
+        IResult::Done("", Datum::Vector(vec![
+            Datum::Identifier("a".to_string())
+        ]))
+    );
+    assert_eq!(
+        vector("#(0 . 1)"),
+        IResult::Error(ErrorKind::Char)
+    );
+}
 
 fn into_list<'h>(hs: &mut GcHeapSession<'h>, elements: Vec<Datum>, tail: Value<'h>)
     -> Result<Value<'h>, &'static str>
@@ -367,8 +387,12 @@ fn datum_to_value<'h>(hs: &mut GcHeapSession<'h>, datum: Datum) -> Result<Value<
             let tail_val = datum_to_value(hs, tail)?;
             into_list(hs, data, tail_val)
         }
-        Datum::Vector(_data) =>
-            Err("vectors are not supported")
+        Datum::Vector(data) => {
+            let values: Result<Vec<Value<'h>>, &'static str> = data.into_iter()
+                .map(|d| datum_to_value(hs, d))
+                .collect();
+            Ok(Value::Vector(hs.alloc(values?)))
+        }
     }
 }
 

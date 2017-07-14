@@ -20,6 +20,16 @@ pub fn print<'h>(value: Value<'h>) {
             print_pair(p);
             print!(")");
         }
+        Vector(v) => {
+            print!("#(");
+            for i in 0..v.len() {
+                if i != 0 {
+                    print!(" ");
+                }
+                print(v.get(i));
+            }
+            print!(")");
+        }
     }
 }
 
