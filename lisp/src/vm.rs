@@ -287,6 +287,9 @@ pub fn eval<'h>(
                     let (cond_result, env) = eval(hs, cond, env)?;
                     let selected_expr = if cond_result.to_bool() { t_expr } else { f_expr };
                     return eval(hs, selected_expr, env);
+                } else if &**s == "begin" {
+                    let result = eval_block_body(hs, p.cdr(), env.clone())?;
+                    return Ok((result, env));
                 } else if &**s == "define" {
                     let (name, rest) = parse_pair(p.cdr(), "(define) with no name")?;
                     match name {

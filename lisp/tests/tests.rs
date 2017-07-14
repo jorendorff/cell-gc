@@ -37,6 +37,7 @@ macro_rules! test {
     }
 }
 
+test!(begin);
 test!(booleans);
 test!(closure);
 test!(cons);
