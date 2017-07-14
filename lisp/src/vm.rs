@@ -201,20 +201,39 @@ pub fn eval<'h>(
                     return eval(hs, selected_expr, env);
                 } else if &**s == "define" {
                     let (name, rest) = parse_pair(p.cdr(), "(define) with no name")?;
-                    let name = match name {
-                        Symbol(s) => s,
-                        _ => return Err("(define) with a non-symbol name".to_string()),
-                    };
+                    match name {
+                        Symbol(s) => {
+                            let (val, rest) = parse_pair(rest, "(define) with no value")?;
+                            match rest {
+                                Nil => {}
+                                _ => return Err("too many items in (define) special form".to_string()),
+                            };
 
-                    let (val, rest) = parse_pair(rest, "(define) with no value")?;
-                    match rest {
-                        Nil => {}
-                        _ => return Err("too many items in (define) special form".to_string()),
-                    };
-
-                    let (val, mut env) = eval(hs, val, env)?;
-                    env.push(hs, name, val);
-                    return Ok((Nil, env));
+                            let (val, mut env) = eval(hs, val, env)?;
+                            env.push(hs, s, val);
+                            return Ok((Nil, env));
+                        }
+                        Cons(pair) => {
+                            let name = match pair.car() {
+                                Symbol(s) => s,
+                                _ => return Err("(define) with no name".to_string()),
+                            };
+                            let code = Cons(hs.alloc(Pair {
+                                car: pair.cdr(), // formals
+                                cdr: rest,
+                            }));
+                            let f = Lambda(hs.alloc(Pair {
+                                car: code,
+                                cdr: env.0.clone(),
+                            }));
+                            let mut env = env;
+                            env.push(hs, name, f);
+                            return Ok((Nil, env));
+                        }
+                        _ => {
+                            return Err("(define) with a non-symbol name".to_string());
+                        }
+                    }
                 }
             }
             let (fval, env) = eval(hs, f, env)?;

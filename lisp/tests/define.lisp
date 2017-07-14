@@ -12,11 +12,10 @@
    (define b 2)
    (assert (eq? b 2))
 
-   (define f
-     (lambda (a)
-       (define b 1)
-       (assert (eq? b 1))
-       (+ b a)))
+   (define (f a)
+     (define b 1)
+     (assert (eq? b 1))
+     (+ b a))
 
    (assert (eq? (f 5) 6))
    (assert (eq? b 2))
