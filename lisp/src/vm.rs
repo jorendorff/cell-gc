@@ -107,19 +107,44 @@ fn parse_pair<'h>(v: Value<'h>, msg: &'static str) -> Result<(Value<'h>, Value<'
     }
 }
 
-fn map_eval<'h>(
+fn eval_each<'h, F>(
     hs: &mut GcHeapSession<'h>,
     mut exprs: Value<'h>,
     mut env: Environment<'h>,
-) -> Result<(Vec<Value<'h>>, Environment<'h>), String> {
-    let mut v = vec![];
+    mut f: F,
+) -> Result<Environment<'h>, String>
+    where F: FnMut(&mut GcHeapSession<'h>, Value<'h>) -> Result<(), String>
+{
     while let Cons(pair) = exprs {
         let (val, new_env) = eval(hs, pair.car(), env)?;
         env = new_env;
-        v.push(val);
+        f(hs, val)?;
         exprs = pair.cdr();
     }
+    match exprs {
+        Nil => Ok(env),
+        _ => Err("improper list of expressions".to_string())
+    }
+}
+
+fn map_eval<'h>(
+    hs: &mut GcHeapSession<'h>,
+    exprs: Value<'h>,
+    env: Environment<'h>,
+) -> Result<(Vec<Value<'h>>, Environment<'h>), String> {
+    let mut v = vec![];
+    let env = eval_each(hs, exprs, env, |_hs, val| { v.push(val); Ok(()) })?;
     Ok((v, env))
+}
+
+pub fn eval_block_body<'h>(
+    hs: &mut GcHeapSession<'h>,
+    exprs: Value<'h>,
+    env: Environment<'h>,
+) -> Result<Value<'h>, String> {
+    let mut v = Nil;
+    let _ = eval_each(hs, exprs, env, |_hs, val| { v = val; Ok(()) })?;
+    Ok(v)
 }
 
 fn apply<'h>(
@@ -156,8 +181,8 @@ fn apply<'h>(
             if i < args.len() {
                 return Err("apply: too many arguments".to_string());
             }
-            let (results, _) = map_eval(hs, body, env)?;
-            Ok(results.last().cloned().unwrap_or(Nil))
+            let result = eval_block_body(hs, body, env)?;
+            Ok(result)
         }
         _ => Err("apply: not a function".to_string()),
     }
