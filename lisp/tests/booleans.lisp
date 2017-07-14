@@ -15,6 +15,6 @@
 (assert (eq? (not 'nil) #f))
 
 ; `boolean?` returns #t if obj is either #t or #f and returns #f otherwise.
-;;(assert (eq? (boolean? #f) #t))
-;;(assert (eq? (boolean? 0) #f))
-;;(assert (eq? (boolean? '()) #f))
+(assert (eq? (boolean? #f) #t))
+(assert (eq? (boolean? 0) #f))
+(assert (eq? (boolean? '()) #f))

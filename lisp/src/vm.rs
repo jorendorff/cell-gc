@@ -32,6 +32,13 @@ impl<'h> Value<'h> {
         }
     }
 
+    pub fn is_boolean(&self) -> bool {
+        match *self {
+            Bool(_) => true,
+            _ => false,
+        }
+    }
+
     fn as_symbol(self, error_msg: &str) -> Result<Arc<String>, String> {
         match self {
             Symbol(s) => Ok(s),
@@ -64,6 +71,7 @@ impl<'h> Environment<'h> {
         builtin!("cons", builtins::cons);
         builtin!("eq?", builtins::eq_question);
         builtin!("print", builtins::print);
+        builtin!("boolean?", builtins::boolean_p);
 
         const PRELUDE: &'static str = include_str!("prelude.sch");
         let prelude = match parser::parse(hs, PRELUDE) {

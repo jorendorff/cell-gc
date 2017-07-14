@@ -156,3 +156,10 @@ pub fn sub<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Valu
         Ok(Int(total))
     }
 }
+
+pub fn boolean_p<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
+    if args.len() != 1 {
+        return Err("boolean?: exactly 1 argument required".into())
+    }
+    Ok(Bool(args[0].is_boolean()))
+}
