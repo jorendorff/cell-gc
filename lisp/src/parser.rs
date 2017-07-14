@@ -258,7 +258,22 @@ named!(
 named!(
     list(&str) -> Datum,
     alt!(
-        map!(preceded!(open, tail), Datum::List)
+        preceded!(
+            terminated!(open, intertoken_space),
+            alt!(
+                map!(
+                    terminated!(
+                        many1!(terminated!(datum, intertoken_space)),
+                        close
+                    ),
+                    Datum::List
+                )
+              | map!(
+                    close,
+                    |()| Datum::List(vec![])
+                )
+            )
+        )
       | do_parse!(
             prefix: alt!(
                 value!("quote", char!('\''))
@@ -289,11 +304,6 @@ named!(
         ),
         Datum::Vector
     )
-);
-
-named!(
-    tail(&str) -> Vec<Datum>,
-    terminated!(many0!(terminated!(datum, intertoken_space)), close)
 );
 
 fn datum_to_value<'h>(hs: &mut GcHeapSession<'h>, datum: Datum) -> Result<Value<'h>, &'static str> {
