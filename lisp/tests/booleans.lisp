@@ -10,7 +10,7 @@
 (assert (eq? (not 3) #f))
 ;;(assert (eq? (not (list 3)) #f))
 (assert (eq? (not #f) #t))
-;;(assert (eq? (not '()) #f))
+(assert (eq? (not '()) #f))
 ;;(assert (eq? (not (list)) #f))
 (assert (eq? (not 'nil) #f))
 
