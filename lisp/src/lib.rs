@@ -1,7 +1,8 @@
-extern crate asexp;
 extern crate cell_gc;
 #[macro_use]
 extern crate cell_gc_derive;
+#[macro_use]
+extern crate nom;
 
 pub mod builtins;
 pub mod parser;

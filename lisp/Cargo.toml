@@ -4,7 +4,7 @@ name = "lisp"
 version = "0.1.0"
 
 [dependencies]
-asexp = "0.3.1"
+nom = { git = "https://github.com/Geal/nom", branch = "master" }
 
 [dependencies.cell-gc]
 path = ".."

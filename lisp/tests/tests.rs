@@ -9,20 +9,20 @@ fn eval_test_file(file: path::PathBuf) {
     println!("Opening test file: {}", file.display());
     let mut file = fs::File::open(file).expect("Should open file OK");
 
-    // Hack: The parser only accepts one s-expression at a time. But a script
-    // can be any number of s-exprs. Wrap in parentheses to work around this.
-    let mut source = "(".to_string();
+    let mut source = String::new();
     file.read_to_string(&mut source)
         .expect("Should read file OK");
-    source.push_str("\n)");
 
     println!("source =");
     println!("{}", source);
 
     cell_gc::with_heap(|hs| {
         let exprs = lisp::parser::parse(hs, &source).expect("Should parse s-exps OK");
-        let env = lisp::vm::Environment::default_env(hs);
-        let _ = lisp::vm::eval_block_body(hs, exprs, env).expect("Should eval exprs OK");
+        let mut env = lisp::vm::Environment::default_env(hs);
+        for expr in exprs {
+            let (_, new_env) = lisp::vm::eval(hs, expr, env).expect("Should eval exprs OK");
+            env = new_env;
+        }
     });
 }
 

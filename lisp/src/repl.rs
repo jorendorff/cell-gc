@@ -19,16 +19,20 @@ pub fn repl() -> io::Result<()> {
             // Read
             let mut source = String::new();
             io::stdin().read_line(&mut source)?;
-            let expr = parse(hs, &source)
+            let exprs = parse(hs, &source)
                 .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
 
             // Eval
-            let (val, new_env) = vm::eval(hs, expr, env)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-            env = new_env;
+            let mut result = vm::Value::Nil;
+            for expr in exprs {
+                let (val, new_env) = vm::eval(hs, expr, env)
+                    .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                result = val;
+                env = new_env;
+            }
 
             // Print
-            print(val);
+            print(result);
             println!();
 
             // Loop...
