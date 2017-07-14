@@ -47,3 +47,4 @@ test!(y_combinator_2);
 test!(define);
 test!(pairs_and_lists);
 test!(set);
+test!(vectors);

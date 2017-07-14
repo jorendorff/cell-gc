@@ -50,10 +50,36 @@ impl<'h> Value<'h> {
         }
     }
 
+    pub fn as_index(self, error_msg: &str) -> Result<usize, String> {
+        match self {
+            Int(i) =>
+                if i >= 0 {
+                    Ok(i as usize)
+                } else {
+                    Err(format!("{}: negative vector index", error_msg))
+                },
+            _ => Err(format!("{}: vector index required", error_msg))
+        }
+    }
+
     pub fn is_pair(&self) -> bool {
         match *self {
             Cons(_) => true,
             _ => false
+        }
+    }
+
+    pub fn is_vector(&self) -> bool {
+        match *self {
+            Vector(_) => true,
+            _ => false
+        }
+    }
+
+    pub fn as_vector(self, error_msg: &str) -> Result<VecRef<'h, Value<'h>>, String> {
+        match self {
+            Vector(v) => Ok(v),
+            _ => Err(format!("{}: vector expected", error_msg))
         }
     }
 
@@ -91,6 +117,10 @@ impl<'h> Environment<'h> {
         builtin!("print", builtins::print);
         builtin!("boolean?", builtins::boolean_question);
         builtin!("pair?", builtins::pair_question);
+        builtin!("vector?", builtins::vector_question);
+        builtin!("vector", builtins::vector);
+        builtin!("vector-length", builtins::vector_length);
+        builtin!("vector-ref", builtins::vector_ref);
 
         const PRELUDE: &'static str = include_str!("prelude.sch");
         let prelude = match parser::parse(hs, PRELUDE) {

@@ -150,6 +150,44 @@ pub fn sub<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Valu
     }
 }
 
+// 6.8 Vectors
+pub fn vector_question<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>)
+    -> Result<Value<'h>, String>
+{
+    simple_predicate("vector?", args, |v| v.is_vector())
+}
+
+pub fn vector<'h>(hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
+    Ok(Value::Vector(hs.alloc(args)))
+}
+
+pub fn vector_length<'h>(_hs: &mut GcHeapSession<'h>, mut args: Vec<Value<'h>>)
+    -> Result<Value<'h>, String>
+{
+    if args.len() != 1 {
+        return Err("vector-length: exactly 1 argument required".into());
+    }
+    let n = args.pop().unwrap().as_vector("vector-length")?.len();
+    if n as i32 as usize != n {
+        return Err("vector-length: integer overflow".into());
+    }
+    Ok(Value::Int(n as i32))
+}
+
+pub fn vector_ref<'h>(_hs: &mut GcHeapSession<'h>, mut args: Vec<Value<'h>>)
+    -> Result<Value<'h>, String>
+{
+    if args.len() != 2 {
+        return Err("vector-ref: exactly 2 arguments required".into());
+    }
+    let index = args.pop().unwrap().as_index("vector-ref")?;
+    let v = args.pop().unwrap().as_vector("vector-ref")?;
+    if index >= v.len() {
+        return Err(format!("vector-ref: index out of bounds (got {}, length {})", index, v.len()));
+    }
+    Ok(v.get(index))
+}
+
 // Extensions
 pub fn print<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
     for v in args {
