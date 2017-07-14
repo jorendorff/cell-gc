@@ -169,6 +169,7 @@ enum Datum {
     String(String),
     Identifier(String),
     List(Vec<Datum>),
+    ImproperList(Vec<Datum>),
     Vector(Vec<Datum>),
 }
 
@@ -261,12 +262,35 @@ named!(
         preceded!(
             terminated!(open, intertoken_space),
             alt!(
+                // Nonempty list or improper list.
                 map!(
                     terminated!(
-                        many1!(terminated!(datum, intertoken_space)),
+                        pair!(
+                            // Normal list elements.
+                            many1!(terminated!(datum, intertoken_space)),
+                            // Optional improper ending.
+                            opt!(
+                                do_parse!(
+                                    value!((), char!('.')) >>
+                                    intertoken_space >>
+                                    d: datum >>
+                                    intertoken_space >>
+                                    (d)
+                                )
+                            )
+                        ),
                         close
                     ),
-                    Datum::List
+                    |(mut data, opt_improper)| {
+                        match opt_improper {
+                            Some(improper) => {
+                                data.push(improper);
+                                Datum::ImproperList(data)
+                            }
+                            None =>
+                                Datum::List(data),
+                        }
+                    }
                 )
               | map!(
                     close,
@@ -306,6 +330,20 @@ named!(
     )
 );
 
+fn into_list<'h>(hs: &mut GcHeapSession<'h>, elements: Vec<Datum>, tail: Value<'h>)
+    -> Result<Value<'h>, &'static str>
+{
+    let mut list = tail;
+    for d in elements.into_iter().rev() {
+        let value = datum_to_value(hs, d)?;
+        list = Value::Cons(hs.alloc(Pair {
+            car: value,
+            cdr: list
+        }));
+    }
+    Ok(list)
+}
+
 fn datum_to_value<'h>(hs: &mut GcHeapSession<'h>, datum: Datum) -> Result<Value<'h>, &'static str> {
     match datum {
         Datum::Boolean(b) =>
@@ -322,16 +360,12 @@ fn datum_to_value<'h>(hs: &mut GcHeapSession<'h>, datum: Datum) -> Result<Value<
             Err("strings not supported"),
         Datum::Identifier(s) =>
             Ok(Value::Symbol(Arc::new(s))),
-        Datum::List(data) => {
-            let mut list = Value::Nil;
-            for d in data.into_iter().rev() {
-                let value = datum_to_value(hs, d)?;
-                list = Value::Cons(hs.alloc(Pair {
-                    car: value,
-                    cdr: list
-                }));
-            }
-            Ok(list)
+        Datum::List(data) =>
+            into_list(hs, data, Value::Nil),
+        Datum::ImproperList(mut data) => {
+            let tail = data.pop().expect("internal error: improper lists require a last value");
+            let tail_val = datum_to_value(hs, tail)?;
+            into_list(hs, data, tail_val)
         }
         Datum::Vector(_data) =>
             Err("vectors are not supported")
