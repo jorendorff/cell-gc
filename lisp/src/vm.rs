@@ -2,6 +2,7 @@
 
 use builtins::{self, BuiltinFnPtr};
 use cell_gc::{GcLeaf, GcHeapSession};
+use parser;
 use std::sync::Arc;
 
 #[derive(Debug, IntoHeap)]
@@ -64,6 +65,18 @@ impl<'h> Environment<'h> {
         builtin!("eq?", builtins::eq_question);
         builtin!("print", builtins::print);
 
+        const PRELUDE: &'static str = include_str!("prelude.sch");
+        let prelude = match parser::parse(hs, PRELUDE) {
+            Ok(forms) => forms,
+            Err(err) => panic!("unexpected error parsing prelude: {}", err)
+        };
+        for expr in prelude {
+            let result = eval(hs, expr, env);
+            match result {
+                Ok((_, new_env)) => { env = new_env; }
+                Err(err) => panic!("unexpected error evaluating prelude: {}", err)
+            }
+        }
         env
     }
 
