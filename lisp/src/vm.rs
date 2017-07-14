@@ -240,15 +240,20 @@ pub fn eval<'h>(
                         })),
                         env,
                     ));
+                } else if &**s == "quote" {
+                    let (datum, rest) = parse_pair(p.cdr(), "(quote) with no arguments")?;
+                    if !rest.null() {
+                        return Err("too many arguments to (quote)".to_string());
+                    }
+                    return Ok((datum, env));
                 } else if &**s == "if" {
                     let (cond, rest) = parse_pair(p.cdr(), "(if) with no arguments")?;
                     let (t_expr, rest) = parse_pair(rest, "missing arguments after (if COND)")?;
                     let (f_expr, rest) =
                         parse_pair(rest, "missing 'else' argument after (if COND X)")?;
-                    match rest {
-                        Nil => {}
-                        _ => return Err("too many arguments in (if) expression".to_string()),
-                    };
+                    if !rest.null() {
+                        return Err("too many arguments in (if) expression".to_string());
+                    }
                     let (cond_result, env) = eval(hs, cond, env)?;
                     let selected_expr = if cond_result == Nil || cond_result == Bool(false) {
                         f_expr

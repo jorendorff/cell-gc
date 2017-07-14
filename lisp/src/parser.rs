@@ -257,7 +257,26 @@ named!(
 
 named!(
     list(&str) -> Datum,
-    map!(preceded!(open, tail), Datum::List)
+    alt!(
+        map!(preceded!(open, tail), Datum::List)
+      | do_parse!(
+            prefix: alt!(
+                value!("quote", char!('\''))
+              | value!("quasiquote", char!('`'))
+              | value!("unquote", char!(','))
+              | value!("unquote-splicing", tag!(",@"))
+            ) >>
+            intertoken_space >>
+            arg: datum >>
+            (
+                Datum::List(vec![
+                    // allocation here is dumb; symbols should be reused, of course
+                    Datum::Identifier(prefix.to_string()),
+                    arg,
+                ])
+            )
+        )
+    )
 );
 
 named!(
