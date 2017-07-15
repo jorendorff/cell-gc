@@ -40,3 +40,15 @@
 (assert (eq? (null? '#()) #f))
 (assert (eq? (null? '(())) #f))
 (assert (eq? (null? #f) #f))
+
+;; `(list? obj)` returns #t if obj is a list, otherwise returns #f. By
+;; definition, all lists have finite length and are terminated by the empty
+;; list.
+
+(assert (eq? (list? '(a b c)) #t))
+(assert (eq? (list? '()) #t))
+(assert (eq? (list? '(a . b)) #f))
+;;(assert (eq? (let ((x (list 'a)))
+;;               (set-cdr! x x)
+;;               (list? x))
+;;             #f))
