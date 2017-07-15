@@ -253,7 +253,7 @@ pub fn eval_block_body<'h>(
 fn apply<'h>(
     hs: &mut GcHeapSession<'h>,
     fval: Value<'h>,
-    args: Vec<Value<'h>>,
+    mut args: Vec<Value<'h>>,
 ) -> Result<Value<'h>, String> {
     match fval {
         Builtin(f) => (f.0)(hs, args),
@@ -282,7 +282,13 @@ fn apply<'h>(
                 params = pair.cdr();
                 i += 1;
             }
-            if i < args.len() {
+            if let Symbol(rest_name) = params {
+                let mut rest_list = Nil;
+                for v in args.drain(i..).rev() {
+                    rest_list = Cons(hs.alloc(Pair { car: v, cdr: rest_list }));
+                }
+                env.push(rest_name, rest_list);
+            } else if i < args.len() {
                 return Err("apply: too many arguments".to_string());
             }
             let result = eval_block_body(hs, body, env)?;

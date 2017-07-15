@@ -52,3 +52,9 @@
 ;;               (set-cdr! x x)
 ;;               (list? x))
 ;;             #f))
+
+
+;; `(list obj ...)` returns a newly allocated list of its arguments.
+
+(assert (equal? (list 'a (+ 3 4) 'c) '(a 7 c)))
+(assert (eq? (list) '()))

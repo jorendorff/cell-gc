@@ -1,6 +1,7 @@
 ;; I stole these lines of code from <https://www.bluishcoder.co.nz/jsscheme/>.
 ;; Original by Alex Yakovlev. Adapted by Chris Double.
 
+(define (list . x) x)
 (define (not x) (if x #f #t))
 ;
 (define (caar x) (car (car x)))
