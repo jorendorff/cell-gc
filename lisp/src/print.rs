@@ -30,6 +30,7 @@ pub fn print<'h>(value: Value<'h>) {
             }
             print!(")");
         }
+        Environment(_) => print!("#environment"),
     }
 }
 

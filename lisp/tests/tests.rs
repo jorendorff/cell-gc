@@ -18,10 +18,9 @@ fn eval_test_file(file: path::PathBuf) {
 
     cell_gc::with_heap(|hs| {
         let exprs = lisp::parser::parse(hs, &source).expect("Should parse s-exps OK");
-        let mut env = lisp::vm::Environment::default_env(hs);
+        let env = lisp::vm::Environment::default_env(hs);
         for expr in exprs {
-            let (_, new_env) = lisp::vm::eval(hs, expr, env).expect("Should eval exprs OK");
-            env = new_env;
+            lisp::vm::eval(hs, expr, env.clone()).expect("Should eval exprs OK");
         }
     });
 }

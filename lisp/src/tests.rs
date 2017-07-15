@@ -7,8 +7,7 @@ fn add_in_lambda() {
         let program = lisp!(
             ((lambda (x y z) (+ x (+ y z))) 3 4 5)
                 , hs);
-        let (result, new_env) = eval(hs, program, env.clone()).expect("Should eval OK");
+        let result = eval(hs, program, env.clone()).expect("Should eval OK");
         assert_eq!(result, Int(12));
-        assert_eq!(env, new_env);
     });
 }
