@@ -23,6 +23,23 @@
 (define (cdaddr x) (cdr (car (cdr (cdr x)))))
 (define (cddddr x) (cdr (cdr (cdr (cdr x)))))
 ;
+(define (length lst . x)
+  (define l (if (null? x) 0 (car x)))
+  (if (pair? lst) (length (cdr lst) (+ l 1)) l))
+(define (length+ lst . x)
+  (define l (if (null? x) 0 (car x)))
+  (if (null? lst) l
+      (if (pair? lst) (length+ (cdr lst) (+ l 1)) (+ l 1))))
+
+(define (list-ref lst n)
+  (if (= n 0) (car lst) (list-ref (cdr lst) (- n 1))))
+(define (list-tail lst n)
+  (if (= n 0) lst (list-tail (cdr lst) (- n 1))))
+(define (reverse lst . l2)
+  (define r (if (null? l2) l2 (car l2)))
+  (if (null? lst) r
+      (reverse (cdr lst) (cons (car lst) r))))
+;
 (define list?
   ((lambda ()
     (define (race h t)

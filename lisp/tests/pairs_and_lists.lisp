@@ -58,3 +58,19 @@
 
 (assert (equal? (list 'a (+ 3 4) 'c) '(a 7 c)))
 (assert (eq? (list) '()))
+
+
+;; `(length list)` returns the length of list.
+
+(assert (eq? (length '(a b c)) 3))
+(assert (eq? (length '(a (b) (c d e))) 3))
+(assert (eq? (length '()) 0))
+
+
+;; `(reverse list)` returns a newly allocated list consisting of the elements
+;; of list in reverse order.
+
+(assert (equal? (reverse '(a b c))
+                '(c b a)))
+(assert (equal? (reverse '(a (b c) d (e (f))))
+                '((e (f)) d (b c) a)))
