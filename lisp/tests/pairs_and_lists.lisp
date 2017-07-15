@@ -32,3 +32,11 @@
 (assert (equal? (cdr '((a) b c d)) '(b c d)))
 (assert (eq? (cdr '(1 . 2)) 2))
 ;;(assert (eq? (cdr '()) 'error))
+
+
+;; `(null? obj)` returns #t if obj is the empty list, otherwise returns #f.
+
+(assert (eq? (null? '()) #t))
+(assert (eq? (null? '#()) #f))
+(assert (eq? (null? '(())) #f))
+(assert (eq? (null? #f) #f))

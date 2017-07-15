@@ -28,7 +28,7 @@ pub enum Value<'h> {
 pub use self::Value::*;
 
 impl<'h> Value<'h> {
-    fn null(&self) -> bool {
+    pub fn is_nil(&self) -> bool {
         match *self {
             Nil => true,
             _ => false
@@ -125,6 +125,7 @@ impl<'h> Environment<'h> {
         builtin!("eq?", builtins::eq_question);
         builtin!("print", builtins::print);
         builtin!("boolean?", builtins::boolean_question);
+        builtin!("null?", builtins::null_question);
         builtin!("pair?", builtins::pair_question);
         builtin!("vector?", builtins::vector_question);
         builtin!("vector", builtins::vector);
@@ -312,7 +313,7 @@ pub fn eval<'h>(
                     );
                 } else if &**s == "quote" {
                     let (datum, rest) = parse_pair(p.cdr(), "(quote) with no arguments")?;
-                    if !rest.null() {
+                    if !rest.is_nil() {
                         return Err("too many arguments to (quote)".to_string());
                     }
                     return Ok(datum);
@@ -321,7 +322,7 @@ pub fn eval<'h>(
                     let (t_expr, rest) = parse_pair(rest, "missing arguments after (if COND)")?;
                     let (f_expr, rest) =
                         parse_pair(rest, "missing 'else' argument after (if COND X)")?;
-                    if !rest.null() {
+                    if !rest.is_nil() {
                         return Err("too many arguments in (if) expression".to_string());
                     }
                     let cond_result = eval(hs, cond, env.clone())?;
@@ -368,7 +369,7 @@ pub fn eval<'h>(
                     let (first, rest) = parse_pair(p.cdr(), "(set!) with no name")?;
                     let name = first.as_symbol("(set!) first argument must be a name")?;
                     let (expr, rest) = parse_pair(rest, "(set!) with no value")?;
-                    if !rest.null() {
+                    if !rest.is_nil() {
                         return Err("(set!): too many arguments".to_string());
                     }
                     let val = eval(hs, expr, env.clone())?;

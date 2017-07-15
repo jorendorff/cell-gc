@@ -111,6 +111,12 @@ pub fn cdr<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Valu
     }
 }
 
+pub fn null_question<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>)
+    -> Result<Value<'h>, String>
+{
+    simple_predicate("null?", args, |v| v.is_nil())
+}
+
 // 6.5 Numbers
 pub fn add<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
     let mut total = 0;
