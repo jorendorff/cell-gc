@@ -56,6 +56,18 @@ pub fn eq_question<'h>(
     Ok(Bool(args.iter().all(|arg| Some(arg) == first)))
 }
 
+pub fn eqv_question<'h>(
+    _hs: &mut GcHeapSession<'h>,
+    mut args: Vec<Value<'h>>,
+) -> Result<Value<'h>, String> {
+    if args.len() != 2 {
+        return Err("eqv?: exactly 2 arguments required".into())
+    }
+    let b = args.pop().unwrap();
+    let a = args.pop().unwrap();
+    Ok(Bool(a == b))
+}
+
 // 6.3 Pairs and lists
 pub fn pair_question<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>)
     -> Result<Value<'h>, String>

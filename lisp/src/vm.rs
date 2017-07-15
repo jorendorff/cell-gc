@@ -121,6 +121,7 @@ impl<'h> Environment<'h> {
         builtin!("car", builtins::car);
         builtin!("cdr", builtins::cdr);
         builtin!("cons", builtins::cons);
+        builtin!("eqv?", builtins::eqv_question);
         builtin!("eq?", builtins::eq_question);
         builtin!("print", builtins::print);
         builtin!("boolean?", builtins::boolean_question);
