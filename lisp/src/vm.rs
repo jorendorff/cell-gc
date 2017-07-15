@@ -97,6 +97,14 @@ impl<'h> Value<'h> {
             _ => Err(error_msg.to_string())
         }
     }
+
+    pub fn is_procedure(&self) -> bool {
+        match *self {
+            Lambda(_) => true,
+            Builtin(_) => true,
+            _ => false
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, IntoHeap)]
@@ -129,6 +137,7 @@ impl<'h> Environment<'h> {
         builtin!(">", builtins::numeric_gt);
         builtin!("<=", builtins::numeric_le);
         builtin!(">=", builtins::numeric_ge);
+        builtin!("apply", builtins::apply);
         builtin!("assert", builtins::assert);
         builtin!("car", builtins::car);
         builtin!("cdr", builtins::cdr);
@@ -139,6 +148,7 @@ impl<'h> Environment<'h> {
         builtin!("boolean?", builtins::boolean_question);
         builtin!("null?", builtins::null_question);
         builtin!("pair?", builtins::pair_question);
+        builtin!("procedure?", builtins::procedure_question);
         builtin!("vector?", builtins::vector_question);
         builtin!("vector", builtins::vector);
         builtin!("vector-length", builtins::vector_length);
@@ -262,7 +272,7 @@ pub fn eval_block_body<'h>(
     Ok(v)
 }
 
-fn apply<'h>(
+pub fn apply<'h>(
     hs: &mut GcHeapSession<'h>,
     fval: Value<'h>,
     mut args: Vec<Value<'h>>,

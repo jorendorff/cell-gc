@@ -1,7 +1,7 @@
 use cell_gc::GcHeapSession;
 use print::print as print_value;
 use std::fmt;
-use vm::{Pair, Value};
+use vm::{self, Pair, Value};
 use vm::Value::*;
 
 pub struct BuiltinFnPtr(
@@ -252,6 +252,34 @@ pub fn vector_ref<'h>(_hs: &mut GcHeapSession<'h>, mut args: Vec<Value<'h>>)
         return Err(format!("vector-ref: index out of bounds (got {}, length {})", index, v.len()));
     }
     Ok(v.get(index))
+}
+
+// 6.9 Control features
+pub fn procedure_question<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>)
+    -> Result<Value<'h>, String>
+{
+    simple_predicate("procedure?", args, |v| v.is_procedure())
+}
+
+pub fn apply<'h>(hs: &mut GcHeapSession<'h>, mut args: Vec<Value<'h>>)
+    -> Result<Value<'h>, String>
+{
+    if args.len() < 2 {
+        return Err("apply: at least 2 arguments required".into());
+    }
+    let mut trailing = args.pop().unwrap();
+    let mut arg_vec = args.split_off(1);
+    while let Cons(pair) = trailing {
+        arg_vec.push(pair.car());
+        trailing = pair.cdr();
+    }
+    if !trailing.is_nil() {
+        return Err("apply: last argument must be a list".into());
+    }
+    assert_eq!(args.len(), 1);
+    let fval = args.pop().unwrap();
+
+    vm::apply(hs, fval, arg_vec)
 }
 
 // Extensions
