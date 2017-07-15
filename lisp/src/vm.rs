@@ -51,6 +51,13 @@ impl<'h> Value<'h> {
         }
     }
 
+    pub fn as_int(self, error_msg: &str) -> Result<i32, String> {
+        match self {
+            Int(i) => Ok(i),
+            _ => Err(format!("{}: number required", error_msg))
+        }
+    }
+
     pub fn as_index(self, error_msg: &str) -> Result<usize, String> {
         match self {
             Int(i) =>
@@ -117,6 +124,11 @@ impl<'h> Environment<'h> {
         builtin!("+", builtins::add);
         builtin!("-", builtins::sub);
         builtin!("*", builtins::mul);
+        builtin!("=", builtins::numeric_eq);
+        builtin!("<", builtins::numeric_lt);
+        builtin!(">", builtins::numeric_gt);
+        builtin!("<=", builtins::numeric_le);
+        builtin!(">=", builtins::numeric_ge);
         builtin!("assert", builtins::assert);
         builtin!("car", builtins::car);
         builtin!("cdr", builtins::cdr);

@@ -74,3 +74,16 @@
                 '(c b a)))
 (assert (equal? (reverse '(a (b c) d (e (f))))
                 '((e (f)) d (b c) a)))
+
+
+;; `(list-tail list k)` returns the sublist of list obtained by omitting the
+;; first k elements.
+
+;; `(list-ref list k)` returns the kth element of list. (This is the same as
+;; the car of (list-tail list k).)
+
+(assert (eq? (list-ref '(a b c d) 2) 'c))
+;;(assert (eq? (list-ref '(a b c d)
+;;                       (inexact->exact (round 1.8)))
+;;             'c))
+

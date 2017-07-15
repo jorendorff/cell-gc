@@ -118,6 +118,54 @@ pub fn null_question<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>)
 }
 
 // 6.5 Numbers
+pub fn numeric_eq<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
+    let mut it = args.into_iter();
+    if let Some(arg0) = it.next() {
+        let z0 = arg0.as_int("=")?;
+        for arg in it {
+            let z = arg.as_int("=")?;
+            if !(z0 == z) {
+                return Ok(Bool(false));
+            }
+        }
+    }
+    Ok(Bool(true))
+}
+
+pub fn numeric_compare<'h, F>(args: Vec<Value<'h>>, cmp: F)
+    -> Result<Value<'h>, String>
+    where F: Fn(i32, i32) -> bool
+{
+    let mut it = args.into_iter();
+    if let Some(arg0) = it.next() {
+        let mut prev = arg0.as_int("=")?;
+        for arg in it {
+            let x = arg.as_int("=")?;
+            if !cmp(prev, x) {
+                return Ok(Bool(false));
+            }
+            prev = x;
+        }
+    }
+    Ok(Bool(true))
+}
+
+pub fn numeric_lt<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
+    numeric_compare(args, |a, b| a < b)
+}
+
+pub fn numeric_gt<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
+    numeric_compare(args, |a, b| a > b)
+}
+
+pub fn numeric_le<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
+    numeric_compare(args, |a, b| a <= b)
+}
+
+pub fn numeric_ge<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
+    numeric_compare(args, |a, b| a >= b)
+}
+
 pub fn add<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
     let mut total = 0;
     for v in args {
