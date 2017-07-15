@@ -108,14 +108,14 @@
 ;; is that objects are generally equal? if they print the same. `equal?` may fail
 ;; to terminate if its arguments are circular data structures.
 
-;;(assert (eq? (equal? 'a 'a) #t))
-;;(assert (eq? (equal? '(a) '(a)) #t))
-;;(assert (eq? (equal? '(a (b) c)
-;;                     '(a (b) c)) #t))
+(assert (eq? (equal? 'a 'a) #t))
+(assert (eq? (equal? '(a) '(a)) #t))
+(assert (eq? (equal? '(a (b) c)
+                     '(a (b) c)) #t))
 ;;(assert (eq? (equal? "abc" "abc") #t))
-;;(assert (eq? (equal? 2 2) #t))
+(assert (eq? (equal? 2 2) #t))
 ;;(assert (eq? (equal? (make-vector 5 'a)
 ;;                     (make-vector 5 'a))
 ;;             #t))
-;;(assert (boolean? (equal? (lambda (x) x)
-;;                          (lambda (y) y))))
+(assert (boolean? (equal? (lambda (x) x)
+                          (lambda (y) y))))
