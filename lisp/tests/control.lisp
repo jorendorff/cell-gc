@@ -29,4 +29,21 @@
 ;;(assert (eq? ((compose sqrt *) 12 75)
 ;;             30))
 
+;; `(map proc list1 list2 ...)`
+;;
+;; The lists must be lists, and proc must be a procedure taking as many
+;; arguments as there are lists. If more than one list is given, then they must
+;; all be the same length. `map` applies proc element-wise to the elements of the
+;; lists and returns a list of the results, in order from left to right. The
+;; dynamic order in which proc is applied to the elements of the lists is
+;; unspecified.
+
+(assert (equal? (map cadr '((a b) (d e) (g h)))
+                '(b e h)))
+
+(assert (equal? (map (lambda (n) (expt n n)) '(1 2 3 4 5))
+                '(1 4 27 256 3125)))
+
+(assert (equal? (map + '(1 2 3) '(4 5 6))
+                '(5 7 9)))
 
