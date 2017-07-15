@@ -3,6 +3,11 @@
 
 (define (list . x) x)
 (define (not x) (if x #f #t))
+(define (negative? x) (< x 0))
+(define (positive? x) (> x 0))
+(define (zero? x) (= x 0))
+(define (abs x) (if (< x 0) (- x) x))
+(define magnitude abs)
 ;
 (define (caar x) (car (car x)))
 (define (cadr x) (car (cdr x)))

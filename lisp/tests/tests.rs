@@ -45,6 +45,7 @@ test!(equivalence);
 test!(y_combinator);
 test!(y_combinator_2);
 test!(define);
+test!(numerical);
 test!(pairs_and_lists);
 test!(set);
 test!(vectors);

@@ -151,10 +151,22 @@ named!(
 
 named!(
     number(&str) -> String,
-    fold_many1!(
-        digit,
-        String::new(),
-        push_char
+    do_parse!(
+        sign: sign >>
+        num_str: fold_many1!(
+            digit,
+            sign.to_string(),
+            push_char
+        ) >>
+        (num_str)
+    )
+);
+
+named!(
+    sign(&str) -> &'static str,
+    alt!(
+        value!("-", char!('-'))
+      | value!("", opt!(char!('+')))
     )
 );
 
