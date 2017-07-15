@@ -1,3 +1,5 @@
+;; R4RS 6.3 Pairs and lists
+
 ;; `pair?` returns #t if obj is a pair, and otherwise returns #f.
 
 (assert (eq? (pair? '(a . b)) #t))
@@ -86,4 +88,52 @@
 ;;(assert (eq? (list-ref '(a b c d)
 ;;                       (inexact->exact (round 1.8)))
 ;;             'c))
+
+
+;; `(memq obj list)`
+;; `(memv obj list)`
+;; `(member obj list)`
+;;
+;; These procedures return the first sublist of list whose car is obj, where
+;; the sublists of list are the non-empty lists returned by `(list-tail list k)`
+;; for k less than the length of list. If obj does not occur in list, then #f
+;; (not the empty list) is returned. `memq` uses `eq?` to compare obj with the
+;; elements of list, while `memv` uses `eqv?` and `member` uses `equal?`.
+
+(assert (equal? (memq 'a '(a b c))
+                '(a b c)))
+(assert (equal? (memq 'b '(a b c))
+                '(b c)))
+(assert (eq? (memq 'a '(b c d))
+             #f))
+(assert (eq? (memq (list 'a) '(b (a) c))
+             #f))
+(assert (equal? (member (list 'a) '(b (a) c))
+                '((a) c)))
+(assert (equal? (memv 101 '(100 101 102))
+                '(101 102)))
+
+;; `(assq obj alist)`
+;; `(assv obj alist)`
+;; `(assoc obj alist)`
+;;
+;; `alist` (for "association list") must be a list of pairs. These procedures
+;; find the first pair in alist whose car field is obj, and returns that
+;; pair. If no pair in alist has obj as its car, then #f (not the empty list)
+;; is returned. `Assq` uses `eq?` to compare obj with the car fields of the pairs
+;; in alist, while `assv` uses `eqv?` and `assoc` uses `equal?`.
+
+(define e '((a 1) (b 2) (c 3)))
+(assert (equal? (assq 'a e)
+                '(a 1)))
+(assert (equal? (assq 'b e)
+                '(b 2)))
+(assert (eq? (assq 'd e)
+             #f))
+(assert (eq? (assq (list 'a) '(((a)) ((b)) ((c))))
+             #f))
+(assert (equal? (assoc (list 'a) '(((a)) ((b)) ((c))))
+                '((a))))
+(assert (equal? (assv 5 '((2 3) (5 7) (11 13)))
+                '(5 7)))
 

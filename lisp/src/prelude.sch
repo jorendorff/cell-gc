@@ -64,6 +64,36 @@
   (if (null? lst) r
       (reverse (cdr lst) (cons (car lst) r))))
 ;
+(define (memq+ x ls)
+  (if (pair? ls)
+      (if (eq? (car ls) x) ls
+          (memq+ x (cdr ls)))
+      (if (eq? x ls) ls #f)))
+(define memq memq+)
+(define (memv x ls)
+  (if (pair? ls)
+      (if (eqv? (car ls) x) ls
+          (memv x (cdr ls)))
+  (if (eqv? x ls) ls #f)))
+(define (member x ls)
+  (if (pair? ls)
+      (if (equal? (car ls) x) ls
+          (member x (cdr ls)))
+  (if (equal? x ls) ls #f)))
+;
+(define (assq x ls)
+  (if (null? ls) #f
+      (if (eq? (caar ls) x) (car ls)
+          (assq x (cdr ls)))))
+(define (assv x ls)
+  (if (null? ls) #f
+      (if (eqv? (caar ls) x) (car ls)
+          (assv x (cdr ls)))))
+(define (assoc x ls)
+  (if (null? ls) #f
+      (if (equal? (caar ls) x) (car ls)
+          (assoc x (cdr ls)))))
+;
 (define list?
   ((lambda ()
     (define (race h t)
