@@ -1,8 +1,8 @@
 use cell_gc::GcHeapSession;
 use print::print as print_value;
-use vm::{self, Trampoline};
 use value::{Pair, Value};
 use value::Value::*;
+use vm::{self, Trampoline};
 
 // Builtin function definitions ////////////////////////////////////////////////
 

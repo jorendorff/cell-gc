@@ -214,7 +214,7 @@ fn test_parser() {
             vec![
                 Datum::Number("376".to_string()),
                 Datum::Number("212".to_string()),
-            ]
+            ],
         )
     );
     assert_eq!(
@@ -234,7 +234,7 @@ fn test_parser() {
                     Datum::Number("1".to_string()),
                     Datum::Number("2".to_string()),
                 ]),
-            ]
+            ],
         )
     );
 }

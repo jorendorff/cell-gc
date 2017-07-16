@@ -1,8 +1,8 @@
-use cell_gc::{GcLeaf, GcHeapSession};
+use cell_gc::{GcHeapSession, GcLeaf};
 use cell_gc::collections::VecRef;
+use std::fmt;
 use std::sync::Arc;
 use vm::{EnvironmentRef, Trampoline};
-use std::fmt;
 
 #[derive(Debug, IntoHeap)]
 pub struct Pair<'h> {
@@ -27,7 +27,7 @@ pub use self::Value::*;
 
 pub struct BuiltinFnPtr(
     pub for<'b> fn(&mut GcHeapSession<'b>, Vec<Value<'b>>)
-        -> Result<Trampoline<'b>, String>
+        -> Result<Trampoline<'b>, String>,
 );
 
 // This can't be #[derive]d because function pointers aren't Clone.
