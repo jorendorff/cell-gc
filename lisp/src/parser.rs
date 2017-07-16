@@ -4,7 +4,7 @@ use cell_gc::GcHeapSession;
 use nom::IResult;
 use std::str::FromStr;
 use std::sync::Arc;
-use vm::{Pair, Value};
+use value::{Pair, Value};
 
 
 // === Tokens

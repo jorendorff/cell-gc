@@ -2,6 +2,7 @@ use cell_gc;
 use parser::parse;
 use print::print;
 use std::io::{self, Write};
+use value::Value;
 use vm;
 
 pub fn repl() -> io::Result<()> {
@@ -23,7 +24,7 @@ pub fn repl() -> io::Result<()> {
                 .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
 
             // Eval
-            let mut result = vm::Value::Nil;
+            let mut result = Value::Nil;
             for expr in exprs {
                 let val = vm::eval(hs, expr, env.clone())
                     .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;

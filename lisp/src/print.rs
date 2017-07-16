@@ -1,7 +1,7 @@
 //! Printing s-expressions.
 
-use vm::{PairRef, Value};
-use vm::Value::*;
+use value::{PairRef, Value};
+use value::Value::*;
 
 // Note that this will need to add a set of already-printed pairs if we add
 // `set-car!` and/or `set-cdr!` and introduce the possibility of cycles.

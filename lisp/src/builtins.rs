@@ -1,34 +1,8 @@
 use cell_gc::GcHeapSession;
 use print::print as print_value;
-use std::fmt;
-use vm::{self, Pair, Trampoline, Value};
-use vm::Value::*;
-
-pub struct BuiltinFnPtr(
-    pub for<'b> fn(&mut GcHeapSession<'b>, Vec<Value<'b>>)
-        -> Result<Trampoline<'b>, String>
-);
-
-// This can't be #[derive]d because function pointers aren't Clone.
-// But they are Copy. A very weird thing about Rust.
-impl Clone for BuiltinFnPtr {
-    fn clone(&self) -> BuiltinFnPtr {
-        BuiltinFnPtr(self.0)
-    }
-}
-
-impl PartialEq for BuiltinFnPtr {
-    fn eq(&self, other: &BuiltinFnPtr) -> bool {
-        self.0 as usize == other.0 as usize
-    }
-}
-
-impl fmt::Debug for BuiltinFnPtr {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "BuiltinFn({:p})", self.0 as usize as *mut ())?;
-        Ok(())
-    }
-}
+use vm::{self, Trampoline};
+use value::{Pair, Value};
+use value::Value::*;
 
 // Builtin function definitions ////////////////////////////////////////////////
 
