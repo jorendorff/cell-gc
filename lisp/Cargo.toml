@@ -2,6 +2,7 @@
 authors = ["Nick Fitzgerald <fitzgen@gmail.com>"]
 name = "lisp"
 version = "0.1.0"
+workspace = ".."
 
 [dependencies]
 nom = { git = "https://github.com/Geal/nom", branch = "master" }
@@ -11,3 +12,4 @@ path = ".."
 
 [dependencies.cell-gc-derive]
 path = "../cell-gc-derive"
+

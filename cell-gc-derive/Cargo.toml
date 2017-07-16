@@ -8,6 +8,7 @@ authors = [
     "Jason Orendorff <jason.orendorff@gmail.com>",
     "Nick Fitzgerald <fitzgen@gmail.com>",
 ]
+workspace = ".."
 
 [lib]
 proc_macro = true
