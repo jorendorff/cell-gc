@@ -48,4 +48,5 @@ test!(define);
 test!(numerical);
 test!(pairs_and_lists);
 test!(set);
+test!(tail_calls);
 test!(vectors);

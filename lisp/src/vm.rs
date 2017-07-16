@@ -1,7 +1,7 @@
 //! If you use enough force, you can actually use this GC to implement a toy VM.
 
 use builtins::{self, BuiltinFnPtr};
-use cell_gc::{GcLeaf, GcHeapSession};
+use cell_gc::{GcHeapSession, GcLeaf};
 use cell_gc::collections::VecRef;
 use parser;
 use std::sync::Arc;
@@ -31,7 +31,7 @@ impl<'h> Value<'h> {
     pub fn is_nil(&self) -> bool {
         match *self {
             Nil => true,
-            _ => false
+            _ => false,
         }
     }
 
@@ -47,54 +47,55 @@ impl<'h> Value<'h> {
     pub fn to_bool(&self) -> bool {
         match *self {
             Bool(false) => false,
-            _ => true
+            _ => true,
         }
     }
 
     pub fn as_int(self, error_msg: &str) -> Result<i32, String> {
         match self {
             Int(i) => Ok(i),
-            _ => Err(format!("{}: number required", error_msg))
+            _ => Err(format!("{}: number required", error_msg)),
         }
     }
 
     pub fn as_index(self, error_msg: &str) -> Result<usize, String> {
         match self {
-            Int(i) =>
+            Int(i) => {
                 if i >= 0 {
                     Ok(i as usize)
                 } else {
                     Err(format!("{}: negative vector index", error_msg))
-                },
-            _ => Err(format!("{}: vector index required", error_msg))
+                }
+            }
+            _ => Err(format!("{}: vector index required", error_msg)),
         }
     }
 
     pub fn is_pair(&self) -> bool {
         match *self {
             Cons(_) => true,
-            _ => false
+            _ => false,
         }
     }
 
     pub fn is_vector(&self) -> bool {
         match *self {
             Vector(_) => true,
-            _ => false
+            _ => false,
         }
     }
 
     pub fn as_vector(self, error_msg: &str) -> Result<VecRef<'h, Value<'h>>, String> {
         match self {
             Vector(v) => Ok(v),
-            _ => Err(format!("{}: vector expected", error_msg))
+            _ => Err(format!("{}: vector expected", error_msg)),
         }
     }
 
     fn as_symbol(self, error_msg: &str) -> Result<Arc<String>, String> {
         match self {
             Symbol(s) => Ok(s),
-            _ => Err(error_msg.to_string())
+            _ => Err(error_msg.to_string()),
         }
     }
 
@@ -102,7 +103,33 @@ impl<'h> Value<'h> {
         match *self {
             Lambda(_) => true,
             Builtin(_) => true,
-            _ => false
+            _ => false,
+        }
+    }
+}
+
+/// A potentially partially evaluated value.
+pub enum Trampoline<'h> {
+    /// A completely evaluated value.
+    Value(Value<'h>),
+    /// The continuation of a partial evaluation in tail position. The stack
+    /// should be unwound before resumption of its evaluation.
+    TailCall {
+        func: Value<'h>,
+        args: Vec<Value<'h>>,
+    },
+}
+
+impl<'h> Trampoline<'h> {
+    /// Complete the evaluation of this value. Avoids recursion to implement
+    /// proper tail calls and keep from blowing the stack.
+    pub fn eval(mut self, hs: &mut GcHeapSession<'h>) -> Result<Value<'h>, String> {
+        while let Trampoline::TailCall { func, args } = self {
+            self = apply(hs, func, args)?;
+        }
+        match self {
+            Trampoline::Value(v) => Ok(v),
+            Trampoline::TailCall { .. } => unreachable!(),
         }
     }
 }
@@ -119,7 +146,7 @@ impl<'h> Environment<'h> {
         let env = Environment {
             parent: None,
             names: hs.alloc(vec![]),
-            values: hs.alloc(vec![])
+            values: hs.alloc(vec![]),
         };
 
         macro_rules! builtin {
@@ -157,7 +184,7 @@ impl<'h> Environment<'h> {
         const PRELUDE: &'static str = include_str!("prelude.sch");
         let prelude = match parser::parse(hs, PRELUDE) {
             Ok(forms) => forms,
-            Err(err) => panic!("unexpected error parsing prelude: {}", err)
+            Err(err) => panic!("unexpected error parsing prelude: {}", err),
         };
 
         let env = hs.alloc(env);
@@ -233,22 +260,32 @@ fn parse_pair<'h>(v: Value<'h>, msg: &'static str) -> Result<(Value<'h>, Value<'
     }
 }
 
+/// Evaluate the first n-1 expressions, and then return the n^th expression
+/// partially evaluated until we found a tail call.
 fn eval_each<'h, F>(
     hs: &mut GcHeapSession<'h>,
     mut exprs: Value<'h>,
     env: EnvironmentRef<'h>,
     mut f: F,
-) -> Result<(), String>
-    where F: FnMut(&mut GcHeapSession<'h>, Value<'h>) -> Result<(), String>
+) -> Result<Option<Trampoline<'h>>, String>
+where
+    F: FnMut(&mut GcHeapSession<'h>, Value<'h>) -> Result<(), String>,
 {
+    if let Nil = exprs {
+        return Ok(None);
+    }
     while let Cons(pair) = exprs {
+        if let Nil = pair.cdr() {
+            let tail = eval_to_tail_call(hs, pair.car(), env.clone())?;
+            return Ok(Some(tail));
+        }
         let val = eval(hs, pair.car(), env.clone())?;
         f(hs, val)?;
         exprs = pair.cdr();
     }
     match exprs {
-        Nil => Ok(()),
-        _ => Err("improper list of expressions".to_string())
+        Nil => unreachable!(),
+        _ => Err("improper list of expressions".to_string()),
     }
 }
 
@@ -258,7 +295,12 @@ fn map_eval<'h>(
     env: EnvironmentRef<'h>,
 ) -> Result<Vec<Value<'h>>, String> {
     let mut v = vec![];
-    eval_each(hs, exprs, env, |_hs, val| { v.push(val); Ok(()) })?;
+    if let Some(tail) = eval_each(hs, exprs, env, |_hs, val| {
+        v.push(val);
+        Ok(())
+    })? {
+        v.push(tail.eval(hs)?);
+    }
     Ok(v)
 }
 
@@ -266,30 +308,34 @@ pub fn eval_block_body<'h>(
     hs: &mut GcHeapSession<'h>,
     exprs: Value<'h>,
     env: EnvironmentRef<'h>,
-) -> Result<Value<'h>, String> {
-    let mut v = Nil;
-    let _ = eval_each(hs, exprs, env, |_hs, val| { v = val; Ok(()) })?;
-    Ok(v)
+) -> Result<Trampoline<'h>, String> {
+    if let Some(tail) = eval_each(hs, exprs, env, |_hs, _val| Ok(()))? {
+        Ok(tail)
+    } else {
+        Ok(Trampoline::Value(Nil))
+    }
 }
 
 pub fn apply<'h>(
     hs: &mut GcHeapSession<'h>,
     fval: Value<'h>,
     mut args: Vec<Value<'h>>,
-) -> Result<Value<'h>, String> {
+) -> Result<Trampoline<'h>, String> {
     match fval {
         Builtin(f) => (f.0)(hs, args),
         Lambda(pair) => {
-            let parent = Some(
-                match pair.cdr() {
-                    Environment(pe) => pe,
-                    _ => panic!("internal error: bad lambda")
-                }
-            );
+            let parent = Some(match pair.cdr() {
+                Environment(pe) => pe,
+                _ => panic!("internal error: bad lambda"),
+            });
             let (mut params, body) = parse_pair(pair.car(), "syntax error in lambda")?;
             let names = hs.alloc(Vec::<Arc<String>>::new());
             let values = hs.alloc(Vec::<Value<'h>>::new());
-            let env = hs.alloc(Environment { parent, names, values });
+            let env = hs.alloc(Environment {
+                parent,
+                names,
+                values,
+            });
 
             let mut i = 0;
             while let Cons(pair) = params {
@@ -307,7 +353,10 @@ pub fn apply<'h>(
             if let Symbol(rest_name) = params {
                 let mut rest_list = Nil;
                 for v in args.drain(i..).rev() {
-                    rest_list = Cons(hs.alloc(Pair { car: v, cdr: rest_list }));
+                    rest_list = Cons(hs.alloc(Pair {
+                        car: v,
+                        cdr: rest_list,
+                    }));
                 }
                 env.push(rest_name, rest_list);
             } else if i < args.len() {
@@ -320,31 +369,30 @@ pub fn apply<'h>(
     }
 }
 
-/// Evaluate the give expression in the given environment, and return the
-/// resulting value and new environment.
-pub fn eval<'h>(
+/// Evaluate `expr` until we reach a tail call, at which point it is packaged up
+/// as a `Trampoline::TailCall` and returned so we can unwind the stack before
+/// continuing evaluation.
+fn eval_to_tail_call<'h>(
     hs: &mut GcHeapSession<'h>,
     expr: Value<'h>,
     env: EnvironmentRef<'h>,
-) -> Result<Value<'h>, String> {
+) -> Result<Trampoline<'h>, String> {
     match expr {
-        Symbol(s) => env.get(s),
+        Symbol(s) => env.get(s).map(Trampoline::Value),
         Cons(p) => {
             let f = p.car();
             if let Symbol(ref s) = f {
                 if &**s == "lambda" {
-                    return Ok(
-                        Lambda(hs.alloc(Pair {
-                            car: p.cdr(),
-                            cdr: Value::Environment(env.clone()),
-                        }))
-                    );
+                    return Ok(Trampoline::Value(Lambda(hs.alloc(Pair {
+                        car: p.cdr(),
+                        cdr: Value::Environment(env.clone()),
+                    }))));
                 } else if &**s == "quote" {
                     let (datum, rest) = parse_pair(p.cdr(), "(quote) with no arguments")?;
                     if !rest.is_nil() {
                         return Err("too many arguments to (quote)".to_string());
                     }
-                    return Ok(datum);
+                    return Ok(Trampoline::Value(datum));
                 } else if &**s == "if" {
                     let (cond, rest) = parse_pair(p.cdr(), "(if) with no arguments")?;
                     let (t_expr, rest) = parse_pair(rest, "missing arguments after (if COND)")?;
@@ -354,11 +402,14 @@ pub fn eval<'h>(
                         return Err("too many arguments in (if) expression".to_string());
                     }
                     let cond_result = eval(hs, cond, env.clone())?;
-                    let selected_expr = if cond_result.to_bool() { t_expr } else { f_expr };
-                    return eval(hs, selected_expr, env);
+                    let selected_expr = if cond_result.to_bool() {
+                        t_expr
+                    } else {
+                        f_expr
+                    };
+                    return eval_to_tail_call(hs, selected_expr, env);
                 } else if &**s == "begin" {
-                    let result = eval_block_body(hs, p.cdr(), env.clone())?;
-                    return Ok(result);
+                    return eval_block_body(hs, p.cdr(), env.clone());
                 } else if &**s == "define" {
                     let (name, rest) = parse_pair(p.cdr(), "(define) with no name")?;
                     match name {
@@ -366,12 +417,16 @@ pub fn eval<'h>(
                             let (expr, rest) = parse_pair(rest, "(define) with no value")?;
                             match rest {
                                 Nil => {}
-                                _ => return Err("too many items in (define) special form".to_string()),
+                                _ => {
+                                    return Err(
+                                        "too many items in (define) special form".to_string(),
+                                    )
+                                }
                             };
 
                             let val = eval(hs, expr, env.clone())?;
                             env.push(s, val);
-                            return Ok(Nil);
+                            return Ok(Trampoline::Value(Nil));
                         }
                         Cons(pair) => {
                             let name = match pair.car() {
@@ -387,7 +442,7 @@ pub fn eval<'h>(
                                 cdr: Value::Environment(env.clone()),
                             }));
                             env.push(name, f);
-                            return Ok(Nil);
+                            return Ok(Trampoline::Value(Nil));
                         }
                         _ => {
                             return Err("(define) with a non-symbol name".to_string());
@@ -402,17 +457,28 @@ pub fn eval<'h>(
                     }
                     let val = eval(hs, expr, env.clone())?;
                     env.set(name, val)?;
-                    return Ok(Nil);
+                    return Ok(Trampoline::Value(Nil));
                 }
             }
-            let fval = eval(hs, f, env.clone())?;
+            let func = eval(hs, f, env.clone())?;
             let args = map_eval(hs, p.cdr(), env)?;
-            apply(hs, fval, args)
+            Ok(Trampoline::TailCall { func, args })
         }
         Builtin(_) => Err(format!("builtin function found in source code")),
         Vector(_) => Err(format!("vectors are not expressions")),
-        _ => Ok(expr),  // nil and numbers are self-evaluating
+        _ => Ok(Trampoline::Value(expr)),  // nil and numbers are self-evaluating
     }
+}
+
+/// Evaluate the give expression in the given environment, and return the
+/// resulting value.
+pub fn eval<'h>(
+    hs: &mut GcHeapSession<'h>,
+    expr: Value<'h>,
+    env: EnvironmentRef<'h>,
+) -> Result<Value<'h>, String> {
+    let tail = eval_to_tail_call(hs, expr, env)?;
+    tail.eval(hs)
 }
 
 #[cfg(test)]

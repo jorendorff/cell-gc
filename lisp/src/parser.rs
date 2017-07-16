@@ -1,7 +1,7 @@
 //! Parsing of s-expressions.
 
-use nom::IResult;
 use cell_gc::GcHeapSession;
+use nom::IResult;
 use std::str::FromStr;
 use std::sync::Arc;
 use vm::{Pair, Value};
@@ -64,10 +64,7 @@ named!(intertoken_space(&str) -> (), value!((), many0!(atmosphere)));
 
 #[test]
 fn test_whitespace() {
-    assert_eq!(
-        whitespace(" \n\r\t"),
-        IResult::Done("\n\r\t", ())
-    );
+    assert_eq!(whitespace(" \n\r\t"), IResult::Done("\n\r\t", ()));
     assert_eq!(
         comment("; hello\nnext line"),
         IResult::Done("next line", ())
@@ -197,40 +194,32 @@ named!(
 #[test]
 fn test_parser() {
     use nom::ErrorKind;
-    
+
     assert_eq!(
         datum("376    "),
         IResult::Done("    ", Datum::Number("376".to_string()))
     );
-    assert_eq!(
-        datum("    376"),
-        IResult::Error(ErrorKind::Alt)
-    );
+    assert_eq!(datum("    376"), IResult::Error(ErrorKind::Alt));
 
-    assert_eq!(
-        file_to_data(""),
-        IResult::Done("", vec![])
-    );
-    assert_eq!(
-        file_to_data("\t"),
-        IResult::Done("", vec![])
-    );
+    assert_eq!(file_to_data(""), IResult::Done("", vec![]));
+    assert_eq!(file_to_data("\t"), IResult::Done("", vec![]));
     assert_eq!(
         file_to_data("    376"),
         IResult::Done("", vec![Datum::Number("376".to_string())])
     );
     assert_eq!(
         file_to_data("    376\n    212\n"),
-        IResult::Done("", vec![
-            Datum::Number("376".to_string()),
-            Datum::Number("212".to_string()),
-        ])
+        IResult::Done(
+            "",
+            vec![
+                Datum::Number("376".to_string()),
+                Datum::Number("212".to_string()),
+            ]
+        )
     );
     assert_eq!(
         file_to_data("    376\n    ;212\n"),
-        IResult::Done("", vec![
-            Datum::Number("376".to_string()),
-        ])
+        IResult::Done("", vec![Datum::Number("376".to_string())])
     );
     assert_eq!(
         file_to_data(";; nothing to see here\n\n"),
@@ -238,12 +227,15 @@ fn test_parser() {
     );
     assert_eq!(
         file_to_data("(1 2)"),
-        IResult::Done("", vec![
-            Datum::List(vec![
-                Datum::Number("1".to_string()),
-                Datum::Number("2".to_string()),
-            ])
-        ])
+        IResult::Done(
+            "",
+            vec![
+                Datum::List(vec![
+                    Datum::Number("1".to_string()),
+                    Datum::Number("2".to_string()),
+                ]),
+            ]
+        )
     );
 }
 
@@ -346,31 +338,25 @@ named!(
 fn test_parse_vector() {
     use nom::ErrorKind;
 
-    assert_eq!(
-        vector("#()"),
-        IResult::Done("", Datum::Vector(vec![]))
-    );
+    assert_eq!(vector("#()"), IResult::Done("", Datum::Vector(vec![])));
     assert_eq!(
         vector("#(a)"),
-        IResult::Done("", Datum::Vector(vec![
-            Datum::Identifier("a".to_string())
-        ]))
+        IResult::Done("", Datum::Vector(vec![Datum::Identifier("a".to_string())]))
     );
-    assert_eq!(
-        vector("#(0 . 1)"),
-        IResult::Error(ErrorKind::Char)
-    );
+    assert_eq!(vector("#(0 . 1)"), IResult::Error(ErrorKind::Char));
 }
 
-fn into_list<'h>(hs: &mut GcHeapSession<'h>, elements: Vec<Datum>, tail: Value<'h>)
-    -> Result<Value<'h>, &'static str>
-{
+fn into_list<'h>(
+    hs: &mut GcHeapSession<'h>,
+    elements: Vec<Datum>,
+    tail: Value<'h>,
+) -> Result<Value<'h>, &'static str> {
     let mut list = tail;
     for d in elements.into_iter().rev() {
         let value = datum_to_value(hs, d)?;
         list = Value::Cons(hs.alloc(Pair {
             car: value,
-            cdr: list
+            cdr: list,
         }));
     }
     Ok(list)
@@ -378,31 +364,27 @@ fn into_list<'h>(hs: &mut GcHeapSession<'h>, elements: Vec<Datum>, tail: Value<'
 
 fn datum_to_value<'h>(hs: &mut GcHeapSession<'h>, datum: Datum) -> Result<Value<'h>, &'static str> {
     match datum {
-        Datum::Boolean(b) =>
-            Ok(Value::Bool(b)),
-        Datum::Number(s) =>
+        Datum::Boolean(b) => Ok(Value::Bool(b)),
+        Datum::Number(s) => {
             if let Ok(i) = i32::from_str(&s) {
                 Ok(Value::Int(i))
             } else {
                 Err("unsupported number token")
-            },
-        Datum::Character(_) =>
-            Err("character tokens not supported"),
-        Datum::String(_) =>
-            Err("strings not supported"),
-        Datum::Identifier(s) =>
-            Ok(Value::Symbol(Arc::new(s))),
-        Datum::List(data) =>
-            into_list(hs, data, Value::Nil),
+            }
+        }
+        Datum::Character(_) => Err("character tokens not supported"),
+        Datum::String(_) => Err("strings not supported"),
+        Datum::Identifier(s) => Ok(Value::Symbol(Arc::new(s))),
+        Datum::List(data) => into_list(hs, data, Value::Nil),
         Datum::ImproperList(mut data) => {
-            let tail = data.pop().expect("internal error: improper lists require a last value");
+            let tail = data.pop()
+                .expect("internal error: improper lists require a last value");
             let tail_val = datum_to_value(hs, tail)?;
             into_list(hs, data, tail_val)
         }
         Datum::Vector(data) => {
-            let values: Result<Vec<Value<'h>>, &'static str> = data.into_iter()
-                .map(|d| datum_to_value(hs, d))
-                .collect();
+            let values: Result<Vec<Value<'h>>, &'static str> =
+                data.into_iter().map(|d| datum_to_value(hs, d)).collect();
             Ok(Value::Vector(hs.alloc(values?)))
         }
     }
@@ -412,18 +394,15 @@ fn datum_to_value<'h>(hs: &mut GcHeapSession<'h>, datum: Datum) -> Result<Value<
 /// returns a `Value` which can contain `Pair`s allocated in the GC heap.
 pub fn parse<'h>(hs: &mut GcHeapSession<'h>, source: &str) -> Result<Vec<Value<'h>>, &'static str> {
     match file_to_data(source) {
-        IResult::Error(_e) =>
-            Err("syntax error"),
-        IResult::Incomplete(_e) =>
-            Err("incomplete input"),
+        IResult::Error(_e) => Err("syntax error"),
+        IResult::Incomplete(_e) => Err("incomplete input"),
         IResult::Done(leftovers, data) => {
             // The parser uses `eof!()` to ensure that on success, all input has been consumed.
             assert!(leftovers.is_empty(), "parser did not consume all input");
 
             Ok(data.into_iter()
-               .map(|d| datum_to_value(hs, d))
-               .collect::<Result<Vec<_>, _>>()?)
+                .map(|d| datum_to_value(hs, d))
+                .collect::<Result<Vec<_>, _>>()?)
         }
     }
 }
-

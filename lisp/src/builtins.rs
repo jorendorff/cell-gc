@@ -1,12 +1,12 @@
 use cell_gc::GcHeapSession;
 use print::print as print_value;
 use std::fmt;
-use vm::{self, Pair, Value};
+use vm::{self, Pair, Trampoline, Value};
 use vm::Value::*;
 
 pub struct BuiltinFnPtr(
     pub for<'b> fn(&mut GcHeapSession<'b>, Vec<Value<'b>>)
-        -> Result<Value<'b>, String>
+        -> Result<Trampoline<'b>, String>
 );
 
 // This can't be #[derive]d because function pointers aren't Clone.
@@ -33,17 +33,24 @@ impl fmt::Debug for BuiltinFnPtr {
 // Builtin function definitions ////////////////////////////////////////////////
 
 // 6.1 Booleans
-fn simple_predicate<'h, F>(fn_name: &str, mut args: Vec<Value<'h>>, f: F)
-    -> Result<Value<'h>, String>
-    where F: FnOnce(Value<'h>) -> bool
+fn simple_predicate<'h, F>(
+    fn_name: &str,
+    mut args: Vec<Value<'h>>,
+    f: F,
+) -> Result<Trampoline<'h>, String>
+where
+    F: FnOnce(Value<'h>) -> bool,
 {
     if args.len() != 1 {
         return Err(format!("{}: exactly 1 argument required", fn_name));
     }
-    Ok(Bool(f(args.pop().unwrap())))
+    Ok(Trampoline::Value(Bool(f(args.pop().unwrap()))))
 }
 
-pub fn boolean_question<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
+pub fn boolean_question<'h>(
+    _hs: &mut GcHeapSession<'h>,
+    args: Vec<Value<'h>>,
+) -> Result<Trampoline<'h>, String> {
     simple_predicate("boolean?", args, |v| v.is_boolean())
 }
 
@@ -51,31 +58,37 @@ pub fn boolean_question<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -
 pub fn eq_question<'h>(
     _hs: &mut GcHeapSession<'h>,
     args: Vec<Value<'h>>,
-) -> Result<Value<'h>, String> {
+) -> Result<Trampoline<'h>, String> {
     let first = args.get(0);
-    Ok(Bool(args.iter().all(|arg| Some(arg) == first)))
+    Ok(Trampoline::Value(
+        Bool(args.iter().all(|arg| Some(arg) == first)),
+    ))
 }
 
 pub fn eqv_question<'h>(
     _hs: &mut GcHeapSession<'h>,
     mut args: Vec<Value<'h>>,
-) -> Result<Value<'h>, String> {
+) -> Result<Trampoline<'h>, String> {
     if args.len() != 2 {
-        return Err("eqv?: exactly 2 arguments required".into())
+        return Err("eqv?: exactly 2 arguments required".into());
     }
     let b = args.pop().unwrap();
     let a = args.pop().unwrap();
-    Ok(Bool(a == b))
+    Ok(Trampoline::Value(Bool(a == b)))
 }
 
 // 6.3 Pairs and lists
-pub fn pair_question<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>)
-    -> Result<Value<'h>, String>
-{
+pub fn pair_question<'h>(
+    _hs: &mut GcHeapSession<'h>,
+    args: Vec<Value<'h>>,
+) -> Result<Trampoline<'h>, String> {
     simple_predicate("pair?", args, |v| v.is_pair())
 }
 
-pub fn cons<'h>(hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
+pub fn cons<'h>(
+    hs: &mut GcHeapSession<'h>,
+    args: Vec<Value<'h>>,
+) -> Result<Trampoline<'h>, String> {
     if args.len() != 2 {
         Err("cons: require exactly 2 arguments".into())
     } else {
@@ -83,58 +96,68 @@ pub fn cons<'h>(hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Valu
             car: args[0].clone(),
             cdr: args[1].clone(),
         });
-        Ok(Value::Cons(pair))
+        Ok(Trampoline::Value(Cons(pair)))
     }
 }
 
-pub fn car<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
+pub fn car<'h>(
+    _hs: &mut GcHeapSession<'h>,
+    args: Vec<Value<'h>>,
+) -> Result<Trampoline<'h>, String> {
     if args.len() != 1 {
         Err("car: require exactly 1 argument".into())
     } else {
         if let Cons(ref p) = args[0] {
-            Ok(p.car())
+            Ok(Trampoline::Value(p.car()))
         } else {
             Err("car: non-pair argument passed to car".into())
         }
     }
 }
 
-pub fn cdr<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
+pub fn cdr<'h>(
+    _hs: &mut GcHeapSession<'h>,
+    args: Vec<Value<'h>>,
+) -> Result<Trampoline<'h>, String> {
     if args.len() != 1 {
         Err("car: require exactly 1 argument".into())
     } else {
         if let Cons(ref p) = args[0] {
-            Ok(p.cdr())
+            Ok(Trampoline::Value(p.cdr()))
         } else {
             Err("cdr: non-pair argument passed to cdr".into())
         }
     }
 }
 
-pub fn null_question<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>)
-    -> Result<Value<'h>, String>
-{
+pub fn null_question<'h>(
+    _hs: &mut GcHeapSession<'h>,
+    args: Vec<Value<'h>>,
+) -> Result<Trampoline<'h>, String> {
     simple_predicate("null?", args, |v| v.is_nil())
 }
 
 // 6.5 Numbers
-pub fn numeric_eq<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
+pub fn numeric_eq<'h>(
+    _hs: &mut GcHeapSession<'h>,
+    args: Vec<Value<'h>>,
+) -> Result<Trampoline<'h>, String> {
     let mut it = args.into_iter();
     if let Some(arg0) = it.next() {
         let z0 = arg0.as_int("=")?;
         for arg in it {
             let z = arg.as_int("=")?;
             if !(z0 == z) {
-                return Ok(Bool(false));
+                return Ok(Trampoline::Value(Bool(false)));
             }
         }
     }
-    Ok(Bool(true))
+    Ok(Trampoline::Value(Bool(true)))
 }
 
-pub fn numeric_compare<'h, F>(args: Vec<Value<'h>>, cmp: F)
-    -> Result<Value<'h>, String>
-    where F: Fn(i32, i32) -> bool
+pub fn numeric_compare<'h, F>(args: Vec<Value<'h>>, cmp: F) -> Result<Trampoline<'h>, String>
+where
+    F: Fn(i32, i32) -> bool,
 {
     let mut it = args.into_iter();
     if let Some(arg0) = it.next() {
@@ -142,31 +165,46 @@ pub fn numeric_compare<'h, F>(args: Vec<Value<'h>>, cmp: F)
         for arg in it {
             let x = arg.as_int("=")?;
             if !cmp(prev, x) {
-                return Ok(Bool(false));
+                return Ok(Trampoline::Value(Bool(false)));
             }
             prev = x;
         }
     }
-    Ok(Bool(true))
+    Ok(Trampoline::Value(Bool(true)))
 }
 
-pub fn numeric_lt<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
+pub fn numeric_lt<'h>(
+    _hs: &mut GcHeapSession<'h>,
+    args: Vec<Value<'h>>,
+) -> Result<Trampoline<'h>, String> {
     numeric_compare(args, |a, b| a < b)
 }
 
-pub fn numeric_gt<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
+pub fn numeric_gt<'h>(
+    _hs: &mut GcHeapSession<'h>,
+    args: Vec<Value<'h>>,
+) -> Result<Trampoline<'h>, String> {
     numeric_compare(args, |a, b| a > b)
 }
 
-pub fn numeric_le<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
+pub fn numeric_le<'h>(
+    _hs: &mut GcHeapSession<'h>,
+    args: Vec<Value<'h>>,
+) -> Result<Trampoline<'h>, String> {
     numeric_compare(args, |a, b| a <= b)
 }
 
-pub fn numeric_ge<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
+pub fn numeric_ge<'h>(
+    _hs: &mut GcHeapSession<'h>,
+    args: Vec<Value<'h>>,
+) -> Result<Trampoline<'h>, String> {
     numeric_compare(args, |a, b| a >= b)
 }
 
-pub fn add<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
+pub fn add<'h>(
+    _hs: &mut GcHeapSession<'h>,
+    args: Vec<Value<'h>>,
+) -> Result<Trampoline<'h>, String> {
     let mut total = 0;
     for v in args {
         if let Int(n) = v {
@@ -175,10 +213,13 @@ pub fn add<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Valu
             return Err("add: non-numeric argument".to_string());
         }
     }
-    Ok(Int(total))
+    Ok(Trampoline::Value(Int(total)))
 }
 
-pub fn mul<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
+pub fn mul<'h>(
+    _hs: &mut GcHeapSession<'h>,
+    args: Vec<Value<'h>>,
+) -> Result<Trampoline<'h>, String> {
     let mut total = 1;
     for v in args {
         if let Int(n) = v {
@@ -187,15 +228,18 @@ pub fn mul<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Valu
             return Err("mul: non-numeric argument".to_string());
         }
     }
-    Ok(Int(total))
+    Ok(Trampoline::Value(Int(total)))
 }
 
-pub fn sub<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
+pub fn sub<'h>(
+    _hs: &mut GcHeapSession<'h>,
+    args: Vec<Value<'h>>,
+) -> Result<Trampoline<'h>, String> {
     if args.len() == 0 {
         Err("sub: need at least one argument".into())
     } else if args.len() == 1 {
         if let Int(n) = args[0] {
-            Ok(Int(-n))
+            Ok(Trampoline::Value(Int(-n)))
         } else {
             Err("sub: non-numeric argument".into())
         }
@@ -212,24 +256,29 @@ pub fn sub<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Valu
                 return Err("add: non-numeric argument".to_string());
             }
         }
-        Ok(Int(total))
+        Ok(Trampoline::Value(Int(total)))
     }
 }
 
 // 6.8 Vectors
-pub fn vector_question<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>)
-    -> Result<Value<'h>, String>
-{
+pub fn vector_question<'h>(
+    _hs: &mut GcHeapSession<'h>,
+    args: Vec<Value<'h>>,
+) -> Result<Trampoline<'h>, String> {
     simple_predicate("vector?", args, |v| v.is_vector())
 }
 
-pub fn vector<'h>(hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
-    Ok(Value::Vector(hs.alloc(args)))
+pub fn vector<'h>(
+    hs: &mut GcHeapSession<'h>,
+    args: Vec<Value<'h>>,
+) -> Result<Trampoline<'h>, String> {
+    Ok(Trampoline::Value(Vector(hs.alloc(args))))
 }
 
-pub fn vector_length<'h>(_hs: &mut GcHeapSession<'h>, mut args: Vec<Value<'h>>)
-    -> Result<Value<'h>, String>
-{
+pub fn vector_length<'h>(
+    _hs: &mut GcHeapSession<'h>,
+    mut args: Vec<Value<'h>>,
+) -> Result<Trampoline<'h>, String> {
     if args.len() != 1 {
         return Err("vector-length: exactly 1 argument required".into());
     }
@@ -237,33 +286,40 @@ pub fn vector_length<'h>(_hs: &mut GcHeapSession<'h>, mut args: Vec<Value<'h>>)
     if n as i32 as usize != n {
         return Err("vector-length: integer overflow".into());
     }
-    Ok(Value::Int(n as i32))
+    Ok(Trampoline::Value(Value::Int(n as i32)))
 }
 
-pub fn vector_ref<'h>(_hs: &mut GcHeapSession<'h>, mut args: Vec<Value<'h>>)
-    -> Result<Value<'h>, String>
-{
+pub fn vector_ref<'h>(
+    _hs: &mut GcHeapSession<'h>,
+    mut args: Vec<Value<'h>>,
+) -> Result<Trampoline<'h>, String> {
     if args.len() != 2 {
         return Err("vector-ref: exactly 2 arguments required".into());
     }
     let index = args.pop().unwrap().as_index("vector-ref")?;
     let v = args.pop().unwrap().as_vector("vector-ref")?;
     if index >= v.len() {
-        return Err(format!("vector-ref: index out of bounds (got {}, length {})", index, v.len()));
+        return Err(format!(
+            "vector-ref: index out of bounds (got {}, length {})",
+            index,
+            v.len()
+        ));
     }
-    Ok(v.get(index))
+    Ok(Trampoline::Value(v.get(index)))
 }
 
 // 6.9 Control features
-pub fn procedure_question<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>)
-    -> Result<Value<'h>, String>
-{
+pub fn procedure_question<'h>(
+    _hs: &mut GcHeapSession<'h>,
+    args: Vec<Value<'h>>,
+) -> Result<Trampoline<'h>, String> {
     simple_predicate("procedure?", args, |v| v.is_procedure())
 }
 
-pub fn apply<'h>(hs: &mut GcHeapSession<'h>, mut args: Vec<Value<'h>>)
-    -> Result<Value<'h>, String>
-{
+pub fn apply<'h>(
+    hs: &mut GcHeapSession<'h>,
+    mut args: Vec<Value<'h>>,
+) -> Result<Trampoline<'h>, String> {
     if args.len() < 2 {
         return Err("apply: at least 2 arguments required".into());
     }
@@ -283,15 +339,21 @@ pub fn apply<'h>(hs: &mut GcHeapSession<'h>, mut args: Vec<Value<'h>>)
 }
 
 // Extensions
-pub fn print<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
+pub fn print<'h>(
+    _hs: &mut GcHeapSession<'h>,
+    args: Vec<Value<'h>>,
+) -> Result<Trampoline<'h>, String> {
     for v in args {
         print_value(v);
         println!();
     }
-    Ok(Nil)
+    Ok(Trampoline::Value(Nil))
 }
 
-pub fn assert<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Value<'h>, String> {
+pub fn assert<'h>(
+    _hs: &mut GcHeapSession<'h>,
+    args: Vec<Value<'h>>,
+) -> Result<Trampoline<'h>, String> {
     if args.len() < 1 || args.len() > 2 {
         return Err(format!(
             "assert: wrong number of args, expected 1 or 2, found {}",
@@ -302,7 +364,7 @@ pub fn assert<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<V
     let v = &args[0];
 
     if let Bool(true) = *v {
-        Ok(Nil)
+        Ok(Trampoline::Value(Nil))
     } else if let Bool(false) = *v {
         if let Some(msg) = args.get(1) {
             Err(format!("assert: assertion failed: {:?}", msg))
@@ -313,4 +375,3 @@ pub fn assert<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<V
         Err("assert: non-boolean argument".into())
     }
 }
-
