@@ -131,3 +131,17 @@ impl<'h> Value<'h> {
         }
     }
 }
+
+impl<'h> Iterator for Value<'h> {
+    type Item = Result<Value<'h>, String>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let (car, cdr) = match *self {
+            Nil => return None,
+            Cons(ref pair) => (pair.car(), pair.cdr()),
+            _ => return Some(Err("improper list".into())),
+        };
+        *self = cdr;
+        Some(Ok(car))
+    }
+}

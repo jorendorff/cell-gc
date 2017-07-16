@@ -160,48 +160,15 @@ fn parse_pair<'h>(v: Value<'h>, msg: &'static str) -> Result<(Value<'h>, Value<'
     }
 }
 
-/// Evaluate the first n-1 expressions, and then return the n^th expression
-/// partially evaluated until we found a tail call.
-fn eval_each<'h, F>(
-    hs: &mut GcHeapSession<'h>,
-    mut exprs: Value<'h>,
-    env: EnvironmentRef<'h>,
-    mut f: F,
-) -> Result<Option<Trampoline<'h>>, String>
-where
-    F: FnMut(&mut GcHeapSession<'h>, Value<'h>) -> Result<(), String>,
-{
-    if let Nil = exprs {
-        return Ok(None);
-    }
-    while let Cons(pair) = exprs {
-        if let Nil = pair.cdr() {
-            let tail = eval_to_tail_call(hs, pair.car(), env.clone())?;
-            return Ok(Some(tail));
-        }
-        let val = eval(hs, pair.car(), env.clone())?;
-        f(hs, val)?;
-        exprs = pair.cdr();
-    }
-    match exprs {
-        Nil => unreachable!(),
-        _ => Err("improper list of expressions".to_string()),
-    }
-}
-
 fn map_eval<'h>(
     hs: &mut GcHeapSession<'h>,
     exprs: Value<'h>,
     env: EnvironmentRef<'h>,
 ) -> Result<Vec<Value<'h>>, String> {
-    let mut v = vec![];
-    if let Some(tail) = eval_each(hs, exprs, env, |_hs, val| {
-        v.push(val);
-        Ok(())
-    })? {
-        v.push(tail.eval(hs)?);
-    }
-    Ok(v)
+    exprs
+        .into_iter()
+        .map(|expr_res| eval(hs, expr_res?, env.clone()))
+        .collect()
 }
 
 pub fn eval_block_body<'h>(
@@ -209,11 +176,16 @@ pub fn eval_block_body<'h>(
     exprs: Value<'h>,
     env: EnvironmentRef<'h>,
 ) -> Result<Trampoline<'h>, String> {
-    if let Some(tail) = eval_each(hs, exprs, env, |_hs, _val| Ok(()))? {
-        Ok(tail)
-    } else {
-        Ok(Trampoline::Value(Nil))
+    let mut it = exprs.into_iter().peekable();
+    while let Some(expr_res) = it.next() {
+        let expr = expr_res?;
+        if it.peek().is_some() {
+            let _ = eval(hs, expr, env.clone());
+        } else {
+            return eval_to_tail_call(hs, expr, env);
+        }
     }
+    return Ok(Trampoline::Value(Nil));
 }
 
 pub fn apply<'h>(
