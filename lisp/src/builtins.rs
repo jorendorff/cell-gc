@@ -2,7 +2,7 @@ use cell_gc::GcHeapSession;
 use print::print as print_value;
 use value::{Pair, Value};
 use value::Value::*;
-use vm::{self, Trampoline};
+use vm::Trampoline;
 
 // Builtin function definitions ////////////////////////////////////////////////
 
@@ -291,25 +291,21 @@ pub fn procedure_question<'h>(
 }
 
 pub fn apply<'h>(
-    hs: &mut GcHeapSession<'h>,
+    _hs: &mut GcHeapSession<'h>,
     mut args: Vec<Value<'h>>,
 ) -> Result<Trampoline<'h>, String> {
     if args.len() < 2 {
         return Err("apply: at least 2 arguments required".into());
     }
-    let mut trailing = args.pop().unwrap();
+    let trailing = args.pop().unwrap();
     let mut arg_vec = args.split_off(1);
-    while let Cons(pair) = trailing {
-        arg_vec.push(pair.car());
-        trailing = pair.cdr();
-    }
-    if !trailing.is_nil() {
-        return Err("apply: last argument must be a list".into());
+    for arg in trailing {
+        arg_vec.push(arg?);
     }
     assert_eq!(args.len(), 1);
-    let fval = args.pop().unwrap();
+    let func = args.pop().unwrap();
 
-    vm::apply(hs, fval, arg_vec)
+    Ok(Trampoline::TailCall { func, args: arg_vec })
 }
 
 // Extensions
