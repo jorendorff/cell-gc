@@ -1,10 +1,9 @@
 //! Parsing of s-expressions.
 
-use cell_gc::GcHeapSession;
+use cell_gc::{GcHeapSession, GcLeaf};
 use nom::IResult;
 use std::str::FromStr;
-use std::sync::Arc;
-use value::{Pair, Value};
+use value::{InternedString, Pair, Value};
 
 
 // === Tokens
@@ -374,7 +373,7 @@ fn datum_to_value<'h>(hs: &mut GcHeapSession<'h>, datum: Datum) -> Result<Value<
         }
         Datum::Character(_) => Err("character tokens not supported"),
         Datum::String(_) => Err("strings not supported"),
-        Datum::Identifier(s) => Ok(Value::Symbol(Arc::new(s))),
+        Datum::Identifier(s) => Ok(Value::Symbol(GcLeaf::new(InternedString::get(&s)))),
         Datum::List(data) => into_list(hs, data, Value::Nil),
         Datum::ImproperList(mut data) => {
             let tail = data.pop()

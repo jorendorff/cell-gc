@@ -4,8 +4,7 @@ use builtins;
 use cell_gc::{GcHeapSession, GcLeaf};
 use cell_gc::collections::VecRef;
 use parser;
-use std::sync::Arc;
-use value::{BuiltinFnPtr, Pair, Value};
+use value::{BuiltinFnPtr, InternedString, Pair, Value};
 use value::Value::*;
 
 /// A potentially partially evaluated value.
@@ -37,7 +36,7 @@ impl<'h> Trampoline<'h> {
 #[derive(Clone, Debug, PartialEq, IntoHeap)]
 pub struct Environment<'h> {
     parent: Option<EnvironmentRef<'h>>,
-    names: VecRef<'h, Arc<String>>,
+    names: VecRef<'h, GcLeaf<InternedString>>,
     values: VecRef<'h, Value<'h>>,
 }
 
@@ -51,7 +50,7 @@ impl<'h> Environment<'h> {
 
         macro_rules! builtin {
             ( $lisp_ident:expr , $func:expr ) => {
-                env.names.push(Arc::new($lisp_ident.to_string()));
+                env.names.push(GcLeaf::new(InternedString::get($lisp_ident)));
                 env.values.push(Builtin(GcLeaf::new(BuiltinFnPtr($func))));
             }
         }
@@ -98,31 +97,31 @@ impl<'h> Environment<'h> {
 }
 
 impl<'h> EnvironmentRef<'h> {
-    pub fn push(&self, key: Arc<String>, value: Value<'h>) {
-        self.names().push(key);
+    pub fn push(&self, key: InternedString, value: Value<'h>) {
+        self.names().push(GcLeaf::new(key));
         self.values().push(value);
     }
 
-    pub fn lookup(&self, name: Arc<String>) -> Result<(EnvironmentRef<'h>, usize), String> {
+    pub fn lookup(&self, name: InternedString) -> Result<(EnvironmentRef<'h>, usize), String> {
         let mut next = Some(self.clone());
         while let Some(env) = next {
             let names = env.names();
             for i in (0..names.len()).rev() {
-                if name == names.get(i) {
+                if name == *names.get(i) {
                     return Ok((env, i));
                 }
             }
             next = env.parent();
         }
-        Err(format!("undefined symbol: {:?}", *name))
+        Err(format!("undefined symbol: {:?}", name.as_str()))
     }
 
-    pub fn get(&self, name: Arc<String>) -> Result<Value<'h>, String> {
+    pub fn get(&self, name: InternedString) -> Result<Value<'h>, String> {
         let (env, i) = self.lookup(name)?;
         Ok(env.values().get(i))
     }
 
-    pub fn set(&self, name: Arc<String>, value: Value<'h>) -> Result<(), String> {
+    pub fn set(&self, name: InternedString, value: Value<'h>) -> Result<(), String> {
         let (env, i) = self.lookup(name)?;
         env.values().set(i, value);
         Ok(())
@@ -201,7 +200,7 @@ pub fn apply<'h>(
                 _ => panic!("internal error: bad lambda"),
             });
             let (mut params, body) = parse_pair(pair.car(), "syntax error in lambda")?;
-            let names = hs.alloc(Vec::<Arc<String>>::new());
+            let names = hs.alloc(Vec::<GcLeaf<InternedString>>::new());
             let values = hs.alloc(Vec::<Value<'h>>::new());
             let env = hs.alloc(Environment {
                 parent,
@@ -215,7 +214,7 @@ pub fn apply<'h>(
                     return Err("apply: not enough arguments".to_string());
                 }
                 if let Symbol(s) = pair.car() {
-                    env.push(s, args[i].clone());
+                    env.push(s.unwrap(), args[i].clone());
                 } else {
                     return Err("syntax error in lambda arguments".to_string());
                 }
@@ -230,7 +229,7 @@ pub fn apply<'h>(
                         cdr: rest_list,
                     }));
                 }
-                env.push(rest_name, rest_list);
+                env.push(rest_name.unwrap(), rest_list);
             } else if i < args.len() {
                 return Err("apply: too many arguments".to_string());
             }
@@ -250,22 +249,22 @@ fn eval_to_tail_call<'h>(
     env: EnvironmentRef<'h>,
 ) -> Result<Trampoline<'h>, String> {
     match expr {
-        Symbol(s) => env.get(s).map(Trampoline::Value),
+        Symbol(s) => env.get(s.unwrap()).map(Trampoline::Value),
         Cons(p) => {
             let f = p.car();
             if let Symbol(ref s) = f {
-                if &**s == "lambda" {
+                if s.as_str() == "lambda" {
                     return Ok(Trampoline::Value(Lambda(hs.alloc(Pair {
                         car: p.cdr(),
                         cdr: Value::Environment(env.clone()),
                     }))));
-                } else if &**s == "quote" {
+                } else if s.as_str() == "quote" {
                     let (datum, rest) = parse_pair(p.cdr(), "(quote) with no arguments")?;
                     if !rest.is_nil() {
                         return Err("too many arguments to (quote)".to_string());
                     }
                     return Ok(Trampoline::Value(datum));
-                } else if &**s == "if" {
+                } else if s.as_str() == "if" {
                     let (cond, rest) = parse_pair(p.cdr(), "(if) with no arguments")?;
                     let (t_expr, rest) = parse_pair(rest, "missing arguments after (if COND)")?;
                     let (f_expr, rest) =
@@ -280,9 +279,9 @@ fn eval_to_tail_call<'h>(
                         f_expr
                     };
                     return eval_to_tail_call(hs, selected_expr, env);
-                } else if &**s == "begin" {
+                } else if s.as_str() == "begin" {
                     return eval_block_body(hs, p.cdr(), env.clone());
-                } else if &**s == "define" {
+                } else if s.as_str() == "define" {
                     let (name, rest) = parse_pair(p.cdr(), "(define) with no name")?;
                     match name {
                         Symbol(s) => {
@@ -297,7 +296,7 @@ fn eval_to_tail_call<'h>(
                             };
 
                             let val = eval(hs, expr, env.clone())?;
-                            env.push(s, val);
+                            env.push(s.unwrap(), val);
                             return Ok(Trampoline::Value(Nil));
                         }
                         Cons(pair) => {
@@ -313,14 +312,14 @@ fn eval_to_tail_call<'h>(
                                 car: code,
                                 cdr: Value::Environment(env.clone()),
                             }));
-                            env.push(name, f);
+                            env.push(name.unwrap(), f);
                             return Ok(Trampoline::Value(Nil));
                         }
                         _ => {
                             return Err("(define) with a non-symbol name".to_string());
                         }
                     }
-                } else if &**s == "set!" {
+                } else if s.as_str() == "set!" {
                     let (first, rest) = parse_pair(p.cdr(), "(set!) with no name")?;
                     let name = first.as_symbol("(set!) first argument must be a name")?;
                     let (expr, rest) = parse_pair(rest, "(set!) with no value")?;

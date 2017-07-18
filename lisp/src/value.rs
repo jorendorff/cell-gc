@@ -1,7 +1,9 @@
 use cell_gc::{GcHeapSession, GcLeaf};
 use cell_gc::collections::VecRef;
+use std::borrow::Borrow;
 use std::fmt;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use std::collections::HashSet;
 use vm::{EnvironmentRef, Trampoline};
 
 #[derive(Debug, IntoHeap)]
@@ -15,7 +17,7 @@ pub enum Value<'h> {
     Nil,
     Bool(bool),
     Int(i32),
-    Symbol(Arc<String>),
+    Symbol(GcLeaf<InternedString>),
     Lambda(PairRef<'h>),
     Builtin(GcLeaf<BuiltinFnPtr>),
     Cons(PairRef<'h>),
@@ -60,7 +62,7 @@ impl<'h> fmt::Display for Value<'h> {
             Bool(true) => write!(f, "#t"),
             Bool(false) => write!(f, "#f"),
             Int(n) => write!(f, "{}", n),
-            Symbol(ref s) => write!(f, "{}", s),
+            Symbol(ref s) => write!(f, "{}", s.as_str()),
             Lambda(_) => write!(f, "#lambda"),
             Builtin(_) => write!(f, "#builtin"),
             Cons(ref p) => {
@@ -163,9 +165,9 @@ impl<'h> Value<'h> {
         }
     }
 
-    pub fn as_symbol(self, error_msg: &str) -> Result<Arc<String>, String> {
+    pub fn as_symbol(self, error_msg: &str) -> Result<InternedString, String> {
         match self {
-            Symbol(s) => Ok(s),
+            Symbol(s) => Ok(s.unwrap()),
             _ => Err(error_msg.to_string()),
         }
     }
@@ -190,5 +192,49 @@ impl<'h> Iterator for Value<'h> {
         };
         *self = cdr;
         Some(Ok(car))
+    }
+}
+
+
+#[derive(Clone, Debug)]
+pub struct InternedString(Arc<String>);
+
+// Note: If we ever impl Hash for InternedString, it will be better to use a
+// custom pointer-based implementation than to use derive(Hash), which would
+// hash the contents of the string.
+impl PartialEq for InternedString {
+    fn eq(&self, other: &InternedString) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl Eq for InternedString {}
+
+lazy_static! {
+    static ref STRINGS: Mutex<HashSet<InternedStringByValue>> = Mutex::new(HashSet::new());
+}
+
+#[derive(Eq, Hash, PartialEq)]
+struct InternedStringByValue(Arc<String>);
+
+impl Borrow<str> for InternedStringByValue {
+    fn borrow(&self) -> &str {
+        &self.0
+    }
+}
+
+impl InternedString {
+    pub fn get(s: &str) -> InternedString {
+        let mut guard = STRINGS.lock().unwrap();
+        if let Some(x) = guard.get(s) {
+            return InternedString(x.0.clone());
+        }
+        let s = Arc::new(s.to_string());
+        guard.insert(InternedStringByValue(s.clone()));
+        InternedString(s)
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
     }
 }
