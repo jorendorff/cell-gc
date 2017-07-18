@@ -146,7 +146,7 @@ macro_rules! lisp {
             if s.starts_with(|c: char| c.is_digit(10)) {
                 Int(s.parse().expect("invalid numeric literal in `lisp!`"))
             } else {
-                Symbol(Arc::new(s.to_string()))
+                Symbol($crate::cell_gc::GcLeaf::new($crate::value::InternedString::get(s)))
             }
         }
     };
