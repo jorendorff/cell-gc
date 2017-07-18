@@ -51,6 +51,53 @@ impl fmt::Debug for BuiltinFnPtr {
     }
 }
 
+impl<'h> fmt::Display for Value<'h> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        // Note that this will need to add a set of already-printed pairs if we add
+        // `set-car!` and/or `set-cdr!` and introduce the possibility of cycles.
+        match *self {
+            Nil => write!(f, "nil"),
+            Bool(true) => write!(f, "#t"),
+            Bool(false) => write!(f, "#f"),
+            Int(n) => write!(f, "{}", n),
+            Symbol(ref s) => write!(f, "{}", s),
+            Lambda(_) => write!(f, "#lambda"),
+            Builtin(_) => write!(f, "#builtin"),
+            Cons(ref p) => {
+                write!(f, "(")?;
+                write_pair(f, p.clone())?;
+                write!(f, ")")
+            }
+            Vector(ref v) => {
+                write!(f, "#(")?;
+                for i in 0..v.len() {
+                    if i != 0 {
+                        write!(f, " ")?;
+                    }
+                    write!(f, "{}", v.get(i))?;
+                }
+                write!(f, ")")
+            }
+            Environment(_) => write!(f, "#environment"),
+        }
+    }
+}
+
+fn write_pair<'h>(f: &mut fmt::Formatter, pair: PairRef<'h>) -> fmt::Result {
+    write!(f, "{}", pair.car())?;
+    match pair.cdr() {
+        Nil => Ok(()),
+        Cons(p) => {
+            write!(f, " ")?;
+            write_pair(f, p)
+        }
+        otherwise => {
+            write!(f, " . ")?;
+            write!(f, "{}", otherwise)
+        }
+    }
+}
+
 impl<'h> Value<'h> {
     pub fn is_nil(&self) -> bool {
         match *self {
