@@ -13,6 +13,10 @@ impl<T: Clone + 'static> GcLeaf<T> {
     pub fn new(value: T) -> GcLeaf<T> {
         GcLeaf { value_: value }
     }
+
+    pub fn unwrap(self) -> T {
+        self.value_
+    }
 }
 
 impl<T: Clone + 'static> std::ops::Deref for GcLeaf<T> {
