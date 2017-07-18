@@ -1,5 +1,4 @@
 use cell_gc::GcHeapSession;
-use print::print as print_value;
 use value::{Pair, Value};
 use value::Value::*;
 use vm::Trampoline;
@@ -314,8 +313,7 @@ pub fn print<'h>(
     args: Vec<Value<'h>>,
 ) -> Result<Trampoline<'h>, String> {
     for v in args {
-        print_value(v);
-        println!();
+        println!("{}", v);
     }
     Ok(Trampoline::Value(Nil))
 }

@@ -6,7 +6,6 @@ extern crate nom;
 
 pub mod builtins;
 pub mod parser;
-pub mod print;
 pub mod repl;
 pub mod value;
 pub mod vm;

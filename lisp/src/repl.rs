@@ -1,6 +1,5 @@
 use cell_gc;
 use parser::parse;
-use print::print;
 use std::io::{self, Write};
 use value::Value;
 use vm;
@@ -32,8 +31,7 @@ pub fn repl() -> io::Result<()> {
             }
 
             // Print
-            print(result);
-            println!();
+            println!("{}", result);
 
             // Loop...
         }
