@@ -197,9 +197,10 @@ pub fn compile<'h>(
         // Self-evaluating values.
         Bool(v) => Ok(Expr::Con(Bool(v))),
         Int(v) => Ok(Expr::Con(Int(v))),
+        ImmString(v) => Ok(Expr::Con(ImmString(v))),
 
         // Everything else is an error.
-        _ => Err(format!("can't even")),
+        _ => Err(format!("not an expression")),
     }
 
 }

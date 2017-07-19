@@ -18,7 +18,7 @@
 ;; fully specify the behavior of eqv?. All that can be said about such cases is
 ;; that the value returned by eqv? must be a boolean.
 
-;;(assert (boolean? (eqv? "" "")))
+(assert (boolean? (eqv? "" "")))
 (assert (boolean? (eqv? '#() '#())))
 (assert (boolean? (eqv? (lambda (x) x)
                         (lambda (x) x))))
@@ -84,8 +84,8 @@
 (assert (eq? (eq? 'a 'a) #t))
 (assert (boolean? (eq? '(a) '(a))))
 ;;(assert (eq? (eq? (list 'a) (list 'a)) #f))
-;;(assert (boolean? (eq? "a" "a")))
-;;(assert (boolean? (eq? "" "")))
+(assert (boolean? (eq? "a" "a")))
+(assert (boolean? (eq? "" "")))
 (assert (eq? (eq? '() '()) #t))
 (assert (boolean? (eq? 2 2)))
 ;;(assert (boolean? (eq? #\A #\A)))
@@ -112,7 +112,7 @@
 (assert (eq? (equal? '(a) '(a)) #t))
 (assert (eq? (equal? '(a (b) c)
                      '(a (b) c)) #t))
-;;(assert (eq? (equal? "abc" "abc") #t))
+(assert (eq? (equal? "abc" "abc") #t))
 (assert (eq? (equal? 2 2) #t))
 ;;(assert (eq? (equal? (make-vector 5 'a)
 ;;                     (make-vector 5 'a))

@@ -1,4 +1,4 @@
-use cell_gc::GcHeapSession;
+use cell_gc::{GcHeapSession, GcLeaf};
 use value::{Pair, Value};
 use value::Value::*;
 use vm::Trampoline;
@@ -109,6 +109,38 @@ pub fn null_question<'h>(
 ) -> Result<Trampoline<'h>, String> {
     simple_predicate("null?", args, |v| v.is_nil())
 }
+
+// 6.4 Symbols
+
+pub fn symbol_question<'h>(
+    _hs: &mut GcHeapSession<'h>,
+    args: Vec<Value<'h>>,
+) -> Result<Trampoline<'h>, String> {
+    simple_predicate("symbol?", args, |v| v.is_symbol())
+}
+
+pub fn symbol_to_string<'h>(
+    _hs: &mut GcHeapSession<'h>,
+    mut args: Vec<Value<'h>>,
+) -> Result<Trampoline<'h>, String> {
+    if args.len() != 1 {
+        return Err("symbol->string: 1 argument required".into());
+    }
+    let sym = args.pop().unwrap().as_symbol("symbol->string")?;
+    Ok(Trampoline::Value(ImmString(GcLeaf::new(sym))))
+}
+
+pub fn string_to_symbol<'h>(
+    _hs: &mut GcHeapSession<'h>,
+    mut args: Vec<Value<'h>>,
+) -> Result<Trampoline<'h>, String> {
+    if args.len() != 1 {
+        return Err("string->symbol: 1 argument required".into());
+    }
+    let sym = args.pop().unwrap().as_string("string->symbol")?;
+    Ok(Trampoline::Value(Symbol(GcLeaf::new(sym))))
+}
+
 
 // 6.5 Numbers
 pub fn numeric_eq<'h>(

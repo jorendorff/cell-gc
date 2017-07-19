@@ -19,6 +19,7 @@ pub enum Value<'h> {
     Bool(bool),
     Int(i32),
     Symbol(GcLeaf<InternedString>),
+    ImmString(GcLeaf<InternedString>),
     Lambda(PairRef<'h>),
     Code(compile::CodeRef<'h>),
     Builtin(GcLeaf<BuiltinFnPtr>),
@@ -65,6 +66,7 @@ impl<'h> fmt::Display for Value<'h> {
             Bool(false) => write!(f, "#f"),
             Int(n) => write!(f, "{}", n),
             Symbol(ref s) => write!(f, "{}", s.as_str()),
+            ImmString(ref s) => write!(f, "{:?}", s.as_str()),
             Lambda(_) => write!(f, "#lambda"),
             Code(_) => write!(f, "#code"),
             Builtin(_) => write!(f, "#builtin"),
@@ -175,9 +177,30 @@ impl<'h> Value<'h> {
         }
     }
 
+    pub fn is_symbol(&self) -> bool {
+        match *self {
+            Symbol(_) => true,
+            _ => false
+        }
+    }
+
     pub fn as_symbol(self, error_msg: &str) -> Result<InternedString, String> {
         match self {
             Symbol(s) => Ok(s.unwrap()),
+            _ => Err(error_msg.to_string()),
+        }
+    }
+
+    pub fn is_string(&self) -> bool {
+        match *self {
+            ImmString(_) => true,
+            _ => false
+        }
+    }
+
+    pub fn as_string(self, error_msg: &str) -> Result<InternedString, String> {
+        match self {
+            ImmString(s) => Ok(s.unwrap()),
             _ => Err(error_msg.to_string()),
         }
     }

@@ -14,7 +14,7 @@
 
 (assert (equal? (cons 'a '()) '(a)))
 (assert (equal? (cons '(a) '(b c d)) '((a) b c d)))
-;;(assert (equal? (cons "a" '(b c)) '("a" b c)))
+(assert (equal? (cons "a" '(b c)) '("a" b c)))
 (assert (equal? (cons 'a 3) '(a . 3)))
 (assert (equal? (cons '(a b) 'c) '((a b) . c)))
 

@@ -372,7 +372,7 @@ fn datum_to_value<'h>(hs: &mut GcHeapSession<'h>, datum: Datum) -> Result<Value<
             }
         }
         Datum::Character(_) => Err("character tokens not supported"),
-        Datum::String(_) => Err("strings not supported"),
+        Datum::String(s) => Ok(Value::ImmString(GcLeaf::new(InternedString::get(&s)))),
         Datum::Identifier(s) => Ok(Value::Symbol(GcLeaf::new(InternedString::get(&s)))),
         Datum::List(data) => into_list(hs, data, Value::Nil),
         Datum::ImproperList(mut data) => {
