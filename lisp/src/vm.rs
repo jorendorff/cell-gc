@@ -278,7 +278,8 @@ pub fn eval<'h>(
     expr: Value<'h>,
     env: EnvironmentRef<'h>,
 ) -> Result<Value<'h>, String> {
-    compile::compile(hs, expr).and_then(|expr| eval_compiled(hs, expr, env))
+    let expr = compile::compile(hs, expr)?;
+    eval_compiled(hs, expr, env)
 }
 
 #[cfg(test)]
