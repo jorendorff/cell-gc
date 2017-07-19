@@ -281,7 +281,7 @@ impl GcHeap {
     }
 
     fn take_marking_tracer(&mut self) -> MarkingTracer {
-        self.marking_tracer.take().unwrap()
+        self.marking_tracer.take().expect("attempted nested GC")
     }
 
     fn replace_marking_tracer(&mut self, tracer: MarkingTracer) {
