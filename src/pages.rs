@@ -196,7 +196,7 @@ impl<U> TypedPage<U> {
         index
     }
 
-    pub unsafe fn get_mark_bit(&mut self, ptr: Pointer<U>) -> bool {
+    pub unsafe fn get_mark_bit(&self, ptr: Pointer<U>) -> bool {
         let index = self.allocation_index(ptr);
         self.header.mark_bits[index]
     }
