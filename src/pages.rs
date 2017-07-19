@@ -65,6 +65,7 @@ pub struct PageHeader {
 impl PageHeader {
     pub fn find(ptr: UntypedPointer) -> *mut PageHeader {
         let header_addr = ptr.as_usize() & !(PAGE_ALIGN - 1);
+        assert!(header_addr != 0);
         header_addr as *mut PageHeader
     }
 
@@ -204,6 +205,8 @@ impl<U> TypedPage<U> {
 
     pub unsafe fn set_mark_bit(&mut self, ptr: Pointer<U>) {
         let index = self.allocation_index(ptr);
+        assert!(self.header.allocated_bits.get(index).unwrap(),
+                "marking memory that isn't allocated (dangling pointer?)");
         self.header.mark_bits.set(index, true);
     }
 
@@ -233,6 +236,11 @@ impl<U> TypedPage<U> {
         for i in 0..Self::capacity() {
             if self.header.allocated_bits[i] && !self.header.mark_bits[i] {
                 ptr::drop_in_place(addr as *mut U);
+                if cfg!(debug_assertions) || cfg!(test) {
+                    // Paint the unused memory with a known-bad value.
+                    const SWEPT_BYTE: u8 = 0xf4;
+                    ptr::write_bytes(addr as *mut U, SWEPT_BYTE, 1);
+                }
                 self.header.allocated_bits.set(i, false);
                 self.add_to_free_list(addr as *mut U);
             }
@@ -248,7 +256,7 @@ impl<U> TypedPage<U> {
 /// This must be called only after a full mark phase, to avoid sweeping objects
 /// that are still reachable.
 unsafe fn sweep_entry_point<'h, T: IntoHeapAllocation<'h>>(header: &mut PageHeader) {
-    header.downcast_mut::<T>().unwrap().sweep();
+    header.downcast_mut::<T>().expect("page header corrupted").sweep();
 }
 
 /// An unordered collection of memory pages that all share an allocation type.
