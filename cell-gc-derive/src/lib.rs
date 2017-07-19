@@ -70,9 +70,9 @@ fn impl_into_heap_for_struct(ast: &syn::DeriveInput, data: &syn::VariantData) ->
                     let name = &f.ident;
                     let ty = &f.ty;
                     quote! {
-                    <#ty as ::cell_gc::traits::IntoHeapBase>
-                        ::trace(&storage.#name, tracer);
-                }
+                        <#ty as ::cell_gc::traits::IntoHeapBase>
+                            ::trace(&storage.#name, tracer);
+                    }
                 })
                 .collect();
 
