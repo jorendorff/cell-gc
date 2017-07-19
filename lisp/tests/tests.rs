@@ -21,6 +21,7 @@ fn eval_test_file(file: &Path) {
         let env = lisp::vm::Environment::default_env(hs);
         for expr in exprs {
             lisp::vm::eval(hs, expr, env.clone()).expect("Should eval exprs OK");
+            hs.force_gc();
         }
     });
 }
