@@ -77,11 +77,7 @@ impl<'h, T: IntoHeap<'h>> IntoHeapBase for VecRef<'h, T> {
     where
         R: Tracer,
     {
-        // BUG - should call a method mark_ref that checks the mark bit before
-        // doing anything
-        for r in storage.as_ref() {
-            T::trace(r, tracer);
-        }
+        tracer.visit::<Vec<T>>(*storage)
     }
 }
 
