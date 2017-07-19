@@ -171,9 +171,7 @@ impl<U> TypedPage<U> {
 
     /// Return the page containing the object `ptr` points to.
     pub fn find(ptr: Pointer<U>) -> *mut TypedPage<U> {
-        let ptr: usize = ptr.into();
-        let page_addr = ptr & !(PAGE_ALIGN - 1);
-        page_addr as *mut TypedPage<U>
+        PageHeader::find(ptr.into()) as *mut TypedPage<U>
     }
 
     unsafe fn add_to_free_list(&mut self, p: *mut U) {
