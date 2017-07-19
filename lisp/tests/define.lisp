@@ -7,7 +7,7 @@
    (define y 2)
    (assert (eq? y 2))
 
-   (assert (eq? (define z 0) ()))
+   (assert (eq? (define z 0) '()))
 
    (define b 2)
    (assert (eq? b 2))

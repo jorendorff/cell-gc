@@ -337,7 +337,8 @@ fn eval_to_tail_call<'h>(
         }
         Builtin(_) => Err(format!("builtin function found in source code")),
         Vector(_) => Err(format!("vectors are not expressions")),
-        _ => Ok(Trampoline::Value(expr)),  // nil and numbers are self-evaluating
+        Nil => Err(format!("expected expression, got ()")),
+        _ => Ok(Trampoline::Value(expr)),  // numbers are self-evaluating
     }
 }
 
