@@ -73,7 +73,6 @@ pub fn compile<'h>(
     hs: &mut GcHeapSession<'h>,
     expr: Value<'h>,
 ) -> Result<Expr<'h>, String> {
-    println!("DEBUG: compile {}", expr);
     match expr {
         Symbol(s) => Ok(Expr::Var(s)),
 
