@@ -4,6 +4,7 @@ use compile;
 use std::borrow::Borrow;
 use std::fmt;
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicUsize, ATOMIC_USIZE_INIT, Ordering};
 use std::collections::HashSet;
 use vm::{EnvironmentRef, Trampoline};
 
@@ -247,6 +248,8 @@ lazy_static! {
     static ref STRINGS: Mutex<HashSet<InternedStringByValue>> = Mutex::new(HashSet::new());
 }
 
+static GENSYM_COUNT: AtomicUsize = ATOMIC_USIZE_INIT;
+
 #[derive(Eq, Hash, PartialEq)]
 struct InternedStringByValue(Arc<String>);
 
@@ -257,6 +260,12 @@ impl Borrow<str> for InternedStringByValue {
 }
 
 impl InternedString {
+    /// Return an InternedString that is not interned.
+    pub fn gensym() -> InternedString {
+        let n = GENSYM_COUNT.fetch_add(1, Ordering::SeqCst);
+        InternedString(Arc::new(format!("#<gensym{}>", n)))
+    }
+
     pub fn get(s: &str) -> InternedString {
         let mut guard = STRINGS.lock().unwrap();
         if let Some(x) = guard.get(s) {
@@ -267,7 +276,40 @@ impl InternedString {
         InternedString(s)
     }
 
+    pub fn really_intern(self) -> InternedString {
+        if !self.0.starts_with("#<gensym") {
+            return self;
+        }
+        let mut guard = STRINGS.lock().unwrap();
+        {
+            let s: &str = &self.0;
+            match guard.get(s) {
+                Some(interned) => return InternedString(interned.0.clone()),
+                None => {}
+            }
+        }
+
+        // Don't cause other references to this string to become interned!
+        let new_arc = {
+            let s: &str = &self.0;
+            Arc::new(s.to_string())
+        };
+        guard.insert(InternedStringByValue(new_arc));
+        self
+    }
+
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    pub fn is_interned(&self) -> bool {
+        let guard = STRINGS.lock().unwrap();
+        let s: &str = &self.0;
+        match guard.get(s) {
+            None => false,
+            Some(interned) => Arc::ptr_eq(&interned.0, &self.0)
+        }
+    }
+
+    pub fn is_gensym(&self) -> bool { !self.is_interned() }
 }

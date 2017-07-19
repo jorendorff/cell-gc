@@ -1,5 +1,5 @@
 use cell_gc::{GcHeapSession, GcLeaf};
-use value::{Pair, Value};
+use value::{Pair, Value, InternedString};
 use value::Value::*;
 use vm::Trampoline;
 
@@ -126,7 +126,7 @@ pub fn symbol_to_string<'h>(
         return Err("symbol->string: 1 argument required".into());
     }
     let sym = args.pop().unwrap().as_symbol("symbol->string")?;
-    Ok(Trampoline::Value(ImmString(GcLeaf::new(sym))))
+    Ok(Trampoline::Value(ImmString(GcLeaf::new(sym.really_intern()))))
 }
 
 pub fn string_to_symbol<'h>(
@@ -136,8 +136,8 @@ pub fn string_to_symbol<'h>(
     if args.len() != 1 {
         return Err("string->symbol: 1 argument required".into());
     }
-    let sym = args.pop().unwrap().as_string("string->symbol")?;
-    Ok(Trampoline::Value(Symbol(GcLeaf::new(sym))))
+    let str = args.pop().unwrap().as_string("string->symbol")?;
+    Ok(Trampoline::Value(Symbol(GcLeaf::new(str.really_intern()))))
 }
 
 // 6.5 Numbers
@@ -392,4 +392,28 @@ pub fn assert<'h>(
     } else {
         Err("assert: non-boolean argument".into())
     }
+}
+
+pub fn gensym<'h>(
+    _hs: &mut GcHeapSession<'h>,
+    args: Vec<Value<'h>>,
+) -> Result<Trampoline<'h>, String> {
+    if !args.is_empty() {
+        return Err("gensym: 0 arguments required".into());
+    }
+    let sym = InternedString::gensym();
+    assert!(sym.is_gensym());
+    Ok(Trampoline::Value(Symbol(GcLeaf::new(sym))))
+}
+
+pub fn gensym_question<'h>(
+    _hs: &mut GcHeapSession<'h>,
+    args: Vec<Value<'h>>,
+) -> Result<Trampoline<'h>, String> {
+    simple_predicate("gensym?", args, |v| {
+        match v {
+            Symbol(s) => s.is_gensym(),
+            _ => false
+        }
+    })
 }
