@@ -111,7 +111,6 @@ pub fn null_question<'h>(
 }
 
 // 6.4 Symbols
-
 pub fn symbol_question<'h>(
     _hs: &mut GcHeapSession<'h>,
     args: Vec<Value<'h>>,
@@ -140,7 +139,6 @@ pub fn string_to_symbol<'h>(
     let sym = args.pop().unwrap().as_string("string->symbol")?;
     Ok(Trampoline::Value(Symbol(GcLeaf::new(sym))))
 }
-
 
 // 6.5 Numbers
 pub fn numeric_eq<'h>(
@@ -263,6 +261,26 @@ pub fn sub<'h>(
         }
         Ok(Trampoline::Value(Int(total)))
     }
+}
+
+// 6.7 Strings
+pub fn string_question<'h>(
+    _hs: &mut GcHeapSession<'h>,
+    args: Vec<Value<'h>>,
+) -> Result<Trampoline<'h>, String> {
+    simple_predicate("string?", args, |v| v.is_string())
+}
+
+pub fn string_eq_question<'h>(
+    _hs: &mut GcHeapSession<'h>,
+    mut args: Vec<Value<'h>>,
+) -> Result<Trampoline<'h>, String> {
+    if args.len() != 2 {
+        return Err("string=?: exactly 2 arguments required".into());
+    }
+    let b = args.pop().unwrap().as_string("string=?")?;
+    let a = args.pop().unwrap().as_string("string=?")?;
+    Ok(Trampoline::Value(Bool(a.as_str() == b.as_str())))
 }
 
 // 6.8 Vectors

@@ -76,6 +76,11 @@ impl<'h> Environment<'h> {
         builtin!("null?", builtins::null_question);
         builtin!("pair?", builtins::pair_question);
         builtin!("procedure?", builtins::procedure_question);
+        builtin!("string->symbol", builtins::string_to_symbol);
+        builtin!("string?", builtins::string_question);
+        builtin!("string=?", builtins::string_eq_question);
+        builtin!("symbol->string", builtins::symbol_to_string);
+        builtin!("symbol?", builtins::symbol_question);
         builtin!("vector?", builtins::vector_question);
         builtin!("vector", builtins::vector);
         builtin!("vector-length", builtins::vector_length);
