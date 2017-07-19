@@ -4,7 +4,7 @@ use builtins;
 use cell_gc::{GcHeapSession, GcLeaf};
 use cell_gc::collections::VecRef;
 use compile::{self, Expr};
-use parser;
+use parse;
 use value::{BuiltinFnPtr, InternedString, Pair, Value};
 use value::Value::*;
 
@@ -82,7 +82,7 @@ impl<'h> Environment<'h> {
         builtin!("vector-ref", builtins::vector_ref);
 
         const PRELUDE: &'static str = include_str!("prelude.sch");
-        let prelude = match parser::parse(hs, PRELUDE) {
+        let prelude = match parse::parse(hs, PRELUDE) {
             Ok(forms) => forms,
             Err(err) => panic!("unexpected error parsing prelude: {}", err),
         };

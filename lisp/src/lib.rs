@@ -8,7 +8,7 @@ extern crate nom;
 
 pub mod builtins;
 mod compile;
-pub mod parser;
+pub mod parse;
 pub mod repl;
 pub mod value;
 pub mod vm;

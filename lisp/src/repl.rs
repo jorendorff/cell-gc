@@ -1,5 +1,5 @@
 use cell_gc;
-use parser::parse;
+use parse;
 use std::io::{self, Write};
 use value::Value;
 use vm;
@@ -19,7 +19,7 @@ pub fn repl() -> io::Result<()> {
             // Read
             let mut source = String::new();
             io::stdin().read_line(&mut source)?;
-            let exprs = parse(hs, &source)
+            let exprs = parse::parse(hs, &source)
                 .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
 
             // Eval

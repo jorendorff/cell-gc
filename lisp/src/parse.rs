@@ -191,7 +191,7 @@ named!(
 );
 
 #[test]
-fn test_parser() {
+fn test_parse() {
     use nom::ErrorKind;
 
     assert_eq!(
