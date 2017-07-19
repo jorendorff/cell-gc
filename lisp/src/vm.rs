@@ -5,7 +5,7 @@ use cell_gc::{GcHeapSession, GcLeaf};
 use cell_gc::collections::VecRef;
 use compile::{self, Expr};
 use parse;
-use value::{BuiltinFnPtr, InternedString, Pair, Value};
+use value::{InternedString, Pair, Value};
 use value::Value::*;
 
 /// A potentially partially evaluated value.
@@ -48,45 +48,9 @@ impl<'h> Environment<'h> {
             names: hs.alloc(vec![]),
             values: hs.alloc(vec![]),
         };
+        let env = hs.alloc(env);
 
-        macro_rules! builtin {
-            ( $lisp_ident:expr , $func:expr ) => {
-                env.names.push(GcLeaf::new(InternedString::get($lisp_ident)));
-                env.values.push(Builtin(GcLeaf::new(BuiltinFnPtr($func))));
-            }
-        }
-
-        builtin!("+", builtins::add);
-        builtin!("-", builtins::sub);
-        builtin!("*", builtins::mul);
-        builtin!("=", builtins::numeric_eq);
-        builtin!("<", builtins::numeric_lt);
-        builtin!(">", builtins::numeric_gt);
-        builtin!("<=", builtins::numeric_le);
-        builtin!(">=", builtins::numeric_ge);
-        builtin!("apply", builtins::apply);
-        builtin!("assert", builtins::assert);
-        builtin!("car", builtins::car);
-        builtin!("cdr", builtins::cdr);
-        builtin!("cons", builtins::cons);
-        builtin!("eqv?", builtins::eqv_question);
-        builtin!("eq?", builtins::eq_question);
-        builtin!("gensym", builtins::gensym);
-        builtin!("gensym?", builtins::gensym_question);
-        builtin!("print", builtins::print);
-        builtin!("boolean?", builtins::boolean_question);
-        builtin!("null?", builtins::null_question);
-        builtin!("pair?", builtins::pair_question);
-        builtin!("procedure?", builtins::procedure_question);
-        builtin!("string->symbol", builtins::string_to_symbol);
-        builtin!("string?", builtins::string_question);
-        builtin!("string=?", builtins::string_eq_question);
-        builtin!("symbol->string", builtins::symbol_to_string);
-        builtin!("symbol?", builtins::symbol_question);
-        builtin!("vector?", builtins::vector_question);
-        builtin!("vector", builtins::vector);
-        builtin!("vector-length", builtins::vector_length);
-        builtin!("vector-ref", builtins::vector_ref);
+        builtins::define_builtins(env.clone());
 
         const PRELUDE: &'static str = include_str!("prelude.sch");
         let prelude = match parse::parse(hs, PRELUDE) {
@@ -94,7 +58,6 @@ impl<'h> Environment<'h> {
             Err(err) => panic!("unexpected error parsing prelude: {}", err),
         };
 
-        let env = hs.alloc(env);
         for expr in prelude {
             if let Err(err) = eval(hs, expr, env.clone()) {
                 panic!("unexpected error evaluating prelude: {}", err);

@@ -1,7 +1,7 @@
 use cell_gc::{GcHeapSession, GcLeaf};
-use value::{Pair, Value, InternedString};
+use value::{BuiltinFn, BuiltinFnPtr, Pair, Value, InternedString};
 use value::Value::*;
-use vm::Trampoline;
+use vm::{EnvironmentRef, Trampoline};
 
 // Builtin function definitions ////////////////////////////////////////////////
 
@@ -20,7 +20,7 @@ where
     Ok(Trampoline::Value(Bool(f(args.pop().unwrap()))))
 }
 
-pub fn boolean_question<'h>(
+fn boolean_question<'h>(
     _hs: &mut GcHeapSession<'h>,
     args: Vec<Value<'h>>,
 ) -> Result<Trampoline<'h>, String> {
@@ -28,7 +28,7 @@ pub fn boolean_question<'h>(
 }
 
 // 6.2 Equivalence predicates
-pub fn eq_question<'h>(
+fn eq_question<'h>(
     _hs: &mut GcHeapSession<'h>,
     args: Vec<Value<'h>>,
 ) -> Result<Trampoline<'h>, String> {
@@ -38,7 +38,7 @@ pub fn eq_question<'h>(
     ))
 }
 
-pub fn eqv_question<'h>(
+fn eqv_question<'h>(
     _hs: &mut GcHeapSession<'h>,
     mut args: Vec<Value<'h>>,
 ) -> Result<Trampoline<'h>, String> {
@@ -51,14 +51,14 @@ pub fn eqv_question<'h>(
 }
 
 // 6.3 Pairs and lists
-pub fn pair_question<'h>(
+fn pair_question<'h>(
     _hs: &mut GcHeapSession<'h>,
     args: Vec<Value<'h>>,
 ) -> Result<Trampoline<'h>, String> {
     simple_predicate("pair?", args, |v| v.is_pair())
 }
 
-pub fn cons<'h>(
+fn cons<'h>(
     hs: &mut GcHeapSession<'h>,
     args: Vec<Value<'h>>,
 ) -> Result<Trampoline<'h>, String> {
@@ -73,7 +73,7 @@ pub fn cons<'h>(
     }
 }
 
-pub fn car<'h>(
+fn car<'h>(
     _hs: &mut GcHeapSession<'h>,
     args: Vec<Value<'h>>,
 ) -> Result<Trampoline<'h>, String> {
@@ -88,7 +88,7 @@ pub fn car<'h>(
     }
 }
 
-pub fn cdr<'h>(
+fn cdr<'h>(
     _hs: &mut GcHeapSession<'h>,
     args: Vec<Value<'h>>,
 ) -> Result<Trampoline<'h>, String> {
@@ -103,7 +103,7 @@ pub fn cdr<'h>(
     }
 }
 
-pub fn null_question<'h>(
+fn null_question<'h>(
     _hs: &mut GcHeapSession<'h>,
     args: Vec<Value<'h>>,
 ) -> Result<Trampoline<'h>, String> {
@@ -111,14 +111,14 @@ pub fn null_question<'h>(
 }
 
 // 6.4 Symbols
-pub fn symbol_question<'h>(
+fn symbol_question<'h>(
     _hs: &mut GcHeapSession<'h>,
     args: Vec<Value<'h>>,
 ) -> Result<Trampoline<'h>, String> {
     simple_predicate("symbol?", args, |v| v.is_symbol())
 }
 
-pub fn symbol_to_string<'h>(
+fn symbol_to_string<'h>(
     _hs: &mut GcHeapSession<'h>,
     mut args: Vec<Value<'h>>,
 ) -> Result<Trampoline<'h>, String> {
@@ -129,7 +129,7 @@ pub fn symbol_to_string<'h>(
     Ok(Trampoline::Value(ImmString(GcLeaf::new(sym.really_intern()))))
 }
 
-pub fn string_to_symbol<'h>(
+fn string_to_symbol<'h>(
     _hs: &mut GcHeapSession<'h>,
     mut args: Vec<Value<'h>>,
 ) -> Result<Trampoline<'h>, String> {
@@ -141,7 +141,7 @@ pub fn string_to_symbol<'h>(
 }
 
 // 6.5 Numbers
-pub fn numeric_eq<'h>(
+fn numeric_eq<'h>(
     _hs: &mut GcHeapSession<'h>,
     args: Vec<Value<'h>>,
 ) -> Result<Trampoline<'h>, String> {
@@ -158,7 +158,7 @@ pub fn numeric_eq<'h>(
     Ok(Trampoline::Value(Bool(true)))
 }
 
-pub fn numeric_compare<'h, F>(args: Vec<Value<'h>>, cmp: F) -> Result<Trampoline<'h>, String>
+fn numeric_compare<'h, F>(args: Vec<Value<'h>>, cmp: F) -> Result<Trampoline<'h>, String>
 where
     F: Fn(i32, i32) -> bool,
 {
@@ -176,35 +176,35 @@ where
     Ok(Trampoline::Value(Bool(true)))
 }
 
-pub fn numeric_lt<'h>(
+fn numeric_lt<'h>(
     _hs: &mut GcHeapSession<'h>,
     args: Vec<Value<'h>>,
 ) -> Result<Trampoline<'h>, String> {
     numeric_compare(args, |a, b| a < b)
 }
 
-pub fn numeric_gt<'h>(
+fn numeric_gt<'h>(
     _hs: &mut GcHeapSession<'h>,
     args: Vec<Value<'h>>,
 ) -> Result<Trampoline<'h>, String> {
     numeric_compare(args, |a, b| a > b)
 }
 
-pub fn numeric_le<'h>(
+fn numeric_le<'h>(
     _hs: &mut GcHeapSession<'h>,
     args: Vec<Value<'h>>,
 ) -> Result<Trampoline<'h>, String> {
     numeric_compare(args, |a, b| a <= b)
 }
 
-pub fn numeric_ge<'h>(
+fn numeric_ge<'h>(
     _hs: &mut GcHeapSession<'h>,
     args: Vec<Value<'h>>,
 ) -> Result<Trampoline<'h>, String> {
     numeric_compare(args, |a, b| a >= b)
 }
 
-pub fn add<'h>(
+fn add<'h>(
     _hs: &mut GcHeapSession<'h>,
     args: Vec<Value<'h>>,
 ) -> Result<Trampoline<'h>, String> {
@@ -219,7 +219,7 @@ pub fn add<'h>(
     Ok(Trampoline::Value(Int(total)))
 }
 
-pub fn mul<'h>(
+fn mul<'h>(
     _hs: &mut GcHeapSession<'h>,
     args: Vec<Value<'h>>,
 ) -> Result<Trampoline<'h>, String> {
@@ -234,7 +234,7 @@ pub fn mul<'h>(
     Ok(Trampoline::Value(Int(total)))
 }
 
-pub fn sub<'h>(
+fn sub<'h>(
     _hs: &mut GcHeapSession<'h>,
     args: Vec<Value<'h>>,
 ) -> Result<Trampoline<'h>, String> {
@@ -264,14 +264,14 @@ pub fn sub<'h>(
 }
 
 // 6.7 Strings
-pub fn string_question<'h>(
+fn string_question<'h>(
     _hs: &mut GcHeapSession<'h>,
     args: Vec<Value<'h>>,
 ) -> Result<Trampoline<'h>, String> {
     simple_predicate("string?", args, |v| v.is_string())
 }
 
-pub fn string_eq_question<'h>(
+fn string_eq_question<'h>(
     _hs: &mut GcHeapSession<'h>,
     mut args: Vec<Value<'h>>,
 ) -> Result<Trampoline<'h>, String> {
@@ -284,21 +284,21 @@ pub fn string_eq_question<'h>(
 }
 
 // 6.8 Vectors
-pub fn vector_question<'h>(
+fn vector_question<'h>(
     _hs: &mut GcHeapSession<'h>,
     args: Vec<Value<'h>>,
 ) -> Result<Trampoline<'h>, String> {
     simple_predicate("vector?", args, |v| v.is_vector())
 }
 
-pub fn vector<'h>(
+fn vector<'h>(
     hs: &mut GcHeapSession<'h>,
     args: Vec<Value<'h>>,
 ) -> Result<Trampoline<'h>, String> {
     Ok(Trampoline::Value(Vector(hs.alloc(args))))
 }
 
-pub fn vector_length<'h>(
+fn vector_length<'h>(
     _hs: &mut GcHeapSession<'h>,
     mut args: Vec<Value<'h>>,
 ) -> Result<Trampoline<'h>, String> {
@@ -312,7 +312,7 @@ pub fn vector_length<'h>(
     Ok(Trampoline::Value(Value::Int(n as i32)))
 }
 
-pub fn vector_ref<'h>(
+fn vector_ref<'h>(
     _hs: &mut GcHeapSession<'h>,
     mut args: Vec<Value<'h>>,
 ) -> Result<Trampoline<'h>, String> {
@@ -332,14 +332,14 @@ pub fn vector_ref<'h>(
 }
 
 // 6.9 Control features
-pub fn procedure_question<'h>(
+fn procedure_question<'h>(
     _hs: &mut GcHeapSession<'h>,
     args: Vec<Value<'h>>,
 ) -> Result<Trampoline<'h>, String> {
     simple_predicate("procedure?", args, |v| v.is_procedure())
 }
 
-pub fn apply<'h>(
+fn apply<'h>(
     _hs: &mut GcHeapSession<'h>,
     mut args: Vec<Value<'h>>,
 ) -> Result<Trampoline<'h>, String> {
@@ -358,7 +358,7 @@ pub fn apply<'h>(
 }
 
 // Extensions
-pub fn print<'h>(
+fn print<'h>(
     _hs: &mut GcHeapSession<'h>,
     args: Vec<Value<'h>>,
 ) -> Result<Trampoline<'h>, String> {
@@ -368,7 +368,7 @@ pub fn print<'h>(
     Ok(Trampoline::Value(Nil))
 }
 
-pub fn assert<'h>(
+fn assert<'h>(
     _hs: &mut GcHeapSession<'h>,
     args: Vec<Value<'h>>,
 ) -> Result<Trampoline<'h>, String> {
@@ -394,7 +394,7 @@ pub fn assert<'h>(
     }
 }
 
-pub fn gensym<'h>(
+fn gensym<'h>(
     _hs: &mut GcHeapSession<'h>,
     args: Vec<Value<'h>>,
 ) -> Result<Trampoline<'h>, String> {
@@ -406,7 +406,7 @@ pub fn gensym<'h>(
     Ok(Trampoline::Value(Symbol(GcLeaf::new(sym))))
 }
 
-pub fn gensym_question<'h>(
+fn gensym_question<'h>(
     _hs: &mut GcHeapSession<'h>,
     args: Vec<Value<'h>>,
 ) -> Result<Trampoline<'h>, String> {
@@ -416,4 +416,50 @@ pub fn gensym_question<'h>(
             _ => false
         }
     })
+}
+
+
+// Builtin function list ///////////////////////////////////////////////////////
+
+pub static BUILTINS: &[(&'static str, BuiltinFn)] = &[
+    ("+", add),
+    ("-", sub),
+    ("*", mul),
+    ("=", numeric_eq),
+    ("<", numeric_lt),
+    (">", numeric_gt),
+    ("<=", numeric_le),
+    (">=", numeric_ge),
+    ("apply", apply),
+    ("assert", assert),
+    ("car", car),
+    ("cdr", cdr),
+    ("cons", cons),
+    ("eqv?", eqv_question),
+    ("eq?", eq_question),
+    ("gensym", gensym),
+    ("gensym?", gensym_question),
+    ("print", print),
+    ("boolean?", boolean_question),
+    ("null?", null_question),
+    ("pair?", pair_question),
+    ("procedure?", procedure_question),
+    ("string->symbol", string_to_symbol),
+    ("string?", string_question),
+    ("string=?", string_eq_question),
+    ("symbol->string", symbol_to_string),
+    ("symbol?", symbol_question),
+    ("vector?", vector_question),
+    ("vector", vector),
+    ("vector-length", vector_length),
+    ("vector-ref", vector_ref),
+];
+
+pub fn define_builtins<'h>(env: EnvironmentRef<'h>) {
+    for &(name, f) in BUILTINS {
+        env.push(
+            InternedString::get(name),
+            Builtin(GcLeaf::new(BuiltinFnPtr(f))),
+        );
+    }
 }

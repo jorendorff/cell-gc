@@ -31,10 +31,11 @@ pub enum Value<'h> {
 
 pub use self::Value::*;
 
-pub struct BuiltinFnPtr(
-    pub for<'b> fn(&mut GcHeapSession<'b>, Vec<Value<'b>>)
-        -> Result<Trampoline<'b>, String>,
-);
+pub type BuiltinFn =
+    for<'b> fn(&mut GcHeapSession<'b>, Vec<Value<'b>>)
+        -> Result<Trampoline<'b>, String>;
+
+pub struct BuiltinFnPtr(pub BuiltinFn);
 
 // This can't be #[derive]d because function pointers aren't Clone.
 // But they are Copy. A very weird thing about Rust.
