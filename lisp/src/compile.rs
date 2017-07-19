@@ -69,6 +69,55 @@ pub fn compile_body<'h>(
     }
 }
 
+fn parse_define<'h>(hs: &mut GcHeapSession<'h>, mut tail: Value<'h>)
+    -> Result<(GcLeaf<InternedString>, Expr<'h>), String>
+{
+    loop {
+        let (pattern, rest) = tail.as_pair("(define) with no name")?;
+        match pattern {
+            Symbol(ident) => {
+                let (expr, rest) = rest.as_pair("(define) with no value")?;
+                match rest {
+                    Nil => {}
+                    _ => {
+                        return Err(
+                            "too many arguments in (define)".to_string(),
+                        )
+                    }
+                };
+
+                let value = compile(hs, expr)?;
+                return Ok((ident, value));
+            }
+            Cons(pair) => {
+                // Build desugared definition and compile that.
+                let name = pair.car();
+                let formals = pair.cdr();
+
+                // Transform `(define (,name ,@formals) ,@rest)
+                // to        `(define ,name (lambda ,formals ,@rest))
+                let lambda_cdr = Cons(hs.alloc(Pair {
+                    car: formals,
+                    cdr: rest,
+                }));
+                let lambda = Cons(hs.alloc(Pair {
+                    car: Symbol(GcLeaf::new(InternedString::get("lambda"))),
+                    cdr: lambda_cdr,
+                }));
+                let defn_cddr = Cons(hs.alloc(Pair {
+                    car: lambda,
+                    cdr: Nil,
+                }));
+                tail = Cons(hs.alloc(Pair {
+                    car: name,
+                    cdr: defn_cddr,
+                }));
+            }
+            _ => return Err("(define) with a non-symbol name".to_string())
+        }
+    }
+}
+
 pub fn compile<'h>(
     hs: &mut GcHeapSession<'h>,
     expr: Value<'h>,
@@ -121,56 +170,8 @@ pub fn compile<'h>(
                 } else if s.as_str() == "begin" {
                     return compile_body(hs, p.cdr());
                 } else if s.as_str() == "define" {
-                    let (name, rest) = p.cdr().as_pair("(define) with no name")?;
-                    match name {
-                        Symbol(s) => {
-                            let (expr, rest) = rest.as_pair("(define) with no value")?;
-                            match rest {
-                                Nil => {}
-                                _ => {
-                                    return Err(
-                                        "too many arguments in (define)".to_string(),
-                                    )
-                                }
-                            };
-
-                            let value = compile(hs, expr)?;
-                            return Ok(Expr::Def(hs.alloc(Def { name: s, value })));
-                        }
-                        Cons(pair) => {
-                            // Build desugared definition and compile that.
-                            let define_sym = p.car();
-                            let name = pair.car();  // shadows earlier name variable
-                            let formals = pair.cdr();
-
-                            // Transform `(define (,name ,@formals) ,@rest)
-                            // to        `(define ,name (lambda ,formals ,@rest))
-                            let lambda_cdr = Cons(hs.alloc(Pair {
-                                car: formals,
-                                cdr: rest,
-                            }));
-                            let lambda = Cons(hs.alloc(Pair {
-                                car: Symbol(GcLeaf::new(InternedString::get("lambda"))),
-                                cdr: lambda_cdr,
-                            }));
-                            let defn_cddr = Cons(hs.alloc(Pair {
-                                car: lambda,
-                                cdr: Nil,
-                            }));
-                            let defn_cdr = Cons(hs.alloc(Pair {
-                                car: name,
-                                cdr: defn_cddr,
-                            }));
-                            let defn = Cons(hs.alloc(Pair {
-                                car: define_sym,
-                                cdr: defn_cdr,
-                            }));
-                            return compile(hs, defn);
-                        }
-                        _ => {
-                            return Err("(define) with a non-symbol name".to_string());
-                        }
-                    }
+                    let (name, value) = parse_define(hs, p.cdr())?;
+                    return Ok(Expr::Def(hs.alloc(Def { name, value })));
                 } else if s.as_str() == "set!" {
                     let (first, rest) = p.cdr().as_pair("(set!) with no name")?;
                     let name = first.as_symbol("(set!) first argument must be a name")?;
