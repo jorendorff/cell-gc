@@ -122,18 +122,17 @@
                      (if (vector? y)
                          ((lambda (n)
                             (if (= (vector-length y) n)
-                                ((begin
-                                   (define loop
-                                     (lambda (i)
-                                       ((lambda (eq-len)
-                                          (if eq-len
-                                              eq-len
-                                              (if (equal? (vector-ref x i)
-                                                          (vector-ref y i))
-                                                  (loop (+ i 1))
-                                                  #f)))
-                                        (= i n))))
-                                   loop)
+                                ((letrec* ((loop
+                                            (lambda (i)
+                                              ((lambda (eq-len)
+                                                 (if eq-len
+                                                     eq-len
+                                                     (if (equal? (vector-ref x i)
+                                                                 (vector-ref y i))
+                                                         (loop (+ i 1))
+                                                         #f)))
+                                               (= i n)))))
+                                    loop)
                                  0)
                                 #f))
                           (vector-length x))

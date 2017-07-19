@@ -221,6 +221,23 @@ fn eval_to_tail_call<'h>(
                 };
             eval_to_tail_call(hs, selected_expr, env)
         }
+        Expr::Letrec(letrec) => {
+            let names = letrec.names();
+            let values: VecRef<'h, Value<'h>> =
+                hs.alloc((0..names.len()).map(|_| Value::Nil).collect::<Vec<Value<'h>>>());
+            let letrec_env =
+                hs.alloc(Environment {
+                    parent: Some(env),
+                    names,
+                    values: values.clone(),
+                });
+            let exprs = letrec.exprs();
+            for i in 0..exprs.len() {
+                let val = eval_compiled(hs, exprs.get(i), letrec_env.clone())?;
+                values.set(i, val);
+            }
+            eval_to_tail_call(hs, letrec.body(), letrec_env)
+        }
         Expr::Def(def) => {
             let val = eval_compiled(hs, def.value(), env.clone())?;
             env.push(def.name().unwrap(), val);
@@ -248,7 +265,7 @@ pub fn eval<'h>(
     expr: Value<'h>,
     env: EnvironmentRef<'h>,
 ) -> Result<Value<'h>, String> {
-    let expr = compile::compile(hs, expr)?;
+    let expr = compile::compile_toplevel(hs, expr)?;
     eval_compiled(hs, expr, env)
 }
 
