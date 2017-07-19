@@ -3,9 +3,9 @@ extern crate lisp;
 
 use std::fs;
 use std::io::Read;
-use std::path;
+use std::path::Path;
 
-fn eval_test_file(file: path::PathBuf) {
+fn eval_test_file(file: &Path) {
     println!("Opening test file: {}", file.display());
     let mut file = fs::File::open(file).expect("Should open file OK");
 
@@ -30,7 +30,7 @@ macro_rules! test {
         #[test]
         fn $file() {
             let file = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/", stringify!($file), ".lisp");
-            let file = path::PathBuf::from(file);
+            let file = Path::new(file);
             eval_test_file(file);
         }
     }
