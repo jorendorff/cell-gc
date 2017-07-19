@@ -7,6 +7,7 @@ extern crate lazy_static;
 extern crate nom;
 
 pub mod builtins;
+mod compile;
 pub mod parser;
 pub mod repl;
 pub mod value;

@@ -1,5 +1,6 @@
 use cell_gc::{GcHeapSession, GcLeaf};
 use cell_gc::collections::VecRef;
+use compile;
 use std::borrow::Borrow;
 use std::fmt;
 use std::sync::{Arc, Mutex};
@@ -19,6 +20,7 @@ pub enum Value<'h> {
     Int(i32),
     Symbol(GcLeaf<InternedString>),
     Lambda(PairRef<'h>),
+    Code(compile::CodeRef<'h>),
     Builtin(GcLeaf<BuiltinFnPtr>),
     Cons(PairRef<'h>),
     Vector(VecRef<'h, Value<'h>>),
@@ -64,6 +66,7 @@ impl<'h> fmt::Display for Value<'h> {
             Int(n) => write!(f, "{}", n),
             Symbol(ref s) => write!(f, "{}", s.as_str()),
             Lambda(_) => write!(f, "#lambda"),
+            Code(_) => write!(f, "#code"),
             Builtin(_) => write!(f, "#builtin"),
             Cons(ref p) => {
                 write!(f, "(")?;
@@ -148,6 +151,13 @@ impl<'h> Value<'h> {
         match *self {
             Cons(_) => true,
             _ => false,
+        }
+    }
+
+    pub fn as_pair(self, msg: &'static str) -> Result<(Value<'h>, Value<'h>), String> {
+        match self {
+            Cons(r) => Ok((r.car(), r.cdr())),
+            _ => Err(msg.to_string()),
         }
     }
 

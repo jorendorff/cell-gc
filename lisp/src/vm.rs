@@ -3,6 +3,7 @@
 use builtins;
 use cell_gc::{GcHeapSession, GcLeaf};
 use cell_gc::collections::VecRef;
+use compile::{self, Expr};
 use parser;
 use value::{BuiltinFnPtr, InternedString, Pair, Value};
 use value::Value::*;
@@ -152,41 +153,6 @@ macro_rules! lisp {
     };
 }
 
-fn parse_pair<'h>(v: Value<'h>, msg: &'static str) -> Result<(Value<'h>, Value<'h>), String> {
-    match v {
-        Cons(r) => Ok((r.car(), r.cdr())),
-        _ => Err(msg.to_string()),
-    }
-}
-
-fn map_eval<'h>(
-    hs: &mut GcHeapSession<'h>,
-    exprs: Value<'h>,
-    env: EnvironmentRef<'h>,
-) -> Result<Vec<Value<'h>>, String> {
-    exprs
-        .into_iter()
-        .map(|expr_res| eval(hs, expr_res?, env.clone()))
-        .collect()
-}
-
-pub fn eval_block_body<'h>(
-    hs: &mut GcHeapSession<'h>,
-    exprs: Value<'h>,
-    env: EnvironmentRef<'h>,
-) -> Result<Trampoline<'h>, String> {
-    let mut it = exprs.into_iter().peekable();
-    while let Some(expr_res) = it.next() {
-        let expr = expr_res?;
-        if it.peek().is_some() {
-            let _ = eval(hs, expr, env.clone());
-        } else {
-            return eval_to_tail_call(hs, expr, env);
-        }
-    }
-    return Ok(Trampoline::Value(Nil));
-}
-
 pub fn apply<'h>(
     hs: &mut GcHeapSession<'h>,
     fval: Value<'h>,
@@ -195,11 +161,14 @@ pub fn apply<'h>(
     match fval {
         Builtin(f) => (f.0)(hs, args),
         Lambda(pair) => {
+            let code = match pair.car() {
+                Code(code) => code,
+                _ => panic!("internal error: bad lambda"),
+            };
             let parent = Some(match pair.cdr() {
                 Environment(pe) => pe,
                 _ => panic!("internal error: bad lambda"),
             });
-            let (mut params, body) = parse_pair(pair.car(), "syntax error in lambda")?;
             let names = hs.alloc(Vec::<GcLeaf<InternedString>>::new());
             let values = hs.alloc(Vec::<Value<'h>>::new());
             let env = hs.alloc(Environment {
@@ -208,33 +177,28 @@ pub fn apply<'h>(
                 values,
             });
 
-            let mut i = 0;
-            while let Cons(pair) = params {
-                if i > args.len() {
-                    return Err("apply: not enough arguments".to_string());
-                }
-                if let Symbol(s) = pair.car() {
-                    env.push(s.unwrap(), args[i].clone());
-                } else {
-                    return Err("syntax error in lambda arguments".to_string());
-                }
-                params = pair.cdr();
-                i += 1;
+            let params = code.params();
+            let n = params.len();
+            if args.len() < n {
+                return Err("apply: not enough arguments".to_string());
             }
-            if let Symbol(rest_name) = params {
+            for i in 0..n {
+                env.push(params.get(i).unwrap().clone().unwrap(), args[i].clone());
+            }
+            if let Some(rest_name) = code.rest() {
                 let mut rest_list = Nil;
-                for v in args.drain(i..).rev() {
+                for v in args.drain(n..).rev() {
                     rest_list = Cons(hs.alloc(Pair {
                         car: v,
                         cdr: rest_list,
                     }));
                 }
                 env.push(rest_name.unwrap(), rest_list);
-            } else if i < args.len() {
+            } else if n < args.len() {
                 return Err("apply: too many arguments".to_string());
             }
-            let result = eval_block_body(hs, body, env)?;
-            Ok(result)
+
+            eval_to_tail_call(hs, code.body(), env)
         }
         _ => Err("apply: not a function".to_string()),
     }
@@ -245,112 +209,76 @@ pub fn apply<'h>(
 /// continuing evaluation.
 fn eval_to_tail_call<'h>(
     hs: &mut GcHeapSession<'h>,
-    expr: Value<'h>,
+    expr: Expr<'h>,
     env: EnvironmentRef<'h>,
 ) -> Result<Trampoline<'h>, String> {
     match expr {
-        Symbol(s) => env.get(s.unwrap()).map(Trampoline::Value),
-        Cons(p) => {
-            let f = p.car();
-            if let Symbol(ref s) = f {
-                if s.as_str() == "lambda" {
-                    return Ok(Trampoline::Value(Lambda(hs.alloc(Pair {
-                        car: p.cdr(),
-                        cdr: Value::Environment(env.clone()),
-                    }))));
-                } else if s.as_str() == "quote" {
-                    let (datum, rest) = parse_pair(p.cdr(), "(quote) with no arguments")?;
-                    if !rest.is_nil() {
-                        return Err("too many arguments to (quote)".to_string());
-                    }
-                    return Ok(Trampoline::Value(datum));
-                } else if s.as_str() == "if" {
-                    let (cond, rest) = parse_pair(p.cdr(), "(if) with no arguments")?;
-                    let (t_expr, rest) = parse_pair(rest, "missing arguments after (if COND)")?;
-                    let (f_expr, rest) =
-                        parse_pair(rest, "missing 'else' argument after (if COND X)")?;
-                    if !rest.is_nil() {
-                        return Err("too many arguments in (if) expression".to_string());
-                    }
-                    let cond_result = eval(hs, cond, env.clone())?;
-                    let selected_expr = if cond_result.to_bool() {
-                        t_expr
-                    } else {
-                        f_expr
-                    };
-                    return eval_to_tail_call(hs, selected_expr, env);
-                } else if s.as_str() == "begin" {
-                    return eval_block_body(hs, p.cdr(), env.clone());
-                } else if s.as_str() == "define" {
-                    let (name, rest) = parse_pair(p.cdr(), "(define) with no name")?;
-                    match name {
-                        Symbol(s) => {
-                            let (expr, rest) = parse_pair(rest, "(define) with no value")?;
-                            match rest {
-                                Nil => {}
-                                _ => {
-                                    return Err(
-                                        "too many items in (define) special form".to_string(),
-                                    )
-                                }
-                            };
-
-                            let val = eval(hs, expr, env.clone())?;
-                            env.push(s.unwrap(), val);
-                            return Ok(Trampoline::Value(Nil));
-                        }
-                        Cons(pair) => {
-                            let name = match pair.car() {
-                                Symbol(s) => s,
-                                _ => return Err("(define) with no name".to_string()),
-                            };
-                            let code = Cons(hs.alloc(Pair {
-                                car: pair.cdr(), // formals
-                                cdr: rest,
-                            }));
-                            let f = Lambda(hs.alloc(Pair {
-                                car: code,
-                                cdr: Value::Environment(env.clone()),
-                            }));
-                            env.push(name.unwrap(), f);
-                            return Ok(Trampoline::Value(Nil));
-                        }
-                        _ => {
-                            return Err("(define) with a non-symbol name".to_string());
-                        }
-                    }
-                } else if s.as_str() == "set!" {
-                    let (first, rest) = parse_pair(p.cdr(), "(set!) with no name")?;
-                    let name = first.as_symbol("(set!) first argument must be a name")?;
-                    let (expr, rest) = parse_pair(rest, "(set!) with no value")?;
-                    if !rest.is_nil() {
-                        return Err("(set!): too many arguments".to_string());
-                    }
-                    let val = eval(hs, expr, env.clone())?;
-                    env.set(name, val)?;
-                    return Ok(Trampoline::Value(Nil));
-                }
-            }
-            let func = eval(hs, f, env.clone())?;
-            let args = map_eval(hs, p.cdr(), env)?;
+        Expr::Con(k) =>
+            Ok(Trampoline::Value(k)),
+        Expr::Var(s) =>
+            Ok(Trampoline::Value(env.get(s.unwrap())?)),
+        Expr::Fun(code) =>
+            Ok(Trampoline::Value(Lambda(hs.alloc(Pair {
+                car: Value::Code(code),
+                cdr: Value::Environment(env.clone()),
+            })))),
+        Expr::App(subexprs) => {
+            let func = eval_compiled(hs, subexprs.get(0), env.clone())?;
+            let args: Vec<Value<'h>> =
+                (1..subexprs.len())
+                .map(|i| eval_compiled(hs, subexprs.get(i), env.clone()))
+                .collect::<Result<Vec<Value<'h>>, String>>()?;
             Ok(Trampoline::TailCall { func, args })
         }
-        Builtin(_) => Err(format!("builtin function found in source code")),
-        Vector(_) => Err(format!("vectors are not expressions")),
-        Nil => Err(format!("expected expression, got ()")),
-        _ => Ok(Trampoline::Value(expr)),  // numbers are self-evaluating
+        Expr::Seq(exprs) => {
+            let len = exprs.len();
+            if len == 0 {
+                Ok(Trampoline::Value(Nil))
+            } else {
+                for i in 0..(len - 1) {
+                    eval_compiled(hs, exprs.get(i), env.clone())?;
+                }
+                eval_to_tail_call(hs, exprs.get(len - 1), env)
+            }
+        }
+        Expr::If(if_parts) => {
+            let cond_value = eval_compiled(hs, if_parts.cond(), env.clone())?;
+            let selected_expr =
+                if cond_value.to_bool() {
+                    if_parts.t_expr()
+                } else {
+                    if_parts.f_expr()
+                };
+            eval_to_tail_call(hs, selected_expr, env)
+        }
+        Expr::Def(def) => {
+            let val = eval_compiled(hs, def.value(), env.clone())?;
+            env.push(def.name().unwrap(), val);
+            Ok(Trampoline::Value(Nil))
+        }
+        Expr::Set(def) => {
+            let val = eval_compiled(hs, def.value(), env.clone())?;
+            env.set(def.name().unwrap(), val)?;
+            Ok(Trampoline::Value(Nil))
+        }
     }
 }
 
-/// Evaluate the give expression in the given environment, and return the
-/// resulting value.
+pub fn eval_compiled<'h>(
+    hs: &mut GcHeapSession<'h>,
+    expr: Expr<'h>,
+    env: EnvironmentRef<'h>,
+) -> Result<Value<'h>, String> {
+    let tail = eval_to_tail_call(hs, expr, env)?;
+    tail.eval(hs)
+}
+
 pub fn eval<'h>(
     hs: &mut GcHeapSession<'h>,
     expr: Value<'h>,
     env: EnvironmentRef<'h>,
 ) -> Result<Value<'h>, String> {
-    let tail = eval_to_tail_call(hs, expr, env)?;
-    tail.eval(hs)
+    compile::compile(hs, expr).and_then(|expr| eval_compiled(hs, expr, env))
 }
 
 #[cfg(test)]
