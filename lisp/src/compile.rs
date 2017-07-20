@@ -36,8 +36,8 @@ pub enum Expr<'h> {
 
 #[derive(IntoHeap)]
 pub struct Code<'h> {
-    pub params: Vec<GcLeaf<InternedString>>,
-    pub rest: Option<GcLeaf<InternedString>>,
+    pub params: VecRef<'h, GcLeaf<InternedString>>,
+    pub rest: bool,
     pub body: Expr<'h>,
 }
 
@@ -219,10 +219,10 @@ pub fn compile_expr<'h>(
                 if s.as_str() == "lambda" {
                     let (mut param_list, body_forms) = p.cdr().as_pair("syntax error in lambda")?;
 
-                    let mut params = vec![];
+                    let mut names = vec![];
                     while let Cons(pair) = param_list {
                         if let Symbol(s) = pair.car() {
-                            params.push(s);
+                            names.push(s);
                         } else {
                             return Err("syntax error in lambda arguments".to_string());
                         }
@@ -230,11 +230,15 @@ pub fn compile_expr<'h>(
                     }
                     let rest =
                         match param_list {
-                            Nil => None,
-                            Symbol(rest_name) => Some(rest_name),
+                            Nil => false,
+                            Symbol(rest_name) => {
+                                names.push(rest_name);
+                                true
+                            }
                             _ => return Err("syntax error in lambda arguments".to_string())
                         };
 
+                    let params = hs.alloc(names);
                     let body = compile_body(hs, body_forms)?;
                     return Ok(Expr::Fun(hs.alloc(Code { params, rest, body })));
                 } else if s.as_str() == "quote" {

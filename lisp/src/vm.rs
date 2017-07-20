@@ -139,34 +139,34 @@ pub fn apply<'h>(
                 Environment(pe) => pe,
                 _ => panic!("internal error: bad lambda"),
             });
-            let names = hs.alloc(Vec::<GcLeaf<InternedString>>::new());
-            let values = hs.alloc(Vec::<Value<'h>>::new());
-            let env = hs.alloc(Environment {
-                parent,
-                names,
-                values,
-            });
+            let names = code.params();
+            let n_names = names.len();
+            let has_rest = code.rest();
 
-            let params = code.params();
-            let n = params.len();
-            if args.len() < n {
+            let n_required_params = n_names - has_rest as usize;
+            if args.len() < n_required_params {
                 return Err("apply: not enough arguments".to_string());
             }
-            for i in 0..n {
-                env.push(params.get(i).unwrap().clone().unwrap(), args[i].clone());
-            }
-            if let Some(rest_name) = code.rest() {
+            if has_rest {
                 let mut rest_list = Nil;
-                for v in args.drain(n..).rev() {
+                for v in args.drain(n_required_params..).rev() {
                     rest_list = Cons(hs.alloc(Pair {
                         car: v,
                         cdr: rest_list,
                     }));
                 }
-                env.push(rest_name.unwrap(), rest_list);
-            } else if n < args.len() {
+                args.push(rest_list);
+            } else if args.len() > n_required_params {
                 return Err("apply: too many arguments".to_string());
             }
+
+            assert_eq!(names.len(), args.len());
+            let values = hs.alloc(args);
+            let env = hs.alloc(Environment {
+                parent,
+                names,
+                values,
+            });
 
             eval_to_tail_call(hs, code.body(), env)
         }
