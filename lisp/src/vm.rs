@@ -56,16 +56,15 @@ impl<'h> Environment<'h> {
         builtins::define_builtins(hs, env.clone());
 
         const PRELUDE: &'static str = include_str!("prelude.sch");
-        let prelude = match parse::parse(hs, PRELUDE) {
-            Ok(forms) => forms,
-            Err(err) => panic!("unexpected error parsing prelude: {}", err),
-        };
+        let _ = eval_str(hs, env.clone(), PRELUDE).expect("unexpected error running the prelude");
+        const EXPANDER_CODE: &'static str =
+            concat!(
+                include_str!("syntax-case-support.sch"),
+                include_str!("psyntax.pp"),
+                "\nsc-expand\n");
+        let expander = eval_str(hs, env.clone(), EXPANDER_CODE).expect("unexpected error initializing the expander");
+        env.set_expander(expander);
 
-        for expr in prelude {
-            if let Err(err) = eval(hs, expr, env.clone()) {
-                panic!("unexpected error evaluating prelude: {}", err);
-            }
-        }
         env
     }
 }
@@ -99,6 +98,21 @@ impl<'h> EnvironmentRef<'h> {
         let (env, i) = self.lookup(name)?;
         env.values().set(i, value);
         Ok(())
+    }
+
+    pub fn define(&self, key: InternedString, value: Value<'h>) {
+        let names = self.names();
+        for i in 0..names.len() {
+            if key == *names.get(i) {
+                self.values().set(i, value);
+                return;
+            }
+        }
+        self.push(key, value);
+    }
+
+    pub fn set_expander(&self, expander: Value<'h>) {
+        self.define(EXPANDER_SYMBOL.clone(), expander);
     }
 }
 
@@ -270,13 +284,33 @@ pub fn eval_compiled<'h>(
     tail.eval(hs)
 }
 
+lazy_static! {
+    static ref EXPANDER_SYMBOL: InternedString = InternedString::gensym();
+}
+
 pub fn eval<'h>(
     hs: &mut GcHeapSession<'h>,
-    expr: Value<'h>,
+    mut expr: Value<'h>,
     env: EnvironmentRef<'h>,
 ) -> Result<Value<'h>, String> {
+    if let Ok(expander) = env.get(EXPANDER_SYMBOL.clone()) {
+        let args = vec![expr];
+        let tail = apply(hs, expander, args)?;
+        expr = tail.eval(hs)?;
+    }
+
     let expr = compile::compile_toplevel(hs, expr)?;
     eval_compiled(hs, expr, env)
+}
+
+fn eval_str<'h>(hs: &mut GcHeapSession<'h>, env: EnvironmentRef<'h>, code: &str) -> Result<Value<'h>, String> {
+    let forms = parse::parse(hs, code)?;
+
+    let mut result = Value::Nil;
+    for form in forms {
+        result = eval(hs, form, env.clone())?;
+    }
+    Ok(result)
 }
 
 #[cfg(test)]
