@@ -214,6 +214,13 @@ impl<'h> Value<'h> {
             _ => false,
         }
     }
+
+    pub fn as_environment(self, error_msg: &str) -> Result<EnvironmentRef<'h>, String> {
+        match self {
+            Environment(env) => Ok(env),
+            _ => Err(error_msg.to_string())
+        }
+    }
 }
 
 impl<'h> Iterator for Value<'h> {

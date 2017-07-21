@@ -32,6 +32,10 @@ pub enum Expr<'h> {
 
     /// A `letrec*` expression.
     Letrec(LetrecRef<'h>),
+
+    /// Evaluates to the current global environment.
+    /// Used to implement (interactive-environment), for (eval).
+    ToplevelEnv,
 }
 
 #[derive(IntoHeap)]

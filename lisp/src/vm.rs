@@ -50,7 +50,7 @@ impl<'h> Environment<'h> {
         };
         let env = hs.alloc(env);
 
-        builtins::define_builtins(env.clone());
+        builtins::define_builtins(hs, env.clone());
 
         const PRELUDE: &'static str = include_str!("prelude.sch");
         let prelude = match parse::parse(hs, PRELUDE) {
@@ -177,7 +177,7 @@ pub fn apply<'h>(
 /// Evaluate `expr` until we reach a tail call, at which point it is packaged up
 /// as a `Trampoline::TailCall` and returned so we can unwind the stack before
 /// continuing evaluation.
-fn eval_to_tail_call<'h>(
+pub fn eval_to_tail_call<'h>(
     hs: &mut GcHeapSession<'h>,
     expr: Expr<'h>,
     env: EnvironmentRef<'h>,
@@ -247,6 +247,13 @@ fn eval_to_tail_call<'h>(
             let val = eval_compiled(hs, def.value(), env.clone())?;
             env.set(def.name().unwrap(), val)?;
             Ok(Trampoline::Value(Nil))
+        }
+        Expr::ToplevelEnv => {
+            let mut env = env;
+            while let Some(parent) = env.parent() {
+                env = parent;
+            }
+            Ok(Trampoline::Value(Value::Environment(env)))
         }
     }
 }

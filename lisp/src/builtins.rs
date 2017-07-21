@@ -1,7 +1,8 @@
 use cell_gc::{GcHeapSession, GcLeaf};
+use compile;
 use value::{BuiltinFn, BuiltinFnPtr, Pair, Value, InternedString};
 use value::Value::*;
-use vm::{EnvironmentRef, Trampoline};
+use vm::{self, EnvironmentRef, Trampoline};
 
 // Builtin function definitions ////////////////////////////////////////////////
 
@@ -418,6 +419,19 @@ fn gensym_question<'h>(
     })
 }
 
+fn eval<'h>(
+    hs: &mut GcHeapSession<'h>,
+    args: Vec<Value<'h>>,
+) -> Result<Trampoline<'h>, String> {
+    if args.len() != 2 {
+        return Err("eval: 2 arguments required".into());
+    }
+    let expr = args[0].clone();
+    let expr_compiled = compile::compile_toplevel(hs, expr)?;
+    let env = args[1].clone().as_environment("eval: environment required")?;
+
+    vm::eval_to_tail_call(hs, expr_compiled, env)
+}
 
 // Builtin function list ///////////////////////////////////////////////////////
 
@@ -437,6 +451,7 @@ pub static BUILTINS: &[(&'static str, BuiltinFn)] = &[
     ("cons", cons),
     ("eqv?", eqv_question),
     ("eq?", eq_question),
+    ("eval", eval),
     ("gensym", gensym),
     ("gensym?", gensym_question),
     ("print", print),
@@ -455,11 +470,32 @@ pub static BUILTINS: &[(&'static str, BuiltinFn)] = &[
     ("vector-ref", vector_ref),
 ];
 
-pub fn define_builtins<'h>(env: EnvironmentRef<'h>) {
+pub fn define_builtins<'h>(hs: &mut GcHeapSession<'h>, env: EnvironmentRef<'h>) {
     for &(name, f) in BUILTINS {
         env.push(
             InternedString::get(name),
             Builtin(GcLeaf::new(BuiltinFnPtr(f))),
         );
     }
+
+    // One last extension, implemented as a "lambda" because builtins don't
+    // have an environment pointer. It is not actually possible to write this
+    // lambda in scheme, though.
+    use compile::{Expr, Code, CodeRef};
+
+    let params = hs.alloc(vec![]);
+    let code: CodeRef<'h> =
+        hs.alloc(Code {
+            params,
+            rest: false,
+            body: Expr::ToplevelEnv,
+        });
+    let interaction_environment_fn =
+        Lambda(hs.alloc(Pair {
+            car: Value::Code(code),
+            cdr: Value::Environment(env.clone()),
+        }));
+    env.push(
+        InternedString::get("interaction-environment"),
+        interaction_environment_fn);
 }
