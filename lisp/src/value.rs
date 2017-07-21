@@ -109,20 +109,20 @@ fn write_pair<'h>(f: &mut fmt::Formatter, pair: PairRef<'h>) -> fmt::Result {
     }
 }
 
-impl<'h> Value<'h> {
-    pub fn is_nil(&self) -> bool {
-        match *self {
-            Nil => true,
-            _ => false,
+macro_rules! pattern_predicate {
+    { $method:ident, $pat:pat } => {
+        pub fn $method(&self) -> bool {
+            match *self {
+                $pat => true,
+                _ => false
+            }
         }
     }
+}
 
-    pub fn is_boolean(&self) -> bool {
-        match *self {
-            Bool(_) => true,
-            _ => false,
-        }
-    }
+impl<'h> Value<'h> {
+    pattern_predicate!(is_nil, Nil);
+    pattern_predicate!(is_boolean, Bool(_));
 
     /// True unless this value is `#f`. Conditional expressions (`if`, `cond`,
     /// etc.) should use this to check whether a value is a "true value".
@@ -153,12 +153,7 @@ impl<'h> Value<'h> {
         }
     }
 
-    pub fn is_pair(&self) -> bool {
-        match *self {
-            Cons(_) => true,
-            _ => false,
-        }
-    }
+    pattern_predicate!(is_pair, Cons(_));
 
     pub fn as_pair(self, msg: &'static str) -> Result<(Value<'h>, Value<'h>), String> {
         match self {
@@ -167,12 +162,7 @@ impl<'h> Value<'h> {
         }
     }
 
-    pub fn is_vector(&self) -> bool {
-        match *self {
-            Vector(_) => true,
-            _ => false,
-        }
-    }
+    pattern_predicate!(is_vector, Vector(_));
 
     pub fn as_vector(self, error_msg: &str) -> Result<VecRef<'h, Value<'h>>, String> {
         match self {
@@ -181,12 +171,7 @@ impl<'h> Value<'h> {
         }
     }
 
-    pub fn is_symbol(&self) -> bool {
-        match *self {
-            Symbol(_) => true,
-            _ => false
-        }
-    }
+    pattern_predicate!(is_symbol, Symbol(_));
 
     pub fn as_symbol(self, error_msg: &str) -> Result<InternedString, String> {
         match self {
@@ -195,12 +180,7 @@ impl<'h> Value<'h> {
         }
     }
 
-    pub fn is_string(&self) -> bool {
-        match *self {
-            ImmString(_) => true,
-            _ => false
-        }
-    }
+    pattern_predicate!(is_string, ImmString(_));
 
     pub fn as_string(self, error_msg: &str) -> Result<InternedString, String> {
         match self {
