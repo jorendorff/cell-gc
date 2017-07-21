@@ -312,3 +312,9 @@ impl InternedString {
 
     pub fn is_gensym(&self) -> bool { !self.is_interned() }
 }
+
+impl Borrow<str> for InternedString {
+    fn borrow(&self) -> &str {
+        self.as_str()
+    }
+}

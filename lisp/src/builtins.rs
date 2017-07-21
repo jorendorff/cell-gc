@@ -254,9 +254,20 @@ fn sub<'h>(
     }
 }
 
+fn number_to_string<'h>(
+    _hs: &mut GcHeapSession<'h>,
+    args: Vec<Value<'h>>,
+) -> Result<Trampoline<'h>, String> {
+    if args.len() != 1 {
+        return Err("number->string: 1 argument required".to_string());
+    }
+    let n = args[0].clone().as_int("number->string")?;
+    let s = InternedString::get(&format!("{}", n));  // heurgh!
+    Ok(Trampoline::Value(Value::ImmString(GcLeaf::new(s))))
+}
+
 
 // 6.6 Characters
-
 fn char_question<'h>(
     _hs: &mut GcHeapSession<'h>,
     args: Vec<Value<'h>>,
@@ -415,6 +426,36 @@ fn string_question<'h>(
     simple_predicate("string?", args, |v| v.is_string())
 }
 
+fn string_length<'h>(
+    _hs: &mut GcHeapSession<'h>,
+    args: Vec<Value<'h>>,
+) -> Result<Trampoline<'h>, String> {
+    if args.len() != 1 {
+        return Err("string-length: 1 argument required".to_string());
+    }
+    let s = args[0].clone().as_string("string-length")?;
+    let n = s.as_str().chars().count();  // bleurgh! O(n)
+    if n > i32::max_value() as usize {
+        return Err("string-length: integer overflow".into());
+    }
+    Ok(Trampoline::Value(Value::Int(n as i32)))
+}
+
+fn string_ref<'h>(
+    _hs: &mut GcHeapSession<'h>,
+    args: Vec<Value<'h>>,
+) -> Result<Trampoline<'h>, String> {
+    if args.len() != 2 {
+        return Err("string-ref: 2 arguments required".into())
+    }
+    let s = args[0].clone().as_string("string-ref")?;
+    let i = args[1].clone().as_index("string-ref")?;
+    match s.as_str().chars().nth(i) {  // bleurgh! O(n)
+        Some(c) => Ok(Trampoline::Value(Value::Char(c))),
+        None => Err("string-ref: index out of range".into())
+    }
+}
+
 fn string_eq_question<'h>(
     _hs: &mut GcHeapSession<'h>,
     mut args: Vec<Value<'h>>,
@@ -426,6 +467,36 @@ fn string_eq_question<'h>(
     let a = args.pop().unwrap().as_string("string=?")?;
     Ok(Trampoline::Value(Bool(a.as_str() == b.as_str())))
 }
+
+fn string_append<'h>(
+    _hs: &mut GcHeapSession<'h>,
+    args: Vec<Value<'h>>,
+) -> Result<Trampoline<'h>, String> {
+    let s =
+        args.into_iter()
+        .map(|v| v.as_string("string-append"))
+        .collect::<Result<Vec<InternedString>, String>>()?
+        .concat();
+
+    let in_str = InternedString::get(&s);
+    Ok(Trampoline::Value(Value::ImmString(GcLeaf::new(in_str))))
+}
+
+fn list_to_string<'h>(
+    _hs: &mut GcHeapSession<'h>,
+    args: Vec<Value<'h>>,
+) -> Result<Trampoline<'h>, String> {
+    if args.len() != 1 {
+        return Err("list->string: 1 argument required".into());
+    }
+    let s: String =
+        args.into_iter()
+        .map(|v| v.as_char("list->string: list of characters required"))
+        .collect::<Result<String, String>>()?;
+    let in_str = InternedString::get(&s);
+    Ok(Trampoline::Value(Value::ImmString(GcLeaf::new(in_str))))
+}
+
 
 // 6.8 Vectors
 fn vector_question<'h>(
@@ -612,12 +683,17 @@ pub static BUILTINS: &[(&'static str, BuiltinFn)] = &[
     ("gensym?", gensym_question),
     ("print", print),
     ("boolean?", boolean_question),
+    ("list->string", list_to_string),
     ("null?", null_question),
+    ("number->string", number_to_string),
     ("pair?", pair_question),
     ("procedure?", procedure_question),
     ("string->symbol", string_to_symbol),
     ("string?", string_question),
     ("string=?", string_eq_question),
+    ("string-append", string_append),
+    ("string-length", string_length),
+    ("string-ref", string_ref),
     ("symbol->string", symbol_to_string),
     ("symbol?", symbol_question),
     ("vector?", vector_question),
