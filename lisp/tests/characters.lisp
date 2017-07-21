@@ -1,5 +1,9 @@
 ;; R4RS 6.6 Characters
 
+(assert (char=? #\  #\space))
+(assert (char=? #\newline  #\
+))
+
 (assert (char<? #\A #\B))
 (assert (char<? #\a #\b))
 (assert (char<? #\0 #\9))

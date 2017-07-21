@@ -118,9 +118,9 @@ named!(
 named!(
     character(&str) -> char,
     alt!(
-        preceded!(tag!("#\\"), none_of!(""))
-      | value!(' ', terminated!(tag!("#\\space"), peek!(delimiter)))
+        value!(' ', terminated!(tag!("#\\space"), peek!(delimiter)))
       | value!('\n', terminated!(tag!("#\\newline"), peek!(delimiter)))
+      | preceded!(tag!("#\\"), none_of!(""))
     )
 );
 
