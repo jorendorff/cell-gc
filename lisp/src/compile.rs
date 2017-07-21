@@ -280,7 +280,12 @@ pub fn compile_expr<'h>(
                     // In expression context, definitions aren't allowed.
                     return Err("(define) is allowed only at toplevel or in the body \
                                 of a function or let-form".into());
-                } else if s.as_str() == "letrec*" {
+                } else if s.as_str() == "letrec" || s.as_str() == "letrec*" {
+                    // Treat (letrec) forms just like (letrec*). Nonstandard in
+                    // R6RS, which requires implementations to detect invalid
+                    // references to letrec bindings before they're bound. But
+                    // R5RS does not require this, and anyway well-behaved
+                    // programs won't care.
                     let (bindings, body_forms) = p.cdr().as_pair("letrec*: bindings required")?;
                     let mut names = vec![];
                     let mut exprs = vec![];
