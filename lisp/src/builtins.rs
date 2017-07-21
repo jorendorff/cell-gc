@@ -142,32 +142,15 @@ fn string_to_symbol<'h>(
 }
 
 // 6.5 Numbers
-fn numeric_eq<'h>(
-    _hs: &mut GcHeapSession<'h>,
-    args: Vec<Value<'h>>,
-) -> Result<Trampoline<'h>, String> {
-    let mut it = args.into_iter();
-    if let Some(arg0) = it.next() {
-        let z0 = arg0.as_int("=")?;
-        for arg in it {
-            let z = arg.as_int("=")?;
-            if !(z0 == z) {
-                return Ok(Trampoline::Value(Bool(false)));
-            }
-        }
-    }
-    Ok(Trampoline::Value(Bool(true)))
-}
-
-fn numeric_compare<'h, F>(args: Vec<Value<'h>>, cmp: F) -> Result<Trampoline<'h>, String>
+fn numeric_compare<'h, F>(name: &'static str, args: Vec<Value<'h>>, cmp: F) -> Result<Trampoline<'h>, String>
 where
     F: Fn(i32, i32) -> bool,
 {
     let mut it = args.into_iter();
     if let Some(arg0) = it.next() {
-        let mut prev = arg0.as_int("=")?;
+        let mut prev = arg0.as_int(name)?;
         for arg in it {
-            let x = arg.as_int("=")?;
+            let x = arg.as_int(name)?;
             if !cmp(prev, x) {
                 return Ok(Trampoline::Value(Bool(false)));
             }
@@ -177,32 +160,39 @@ where
     Ok(Trampoline::Value(Bool(true)))
 }
 
+fn numeric_eq<'h>(
+    _hs: &mut GcHeapSession<'h>,
+    args: Vec<Value<'h>>,
+) -> Result<Trampoline<'h>, String> {
+    numeric_compare("=", args, |a, b| a == b)
+}
+
 fn numeric_lt<'h>(
     _hs: &mut GcHeapSession<'h>,
     args: Vec<Value<'h>>,
 ) -> Result<Trampoline<'h>, String> {
-    numeric_compare(args, |a, b| a < b)
+    numeric_compare("<", args, |a, b| a < b)
 }
 
 fn numeric_gt<'h>(
     _hs: &mut GcHeapSession<'h>,
     args: Vec<Value<'h>>,
 ) -> Result<Trampoline<'h>, String> {
-    numeric_compare(args, |a, b| a > b)
+    numeric_compare(">", args, |a, b| a > b)
 }
 
 fn numeric_le<'h>(
     _hs: &mut GcHeapSession<'h>,
     args: Vec<Value<'h>>,
 ) -> Result<Trampoline<'h>, String> {
-    numeric_compare(args, |a, b| a <= b)
+    numeric_compare("<=", args, |a, b| a <= b)
 }
 
 fn numeric_ge<'h>(
     _hs: &mut GcHeapSession<'h>,
     args: Vec<Value<'h>>,
 ) -> Result<Trampoline<'h>, String> {
-    numeric_compare(args, |a, b| a >= b)
+    numeric_compare(">=", args, |a, b| a >= b)
 }
 
 fn add<'h>(
@@ -263,6 +253,159 @@ fn sub<'h>(
         Ok(Trampoline::Value(Int(total)))
     }
 }
+
+
+// 6.6 Characters
+
+fn char_question<'h>(
+    _hs: &mut GcHeapSession<'h>,
+    args: Vec<Value<'h>>,
+) -> Result<Trampoline<'h>, String> {
+    simple_predicate("char?", args, |v| v.is_char())
+}
+
+fn char_compare<'h, F>(name: &'static str, args: Vec<Value<'h>>, cmp: F) -> Result<Trampoline<'h>, String>
+where
+    F: Fn(char, char) -> bool,
+{
+    let mut it = args.into_iter();
+    if let Some(arg0) = it.next() {
+        let mut prev = arg0.as_char(name)?;
+        for arg in it {
+            let x = arg.as_char(name)?;
+            if !cmp(prev, x) {
+                return Ok(Trampoline::Value(Bool(false)));
+            }
+            prev = x;
+        }
+    }
+    Ok(Trampoline::Value(Bool(true)))
+}
+
+fn char_eq<'h>(
+    _hs: &mut GcHeapSession<'h>,
+    args: Vec<Value<'h>>,
+) -> Result<Trampoline<'h>, String> {
+    char_compare("char=?", args, |a, b| a == b)
+}
+
+fn char_lt<'h>(
+    _hs: &mut GcHeapSession<'h>,
+    args: Vec<Value<'h>>,
+) -> Result<Trampoline<'h>, String> {
+    char_compare("char<?", args, |a, b| a < b)
+}
+
+fn char_gt<'h>(
+    _hs: &mut GcHeapSession<'h>,
+    args: Vec<Value<'h>>,
+) -> Result<Trampoline<'h>, String> {
+    char_compare("char>?", args, |a, b| a > b)
+}
+
+fn char_le<'h>(
+    _hs: &mut GcHeapSession<'h>,
+    args: Vec<Value<'h>>,
+) -> Result<Trampoline<'h>, String> {
+    char_compare("char<=?", args, |a, b| a <= b)
+}
+
+fn char_ge<'h>( // CHAAAAARGE!
+    _hs: &mut GcHeapSession<'h>,
+    args: Vec<Value<'h>>,
+) -> Result<Trampoline<'h>, String> {
+    char_compare("char>=?", args, |a, b| a >= b)
+}
+
+fn char_predicate<'h, F>(
+    name: &'static str,
+    args: Vec<Value<'h>>,
+    f: F
+) -> Result<Trampoline<'h>, String>
+    where
+    F: Fn(char) -> bool,
+{
+    if args.len() != 1 {
+        return Err(format!("{}: 1 argument required", name));
+    }
+    let c = args[0].clone().as_char("character required")?;
+    Ok(Trampoline::Value(Value::Bool(f(c))))
+}
+
+fn char_alphabetic_question<'h>(
+    _hs: &mut GcHeapSession<'h>,
+    args: Vec<Value<'h>>,
+) -> Result<Trampoline<'h>, String> {
+    char_predicate("char-alphabetic?", args, |c| c.is_alphabetic())
+}
+
+fn char_numeric_question<'h>(
+    _hs: &mut GcHeapSession<'h>,
+    args: Vec<Value<'h>>,
+) -> Result<Trampoline<'h>, String> {
+    char_predicate("char-numeric?", args, |c| c.is_numeric())
+}
+
+fn char_whitespace_question<'h>(
+    _hs: &mut GcHeapSession<'h>,
+    args: Vec<Value<'h>>,
+) -> Result<Trampoline<'h>, String> {
+    char_predicate("char-whitespace?", args, |c| c.is_whitespace())
+}
+
+fn char_upper_case_question<'h>(
+    _hs: &mut GcHeapSession<'h>,
+    args: Vec<Value<'h>>,
+) -> Result<Trampoline<'h>, String> {
+    char_predicate("char-upper-case?", args, |c| c.is_uppercase())
+}
+
+fn char_lower_case_question<'h>(
+    _hs: &mut GcHeapSession<'h>,
+    args: Vec<Value<'h>>,
+) -> Result<Trampoline<'h>, String> {
+    char_predicate("char-lower-case?", args, |c| c.is_lowercase())
+}
+
+fn char_upcase<'h>(
+    _hs: &mut GcHeapSession<'h>,
+    args: Vec<Value<'h>>,
+) -> Result<Trampoline<'h>, String> {
+    if args.len() != 1 {
+        return Err("char-upcase: 1 argument required".into());
+    }
+    let c = args[0].clone().as_char("char-upcase: character required")?;
+
+    // I think the only character that doesn't upcase to a single character is
+    // U+00DF LATIN SMALL LETTER SHARP S ('ß'). Guile returns it unchanged.
+    // Fine with me.
+    let mut up = c.to_uppercase();
+    let result = match (up.next(), up.next()) {
+        (Some(d), None) => d,
+        _ => c
+    };
+
+    Ok(Trampoline::Value(Value::Char(result)))
+}
+
+fn char_downcase<'h>(
+    _hs: &mut GcHeapSession<'h>,
+    args: Vec<Value<'h>>,
+) -> Result<Trampoline<'h>, String> {
+    if args.len() != 1 {
+        return Err("char-downcase: 1 argument required".into());
+    }
+    let c = args[0].clone().as_char("char-downcase: character required")?;
+
+    // I think the only character that doesn't downcase to a single character
+    // is U+0130 LATIN CAPITAL LETTER I WITH DOT ABOVE ('İ'). Guile converts it
+    // to 'i'.  Fine with me.
+    let mut up = c.to_lowercase();
+    let result = up.next().unwrap_or(c);
+
+    Ok(Trampoline::Value(Value::Char(result)))
+}
+
 
 // 6.7 Strings
 fn string_question<'h>(
@@ -448,6 +591,19 @@ pub static BUILTINS: &[(&'static str, BuiltinFn)] = &[
     ("assert", assert),
     ("car", car),
     ("cdr", cdr),
+    ("char?", char_question),
+    ("char=?", char_eq),
+    ("char<?", char_lt),
+    ("char>?", char_gt),
+    ("char<=?", char_le),
+    ("char>=?", char_ge),
+    ("char-alphabetic?", char_alphabetic_question),
+    ("char-numeric?", char_numeric_question),
+    ("char-whitespace?", char_whitespace_question),
+    ("char-upper-case?", char_upper_case_question),
+    ("char-lower-case?", char_lower_case_question),
+    ("char-upcase", char_upcase),
+    ("char-downcase", char_downcase),
     ("cons", cons),
     ("eqv?", eqv_question),
     ("eq?", eq_question),

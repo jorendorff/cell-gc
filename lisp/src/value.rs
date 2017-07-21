@@ -133,6 +133,15 @@ impl<'h> Value<'h> {
         }
     }
 
+    pattern_predicate!(is_char, Char(_));
+
+    pub fn as_char(self, error_msg: &str) -> Result<char, String> {
+        match self {
+            Char(c) => Ok(c),
+            _ => Err(format!("{}: character required", error_msg))
+        }
+    }
+
     pub fn as_int(self, error_msg: &str) -> Result<i32, String> {
         match self {
             Int(i) => Ok(i),

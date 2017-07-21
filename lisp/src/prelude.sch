@@ -9,6 +9,12 @@
 (define (abs x) (if (< x 0) (- x) x))
 (define magnitude abs)
 ;
+(define (char-ci=?  x y) (char=?  (char-downcase x) (char-downcase y)))
+(define (char-ci>?  x y) (char>?  (char-downcase x) (char-downcase y)))
+(define (char-ci<?  x y) (char<?  (char-downcase x) (char-downcase y)))
+(define (char-ci>=? x y) (char>=? (char-downcase x) (char-downcase y)))
+(define (char-ci<=? x y) (char<=? (char-downcase x) (char-downcase y)))
+;
 (define (map f ls . more)
   (define (map1 l)
     (if (null? l)
