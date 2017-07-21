@@ -334,6 +334,7 @@ pub fn compile_expr<'h>(
         // Self-evaluating values.
         Bool(v) => Ok(Expr::Con(Bool(v))),
         Int(v) => Ok(Expr::Con(Int(v))),
+        Char(v) => Ok(Expr::Con(Char(v))),
         ImmString(v) => Ok(Expr::Con(ImmString(v))),
 
         // Everything else is an error.

@@ -39,6 +39,7 @@ macro_rules! test {
 
 test!(begin);
 test!(booleans);
+test!(characters);
 test!(closure);
 test!(cons);
 test!(double);

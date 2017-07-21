@@ -13,7 +13,7 @@ use value::{InternedString, Pair, Value};
 //     Identifier(Arc<String>),
 //     Boolean(bool),
 //     Number(String),
-//     Character(char),
+//     Char(char),
 //     String(Arc<String>),
 //     Open,
 //     Close,
@@ -38,7 +38,7 @@ fn push_char(mut s: String, c: char) -> String {
 //             map!(identifier, |s| Token::Identifier(Arc::new(s)))
 //           | map!(boolean, Token::Boolean)
 //           | map!(number, Token::Number)
-//           | map!(character, Token::Character)
+//           | map!(character, Token::Char)
 //           | map!(string, |s| Token::String(Arc::new(s)))
 //           | value!(Token::Open, open)
 //           | value!(Token::Close, char!(')'))
@@ -119,8 +119,8 @@ named!(
     character(&str) -> char,
     alt!(
         preceded!(tag!("#\\"), none_of!(""))
-      | value!(' ', tag!("#\\space"))
-      | value!('\n', tag!("#\\newline"))
+      | value!(' ', terminated!(tag!("#\\space"), peek!(delimiter)))
+      | value!('\n', terminated!(tag!("#\\newline"), peek!(delimiter)))
     )
 );
 
@@ -173,7 +173,7 @@ named!(
 enum Datum {
     Boolean(bool),
     Number(String),
-    Character(char),
+    Char(char),
     String(String),
     Identifier(String),
     List(Vec<Datum>),
@@ -248,7 +248,7 @@ named!(
     alt!(
         map!(boolean, Datum::Boolean)
       | map!(number, Datum::Number)
-      | map!(character, Datum::Character)
+      | map!(character, Datum::Char)
       | map!(string, Datum::String)
       | map!(identifier, Datum::Identifier)
     )
@@ -371,7 +371,7 @@ fn datum_to_value<'h>(hs: &mut GcHeapSession<'h>, datum: Datum) -> Result<Value<
                 Err("unsupported number token")
             }
         }
-        Datum::Character(_) => Err("character tokens not supported"),
+        Datum::Char(c) => Ok(Value::Char(c)),
         Datum::String(s) => Ok(Value::ImmString(GcLeaf::new(InternedString::get(&s)))),
         Datum::Identifier(s) => Ok(Value::Symbol(GcLeaf::new(InternedString::get(&s)))),
         Datum::List(data) => into_list(hs, data, Value::Nil),
