@@ -3,6 +3,22 @@
 ;;; Mon Feb 26 23:22:05 EST 2007
 ;;; see copyright notice in psyntax.ss
 
+(define $sc-put-cte #f)
+(define sc-expand #f)
+(define $make-environment #f)
+(define environment? #f)
+(define interaction-environment #f)
+(define identifier? #f)
+(define syntax->list #f)
+(define syntax-object->datum #f)
+(define datum->syntax-object #f)
+(define generate-temporaries #f)
+(define free-identifier=? #f)
+(define bound-identifier=? #f)
+(define literal-identifier=? #f)
+(define syntax-error #f)
+(define $syntax-dispatch #f)
+
 ((lambda ()
    (letrec ((noexpand62 '"noexpand")
             (make-syntax-object63 (lambda (expression2530 wrap2529)
