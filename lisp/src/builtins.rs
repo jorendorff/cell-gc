@@ -111,6 +111,36 @@ fn null_question<'h>(
     simple_predicate("null?", args, |v| v.is_nil())
 }
 
+fn set_car<'h>(
+    _hs: &mut GcHeapSession<'h>,
+    mut args: Vec<Value<'h>>,
+) -> Result<Trampoline<'h>, String> {
+    if args.len() != 2 {
+        return Err("set-car!: exactly 2 arguments required".into());
+    }
+    let obj = args.pop().unwrap();
+    match args.pop().unwrap() {
+        Cons(pair) => pair.set_car(obj),
+        _ => return Err("set-car!: pair required".into()),
+    }
+    Ok(Trampoline::Value(Nil))
+}
+
+fn set_cdr<'h>(
+    _hs: &mut GcHeapSession<'h>,
+    mut args: Vec<Value<'h>>,
+) -> Result<Trampoline<'h>, String> {
+    if args.len() != 2 {
+        return Err("set-cdr!: exactly 2 arguments required".into());
+    }
+    let obj = args.pop().unwrap();
+    match args.pop().unwrap() {
+        Cons(pair) => pair.set_cdr(obj),
+        _ => return Err("set-cdr!: pair required".into()),
+    }
+    Ok(Trampoline::Value(Nil))
+}
+
 // 6.4 Symbols
 fn symbol_question<'h>(
     _hs: &mut GcHeapSession<'h>,
@@ -688,6 +718,8 @@ pub static BUILTINS: &[(&'static str, BuiltinFn)] = &[
     ("number->string", number_to_string),
     ("pair?", pair_question),
     ("procedure?", procedure_question),
+    ("set-car!", set_car),
+    ("set-cdr!", set_cdr),
     ("string->symbol", string_to_symbol),
     ("string?", string_question),
     ("string=?", string_eq_question),

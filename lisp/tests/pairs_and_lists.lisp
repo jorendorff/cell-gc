@@ -50,10 +50,10 @@
 (assert (eq? (list? '(a b c)) #t))
 (assert (eq? (list? '()) #t))
 (assert (eq? (list? '(a . b)) #f))
-;;(assert (eq? (let ((x (list 'a)))
-;;               (set-cdr! x x)
-;;               (list? x))
-;;             #f))
+(assert (eq? (letrec ((x (list 'a)))
+               (set-cdr! x x)
+               (list? x))
+             #f))
 
 
 ;; `(list obj ...)` returns a newly allocated list of its arguments.
