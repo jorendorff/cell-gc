@@ -49,6 +49,7 @@ test!(y_combinator_2);
 test!(define);
 test!(numerical);
 test!(pairs_and_lists);
+test!(primitive);
 test!(set);
 test!(symbols);
 test!(tail_calls);

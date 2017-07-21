@@ -249,15 +249,20 @@ pub fn compile_expr<'h>(
                     return Ok(Expr::Con(datum));
                 } else if s.as_str() == "if" {
                     let (cond, rest) = p.cdr().as_pair("(if) with no arguments")?;
-                    let (tc, rest) = rest.as_pair("missing arguments after (if COND)")?;
-                    let (fc, rest) =
-                        rest.as_pair("missing 'else' argument after (if COND X)")?;
-                    if !rest.is_nil() {
-                        return Err("too many arguments in (if) expression".to_string());
-                    }
                     let cond = compile_expr(hs, cond)?;
+                    let (tc, rest) = rest.as_pair("missing arguments after (if COND)")?;
                     let t_expr = compile_expr(hs, tc)?;
-                    let f_expr = compile_expr(hs, fc)?;
+                    let f_expr =
+                        if rest == Nil {
+                            Expr::Con(Nil)
+                        } else {
+                            let (fc, rest) =
+                                rest.as_pair("missing 'else' argument after (if COND X)")?;
+                            if !rest.is_nil() {
+                                return Err("too many arguments in (if) expression".to_string());
+                            }
+                            compile_expr(hs, fc)?
+                        };
                     return Ok(Expr::If(hs.alloc(If { cond, t_expr, f_expr })));
                 } else if s.as_str() == "begin" {
                     // In expression context, this is sequencing, not splicing.
