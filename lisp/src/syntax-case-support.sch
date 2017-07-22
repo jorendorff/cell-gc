@@ -107,3 +107,8 @@
                       (letrec ((key-entry (assq key (cdr symbol-entry))))
                         (if key-entry
                             (set-cdr! key-entry #f)))))))
+
+;; These R5RS primitives are possibly the worst idea ever.
+(define values list)
+(define (call-with-values f g)
+  (apply g (f)))
