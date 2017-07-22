@@ -70,6 +70,13 @@
   (if (null? lst) r
       (reverse (cdr lst) (cons (car lst) r))))
 ;
+(define (append l1 . more)
+  (if (null? more) l1
+      (if (null? l1)
+          (apply append more)
+          (cons (car l1)
+                (apply append (cdr l1) more)))))
+;
 (define (memq+ x ls)
   (if (pair? ls)
       (if (eq? (car ls) x) ls
