@@ -292,7 +292,7 @@ fn number_to_string<'h>(
         return Err("number->string: 1 argument required".to_string());
     }
     let n = args[0].clone().as_int("number->string")?;
-    let s = InternedString::get(&format!("{}", n));  // heurgh!
+    let s = InternedString::get(format!("{}", n));  // heurgh!
     Ok(Trampoline::Value(Value::ImmString(GcLeaf::new(s))))
 }
 
@@ -508,7 +508,7 @@ fn string_append<'h>(
         .collect::<Result<Vec<InternedString>, String>>()?
         .concat();
 
-    let in_str = InternedString::get(&s);
+    let in_str = InternedString::get(s);
     Ok(Trampoline::Value(Value::ImmString(GcLeaf::new(in_str))))
 }
 
@@ -523,7 +523,7 @@ fn list_to_string<'h>(
         args.into_iter()
         .map(|v| v.as_char("list->string: list of characters required"))
         .collect::<Result<String, String>>()?;
-    let in_str = InternedString::get(&s);
+    let in_str = InternedString::get(s);
     Ok(Trampoline::Value(Value::ImmString(GcLeaf::new(in_str))))
 }
 

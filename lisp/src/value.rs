@@ -265,12 +265,12 @@ impl InternedString {
         InternedString(Arc::new(format!("#<gensym{}>", n)))
     }
 
-    pub fn get(s: &str) -> InternedString {
+    pub fn get<T: AsRef<str> + Into<String>>(t: T) -> InternedString {
         let mut guard = STRINGS.lock().unwrap();
-        if let Some(x) = guard.get(s) {
+        if let Some(x) = guard.get(t.as_ref()) {
             return InternedString(x.0.clone());
         }
-        let s = Arc::new(s.to_string());
+        let s = Arc::new(t.into());
         guard.insert(InternedStringByValue(s.clone()));
         InternedString(s)
     }

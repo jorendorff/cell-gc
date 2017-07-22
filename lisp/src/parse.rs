@@ -393,8 +393,8 @@ fn datum_to_value<'h>(hs: &mut GcHeapSession<'h>, datum: Datum) -> Result<Value<
             }
         }
         Datum::Char(c) => Ok(Value::Char(c)),
-        Datum::String(s) => Ok(Value::ImmString(GcLeaf::new(InternedString::get(&s)))),
-        Datum::Identifier(s) => Ok(Value::Symbol(GcLeaf::new(InternedString::get(&s)))),
+        Datum::String(s) => Ok(Value::ImmString(GcLeaf::new(InternedString::get(s)))),
+        Datum::Identifier(s) => Ok(Value::Symbol(GcLeaf::new(InternedString::get(s)))),
         Datum::List(data) => into_list(hs, data, Value::Nil),
         Datum::ImproperList(mut data) => {
             let tail = data.pop()
