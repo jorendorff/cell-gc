@@ -117,12 +117,33 @@ named!(
 
 named!(
     character(&str) -> char,
-    alt!(
-        value!(' ', terminated!(tag!("#\\space"), peek!(delimiter)))
-      | value!('\n', terminated!(tag!("#\\newline"), peek!(delimiter)))
-      | preceded!(tag!("#\\"), none_of!(""))
+    terminated!(
+        alt!(
+            value!(' ', tag!("#\\space"))
+          | value!('\n', tag!("#\\newline"))
+          | preceded!(tag!("#\\"), none_of!(""))
+        ),
+        peek!(delimiter)
     )
 );
+
+#[test]
+fn test_character() {
+    assert_eq!(
+        character(r"#\space "),
+        IResult::Done(" ", ' ')
+    );
+    assert_eq!(
+        character(r"#\s "),
+        IResult::Done(" ", 's')
+    );
+    assert!(character(r"#\sp ").is_err());
+    assert_eq!(
+        character(r"#\λ "),
+        IResult::Done(" ", 'λ')
+    );
+    assert!(character(r"#\λx").is_err());
+}
 
 named!(
     string(&str) -> String,
