@@ -536,6 +536,22 @@ fn vector_question<'h>(
     simple_predicate("vector?", args, |v| v.is_vector())
 }
 
+fn make_vector<'h>(
+    hs: &mut GcHeapSession<'h>,
+    args: Vec<Value<'h>>,
+) -> Result<Trampoline<'h>, String> {
+    let value =
+        if args.len() == 1 {
+            Value::Nil
+        } else if args.len() == 2 {
+            args[1].clone()
+        } else {
+            return Err("make-vector: 1 or 2 arguments required".into());
+        };
+    let n = args[0].clone().as_index("make-vector")?;
+    Ok(Trampoline::Value(Vector(hs.alloc(vec![value; n]))))
+}
+
 fn vector<'h>(
     hs: &mut GcHeapSession<'h>,
     args: Vec<Value<'h>>,
@@ -574,6 +590,42 @@ fn vector_ref<'h>(
         ));
     }
     Ok(Trampoline::Value(v.get(index)))
+}
+
+fn vector_set<'h>(
+    _hs: &mut GcHeapSession<'h>,
+    mut args: Vec<Value<'h>>,
+) -> Result<Trampoline<'h>, String> {
+    if args.len() != 3 {
+        return Err("vector-set!: exactly 3 arguments required".into());
+    }
+    let value = args.pop().unwrap();
+    let index = args.pop().unwrap().as_index("vector-set!")?;
+    let v = args.pop().unwrap().as_vector("vector-set!")?;
+    if index >= v.len() {
+        return Err(format!(
+            "vector-set!: index out of bounds (got {}, length {})",
+            index,
+            v.len()
+        ));
+    }
+    v.set(index, value);
+    Ok(Trampoline::Value(Value::Nil))
+}
+
+fn list_to_vector<'h>(
+    hs: &mut GcHeapSession<'h>,
+    args: Vec<Value<'h>>,
+) -> Result<Trampoline<'h>, String> {
+    if args.len() != 1 {
+        return Err("list->vector: exactly 1 argument required".into());
+    }
+
+    let v: Result<Vec<Value<'h>>, String> = args[0].clone()
+        .into_iter()
+        .collect();
+
+    Ok(Trampoline::Value(Value::Vector(hs.alloc(v?))))
 }
 
 // 6.9 Control features
@@ -714,6 +766,8 @@ pub static BUILTINS: &[(&'static str, BuiltinFn)] = &[
     ("print", print),
     ("boolean?", boolean_question),
     ("list->string", list_to_string),
+    ("list->vector", list_to_vector),
+    ("make-vector", make_vector),
     ("null?", null_question),
     ("number->string", number_to_string),
     ("pair?", pair_question),
@@ -732,6 +786,7 @@ pub static BUILTINS: &[(&'static str, BuiltinFn)] = &[
     ("vector", vector),
     ("vector-length", vector_length),
     ("vector-ref", vector_ref),
+    ("vector-set!", vector_set),
 ];
 
 pub fn define_builtins<'h>(hs: &mut GcHeapSession<'h>, env: EnvironmentRef<'h>) {
