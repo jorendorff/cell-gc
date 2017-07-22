@@ -677,9 +677,9 @@ fn print<'h>(
     _hs: &mut GcHeapSession<'h>,
     args: Vec<Value<'h>>,
 ) -> Result<Trampoline<'h>, String> {
-    for v in args {
-        println!("{}", v);
-    }
+    let strings: Vec<String> =
+        args.into_iter().map(|v| format!("{}", v)).collect();
+    println!("{}", strings.join(" "));
     Ok(Trampoline::Value(Nil))
 }
 
