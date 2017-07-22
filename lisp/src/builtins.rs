@@ -456,6 +456,17 @@ fn string_question<'h>(
     simple_predicate("string?", args, |v| v.is_string())
 }
 
+fn string<'h>(
+    _hs: &mut GcHeapSession<'h>,
+    args: Vec<Value<'h>>,
+) -> Result<Trampoline<'h>, String> {
+    let mut s = String::new();
+    for arg in args {
+        s.push(arg.as_char("string")?);
+    }
+    Ok(Trampoline::Value(Value::ImmString(GcLeaf::new(InternedString::get(s)))))
+}
+
 fn string_length<'h>(
     _hs: &mut GcHeapSession<'h>,
     args: Vec<Value<'h>>,
@@ -774,6 +785,7 @@ pub static BUILTINS: &[(&'static str, BuiltinFn)] = &[
     ("procedure?", procedure_question),
     ("set-car!", set_car),
     ("set-cdr!", set_cdr),
+    ("string", string),
     ("string->symbol", string_to_symbol),
     ("string?", string_question),
     ("string=?", string_eq_question),
