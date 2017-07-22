@@ -480,6 +480,7 @@
 (define interaction-environment #f)
 (define identifier? #f)
 (define syntax->list #f)
+(define syntax->vector #f)
 (define syntax-object->datum #f)
 (define datum->syntax-object #f)
 (define generate-temporaries #f)
