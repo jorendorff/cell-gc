@@ -75,16 +75,16 @@
   (define props '())
 
   (define (get-or-create-entry-for-symbol symbol)
-    (define existing (assq props symbol))
-    (if (null? existing)
+    (define existing (assq symbol props))
+    (if existing
+        existing
         (letrec ((entry (cons symbol '())))
           (set! props (cons entry props))
-          entry)
-        existing))
+          entry)))
 
   (set! putprop (lambda (symbol key value)
-                  (define symbol-entry (get-or-create-entry-for-symbol))
-                  (define key-entry (assq (cdr symbol-entry) key))
+                  (define symbol-entry (get-or-create-entry-for-symbol symbol))
+                  (define key-entry (assq key (cdr symbol-entry)))
                   (if key-entry
                       ;; change existing entry
                       (set-cdr! key-entry value)
@@ -93,17 +93,17 @@
                                 (cons (cons key value) (cdr symbol-entry))))))
 
   (set! getprop (lambda (symbol key)
-                  (define symbol-entry (assq props symbol))
+                  (define symbol-entry (assq symbol props))
                   (if symbol-entry
-                      (letrec ((key-entry (assq (cdr symbol-entry) key)))
+                      (letrec ((key-entry (assq key (cdr symbol-entry))))
                         (if key-entry
                             (cdr key-entry)
                             #f))
                       #f)))
 
   (set! remprop (lambda (symbol key)
-                  (define symbol-entry (assq props symbol))
+                  (define symbol-entry (assq symbol props))
                   (if symbol-entry
-                      (letrec ((key-entry (assq (cdr symbol-entry) key)))
+                      (letrec ((key-entry (assq key (cdr symbol-entry))))
                         (if key-entry
                             (set-cdr! key-entry #f)))))))
