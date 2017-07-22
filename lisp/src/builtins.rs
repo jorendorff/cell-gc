@@ -172,6 +172,13 @@ fn string_to_symbol<'h>(
 }
 
 // 6.5 Numbers
+fn number_question<'h>(
+    _hs: &mut GcHeapSession<'h>,
+    args: Vec<Value<'h>>,
+) -> Result<Trampoline<'h>, String> {
+    simple_predicate("number?", args, |v| v.is_number())
+}
+
 fn numeric_compare<'h, F>(name: &'static str, args: Vec<Value<'h>>, cmp: F) -> Result<Trampoline<'h>, String>
 where
     F: Fn(i32, i32) -> bool,
@@ -780,6 +787,7 @@ pub static BUILTINS: &[(&'static str, BuiltinFn)] = &[
     ("list->vector", list_to_vector),
     ("make-vector", make_vector),
     ("null?", null_question),
+    ("number?", number_question),
     ("number->string", number_to_string),
     ("pair?", pair_question),
     ("procedure?", procedure_question),

@@ -142,6 +142,8 @@ impl<'h> Value<'h> {
         }
     }
 
+    pattern_predicate!(is_number, Int(_));
+
     pub fn as_int(self, error_msg: &str) -> Result<i32, String> {
         match self {
             Int(i) => Ok(i),
