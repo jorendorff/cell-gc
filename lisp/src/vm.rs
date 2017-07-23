@@ -24,12 +24,15 @@ impl<'h> Trampoline<'h> {
     /// Complete the evaluation of this value. Avoids recursion to implement
     /// proper tail calls and keep from blowing the stack.
     pub fn eval(mut self, hs: &mut GcHeapSession<'h>) -> Result<Value<'h>, String> {
-        while let Trampoline::TailCall { func, args } = self {
-            self = apply(hs, func, args)?;
-        }
-        match self {
-            Trampoline::Value(v) => Ok(v),
-            Trampoline::TailCall { .. } => unreachable!(),
+        loop {
+            match self {
+                Trampoline::Value(v) => {
+                    return Ok(v);
+                }
+                Trampoline::TailCall { func, args } => {
+                    self = apply(hs, func, args)?;
+                }
+            }
         }
     }
 }
