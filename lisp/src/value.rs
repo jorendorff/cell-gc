@@ -2,10 +2,8 @@ use cell_gc::{GcHeapSession, GcLeaf};
 use cell_gc::collections::VecRef;
 use compile;
 use std::borrow::Borrow;
-use std::cell::RefCell;
 use std::fmt;
 use std::hash::{Hash, Hasher};
-use std::mem;
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicUsize, ATOMIC_USIZE_INIT, Ordering};
 use std::collections::HashSet;
@@ -72,71 +70,15 @@ impl fmt::Debug for BuiltinFnPtr {
     }
 }
 
-/// A structure to `Display` a value.
-pub struct PrintValue<'h> {
-    value: Value<'h>,
-    // Prevent inifinite recursion from cycles created with `set-car!` and the
-    // like.
-    seen: RefCell<HashSet<Value<'h>>>,
-}
-
-impl<'h> fmt::Display for PrintValue<'h> {
+impl<'h> fmt::Display for Value<'h> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self.value {
-            Cons(_) | Vector(_) => {
-                if self.seen.borrow().contains(&self.value) {
-                    // TODO: this should do the `#1#` style printing thing. Or maybe the
-                    // standard has something to say about cyclic printing...
-                    return write!(f, "<cycle>");
-                }
-                self.seen.borrow_mut().insert(self.value.clone());
-            }
-            _ => {}
-        }
-
-        match self.value {
-            Nil => write!(f, "()"),
-            Bool(true) => write!(f, "#t"),
-            Bool(false) => write!(f, "#f"),
-            Char(c) => write!(f, "#\\{}", c),
-            Int(n) => write!(f, "{}", n),
-            Symbol(ref s) => write!(f, "{}", s.as_str()),
-            ImmString(ref s) => write!(f, "{:?}", s.as_str()),
-            Lambda(_) => write!(f, "#lambda"),
-            Code(_) => write!(f, "#code"),
-            Builtin(_) => write!(f, "#builtin"),
-            Cons(ref p) => {
-                write!(f, "(")?;
-                write_pair(f, p.clone(), &mut *self.seen.borrow_mut())?;
-                write!(f, ")")
-            }
-            Vector(ref v) => {
-                write!(f, "#(")?;
-                for i in 0..v.len() {
-                    if i != 0 {
-                        write!(f, " ")?;
-                    }
-                    let print_vi = PrintValue {
-                        value: v.get(i),
-                        seen: RefCell::new(mem::replace(&mut *self.seen.borrow_mut(), Default::default())),
-                    };
-                    write!(f, "{}", print_vi)?;
-                    mem::swap(&mut *self.seen.borrow_mut(), &mut *print_vi.seen.borrow_mut());
-                }
-                write!(f, ")")
-            }
-            Environment(_) => write!(f, "#environment"),
-        }
+        let mut seen = HashSet::new();
+        self.print(f, &mut seen)
     }
 }
 
 fn write_pair<'h>(f: &mut fmt::Formatter, pair: PairRef<'h>, seen: &mut HashSet<Value<'h>>) -> fmt::Result {
-    let print_car = PrintValue {
-        value: pair.car(),
-        seen: RefCell::new(mem::replace(seen, Default::default())),
-    };
-    write!(f, "{}", print_car)?;
-    mem::swap(seen, &mut *print_car.seen.borrow_mut());
+    pair.car().print(f, seen)?;
 
     match pair.cdr() {
         Nil => Ok(()),
@@ -146,12 +88,7 @@ fn write_pair<'h>(f: &mut fmt::Formatter, pair: PairRef<'h>, seen: &mut HashSet<
         }
         otherwise => {
             write!(f, " . ")?;
-            let print_cdr = PrintValue {
-                value: otherwise,
-                seen: RefCell::new(mem::replace(seen, Default::default())),
-            };
-            write!(f, "{}", print_cdr)?;
-            mem::swap(seen, &mut *print_cdr.seen.borrow_mut());
+            otherwise.print(f, seen)?;
             Ok(())
         }
     }
@@ -263,10 +200,46 @@ impl<'h> Value<'h> {
         }
     }
 
-    pub fn print(self) -> PrintValue<'h> {
-        PrintValue {
-            value: self,
-            seen: Default::default(),
+    fn print(&self, f: &mut fmt::Formatter, seen: &mut HashSet<Value<'h>>) -> fmt::Result {
+        match *self {
+            Cons(_) | Vector(_) => {
+                if seen.contains(self) {
+                    // TODO: this should do the `#1#` style printing thing. Or maybe the
+                    // standard has something to say about cyclic printing...
+                    return write!(f, "<cycle>");
+                }
+                seen.insert(self.clone());
+            }
+            _ => {}
+        }
+
+        match *self {
+            Nil => write!(f, "()"),
+            Bool(true) => write!(f, "#t"),
+            Bool(false) => write!(f, "#f"),
+            Char(c) => write!(f, "#\\{}", c),
+            Int(n) => write!(f, "{}", n),
+            Symbol(ref s) => write!(f, "{}", s.as_str()),
+            ImmString(ref s) => write!(f, "{:?}", s.as_str()),
+            Lambda(_) => write!(f, "#lambda"),
+            Code(_) => write!(f, "#code"),
+            Builtin(_) => write!(f, "#builtin"),
+            Cons(ref p) => {
+                write!(f, "(")?;
+                write_pair(f, p.clone(), seen)?;
+                write!(f, ")")
+            }
+            Vector(ref v) => {
+                write!(f, "#(")?;
+                for i in 0..v.len() {
+                    if i != 0 {
+                        write!(f, " ")?;
+                    }
+                    v.get(i).print(f, seen)?;
+                }
+                write!(f, ")")
+            }
+            Environment(_) => write!(f, "#environment"),
         }
     }
 }
