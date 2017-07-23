@@ -16,6 +16,7 @@ pub struct Pair<'h> {
 
 #[derive(Clone, Debug, PartialEq, IntoHeap)]
 pub enum Value<'h> {
+    Unspecified,
     Nil,
     Bool(bool),
     Int(i32),
@@ -65,6 +66,7 @@ impl<'h> fmt::Display for Value<'h> {
         // Note that this will need to add a set of already-printed pairs if we add
         // `set-car!` and/or `set-cdr!` and introduce the possibility of cycles.
         match *self {
+            Unspecified => write!(f, "#<unspecified>"),
             Nil => write!(f, "()"),
             Bool(true) => write!(f, "#t"),
             Bool(false) => write!(f, "#f"),
@@ -123,6 +125,7 @@ macro_rules! pattern_predicate {
 }
 
 impl<'h> Value<'h> {
+    pattern_predicate!(is_unspecified, Unspecified);
     pattern_predicate!(is_nil, Nil);
     pattern_predicate!(is_boolean, Bool(_));
 

@@ -124,7 +124,7 @@ fn set_car<'h>(
         Cons(pair) => pair.set_car(obj),
         _ => return Err("set-car!: pair required".into()),
     }
-    Ok(Trampoline::Value(Nil))
+    Ok(Trampoline::Value(Unspecified))
 }
 
 fn set_cdr<'h>(
@@ -139,7 +139,7 @@ fn set_cdr<'h>(
         Cons(pair) => pair.set_cdr(obj),
         _ => return Err("set-cdr!: pair required".into()),
     }
-    Ok(Trampoline::Value(Nil))
+    Ok(Trampoline::Value(Unspecified))
 }
 
 // 6.4 Symbols
@@ -581,7 +581,7 @@ fn make_vector<'h>(
 ) -> Result<Trampoline<'h>, String> {
     let value =
         if args.len() == 1 {
-            Value::Nil
+            Value::Unspecified
         } else if args.len() == 2 {
             args[1].clone()
         } else {
@@ -649,7 +649,7 @@ fn vector_set<'h>(
         ));
     }
     v.set(index, value);
-    Ok(Trampoline::Value(Value::Nil))
+    Ok(Trampoline::Value(Value::Unspecified))
 }
 
 fn list_to_vector<'h>(
@@ -701,7 +701,7 @@ fn print<'h>(
     let strings: Vec<String> =
         args.into_iter().map(|v| format!("{}", v)).collect();
     println!("{}", strings.join(" "));
-    Ok(Trampoline::Value(Nil))
+    Ok(Trampoline::Value(Unspecified))
 }
 
 fn assert<'h>(
@@ -718,7 +718,7 @@ fn assert<'h>(
     let v = &args[0];
 
     if let Bool(true) = *v {
-        Ok(Trampoline::Value(Nil))
+        Ok(Trampoline::Value(Unspecified))
     } else if let Bool(false) = *v {
         if let Some(msg) = args.get(1) {
             Err(format!("assert: assertion failed: {:?}", msg))

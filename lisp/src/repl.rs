@@ -23,7 +23,7 @@ pub fn repl() -> io::Result<()> {
                 .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
 
             // Eval
-            let mut result = Value::Nil;
+            let mut result = Value::Unspecified;
             for expr in exprs {
                 let val = vm::eval(hs, expr, env.clone())
                     .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
@@ -31,7 +31,9 @@ pub fn repl() -> io::Result<()> {
             }
 
             // Print
-            println!("{}", result);
+            if !result.is_unspecified() {
+                println!("{}", result);
+            }
 
             // Loop...
         }

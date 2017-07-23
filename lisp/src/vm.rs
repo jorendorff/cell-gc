@@ -241,12 +241,12 @@ pub fn eval_to_tail_call<'h>(
         Expr::Def(def) => {
             let val = eval_compiled(hs, def.value(), env.clone())?;
             env.push(def.name().unwrap(), val);
-            Ok(Trampoline::Value(Nil))
+            Ok(Trampoline::Value(Value::Unspecified))
         }
         Expr::Set(def) => {
             let val = eval_compiled(hs, def.value(), env.clone())?;
             env.set(def.name().unwrap(), val)?;
-            Ok(Trampoline::Value(Nil))
+            Ok(Trampoline::Value(Value::Unspecified))
         }
         Expr::ToplevelEnv => {
             let mut env = env;

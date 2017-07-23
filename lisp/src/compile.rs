@@ -133,7 +133,7 @@ fn compile_body<'h>(
 
 fn seq<'h>(hs: &mut GcHeapSession<'h>, mut exprs: Vec<Expr<'h>>) -> Expr<'h> {
     if exprs.len() == 0 {
-        Expr::Con(Value::Nil)
+        Expr::Con(Value::Unspecified)
     } else if exprs.len() == 1 {
         exprs.pop().unwrap()
     } else {
@@ -258,7 +258,7 @@ pub fn compile_expr<'h>(
                     let t_expr = compile_expr(hs, tc)?;
                     let f_expr =
                         if rest == Nil {
-                            Expr::Con(Nil)
+                            Expr::Con(Unspecified)
                         } else {
                             let (fc, rest) =
                                 rest.as_pair("missing 'else' argument after (if COND X)")?;

@@ -172,4 +172,6 @@
                (+ 3 2))
              1))
 
-(assert (eq? (if #f #f) '()))  ;; we use nil as the unspecified value
+(define x 1)
+(assert (eq? (if #f #f)
+             (set! x x)))  ;; the unspecified value
