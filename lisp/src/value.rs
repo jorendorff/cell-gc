@@ -64,7 +64,7 @@ impl<'h> fmt::Display for Value<'h> {
         // Note that this will need to add a set of already-printed pairs if we add
         // `set-car!` and/or `set-cdr!` and introduce the possibility of cycles.
         match *self {
-            Nil => write!(f, "nil"),
+            Nil => write!(f, "()"),
             Bool(true) => write!(f, "#t"),
             Bool(false) => write!(f, "#f"),
             Char(c) => write!(f, "#\\{}", c),
