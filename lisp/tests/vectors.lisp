@@ -65,8 +65,16 @@
 ;; elements of vector. List->vector returns a newly created vector initialized
 ;; to the elements of the list list.
 
-;;(assert (equal? (vector->list '#(dah dah didah))
-;;                '(dah dah didah)))
+(assert (equal? (vector->list '#(dah dah didah))
+                '(dah dah didah)))
 (assert (equal? (list->vector '(dididit dah))
                 '#(dididit dah)))
 
+;; procedure: (vector-fill! vector fill)
+;;
+;; Stores fill in every element of vector. The value returned by vector-fill!
+;; is unspecified.
+
+(define q (make-vector 4))
+(vector-fill! q 'boom)
+(assert (equal? q '#(boom boom boom boom)))

@@ -178,3 +178,14 @@
   (if (not (null? (car lst))) (begin
       (apply f (map+ car lst))
       (apply for-each f (map+ cdr lst)))))
+;
+(define (vector-fill! v obj)
+  (define l (vector-length v))
+  (define (vf i) (if (< i l) (begin (vector-set! v i obj) (vf (+ i 1)))))
+  (vf 0))
+(define (vector->list v)
+  (define (loop i l)
+    (if (< i 0)
+        l
+        (loop (- i 1) (cons (vector-ref v i) l))))
+  (loop (- (vector-length v) 1) '()))
