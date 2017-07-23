@@ -104,6 +104,35 @@ pub struct Letrec<'h> {
     pub body: Expr<'h>
 }
 
+fn seq<'h>(hs: &mut GcHeapSession<'h>, mut exprs: Vec<Expr<'h>>) -> Expr<'h> {
+    if exprs.len() == 0 {
+        Expr::Con(Value::Unspecified)
+    } else if exprs.len() == 1 {
+        exprs.pop().unwrap()
+    } else {
+        Expr::Seq(hs.alloc(exprs))
+    }
+}
+
+fn letrec<'h>(
+    hs: &mut GcHeapSession<'h>,
+    names: Vec<GcLeaf<InternedString>>,
+    exprs: Vec<Expr<'h>>,
+    body: Expr<'h>,
+) -> Expr<'h> {
+    if names.is_empty() {
+        body
+    } else {
+        let names = hs.alloc(names);
+        let exprs = hs.alloc(exprs);
+        Expr::Letrec(hs.alloc(Letrec {
+            names,
+            exprs,
+            body,
+        }))
+    }
+}
+
 // Convert the linked list of a `<body>` to a vector; also splice in the
 // contents of `(begin)` expressions nested within the `<body>`.
 fn flatten_body<'h>(forms: Value<'h>, out: &mut Vec<Value<'h>>) -> Result<(), String> {
@@ -156,28 +185,12 @@ fn compile_body<'h>(
         return Err("expression required".into());
     }
 
-    let names = hs.alloc(names);
-    let exprs = hs.alloc(exprs);
     let body_exprs: Result<Vec<Expr>, String> = forms
         .drain(i..)
         .map(|form| compile_expr(hs, form))
         .collect();
     let body = seq(hs, body_exprs?);
-    Ok(Expr::Letrec(hs.alloc(Letrec {
-        names,
-        exprs,
-        body,
-    })))
-}
-
-fn seq<'h>(hs: &mut GcHeapSession<'h>, mut exprs: Vec<Expr<'h>>) -> Expr<'h> {
-    if exprs.len() == 0 {
-        Expr::Con(Value::Unspecified)
-    } else if exprs.len() == 1 {
-        exprs.pop().unwrap()
-    } else {
-        Expr::Seq(hs.alloc(exprs))
-    }
+    Ok(letrec(hs, names, exprs, body))
 }
 
 /// On success, returns the two parts of a `(define)` that we care about: the
@@ -314,7 +327,7 @@ pub fn compile_expr<'h>(
                         let expr = expr_result?;
                         exprs.push(compile_expr(hs, expr)?);
                     }
-                    return Ok(Expr::Seq(hs.alloc(exprs)));
+                    return Ok(seq(hs, exprs));
                 } else if s.as_str() == "define" {
                     // In expression context, definitions aren't allowed.
                     return Err("(define) is allowed only at toplevel or in the body \
@@ -339,14 +352,8 @@ pub fn compile_expr<'h>(
                         names.push(GcLeaf::new(name));
                         exprs.push(compile_expr(hs, expr)?);
                     }
-                    let names = hs.alloc(names);
-                    let exprs = hs.alloc(exprs);
                     let body = compile_body(hs, body_forms)?;
-                    return Ok(Expr::Letrec(hs.alloc(Letrec {
-                        names,
-                        exprs,
-                        body,
-                    })));
+                    return Ok(letrec(hs, names, exprs, body));
                 } else if s.as_str() == "set!" {
                     let (first, rest) = p.cdr().as_pair("(set!) with no name")?;
                     let name = first.as_symbol("(set!) first argument must be a name")?;
