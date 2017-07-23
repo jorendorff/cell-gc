@@ -3,6 +3,7 @@ use cell_gc::collections::VecRef;
 use compile;
 use std::borrow::Borrow;
 use std::fmt;
+use std::hash::{Hash, Hasher};
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicUsize, ATOMIC_USIZE_INIT, Ordering};
 use std::collections::HashSet;
@@ -14,7 +15,7 @@ pub struct Pair<'h> {
     pub cdr: Value<'h>,
 }
 
-#[derive(Clone, Debug, PartialEq, IntoHeap)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, IntoHeap)]
 pub enum Value<'h> {
     Nil,
     Bool(bool),
@@ -36,6 +37,7 @@ pub type BuiltinFn =
     for<'b> fn(&mut GcHeapSession<'b>, Vec<Value<'b>>)
         -> Result<Trampoline<'b>, String>;
 
+#[derive(Copy)]
 pub struct BuiltinFnPtr(pub BuiltinFn);
 
 // This can't be #[derive]d because function pointers aren't Clone.
@@ -46,11 +48,20 @@ impl Clone for BuiltinFnPtr {
     }
 }
 
+impl Hash for BuiltinFnPtr {
+    #[inline]
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.0.hash(state);
+    }
+}
+
 impl PartialEq for BuiltinFnPtr {
     fn eq(&self, other: &BuiltinFnPtr) -> bool {
         self.0 as usize == other.0 as usize
     }
 }
+
+impl Eq for BuiltinFnPtr {}
 
 impl fmt::Debug for BuiltinFnPtr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -244,6 +255,17 @@ impl PartialEq for InternedString {
 }
 
 impl Eq for InternedString {}
+
+impl Hash for InternedString {
+    #[inline]
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        let ptr: &str = &**self.0;
+        let ptr = ptr as *const str;
+        let ptr = ptr as *const ();
+        let ptr = ptr as usize;
+        ptr.hash(state);
+    }
+}
 
 lazy_static! {
     static ref STRINGS: Mutex<HashSet<InternedStringByValue>> = Mutex::new(HashSet::new());
