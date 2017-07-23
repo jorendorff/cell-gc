@@ -57,6 +57,7 @@ impl<'h> Environment<'h> {
 
         const PRELUDE: &'static str = include_str!("prelude.sch");
         let _ = eval_str(hs, env.clone(), PRELUDE).expect("unexpected error running the prelude");
+
         const EXPANDER_CODE: &'static str =
             concat!(
                 include_str!("syntax-case-support.sch"),
@@ -185,7 +186,7 @@ pub fn apply<'h>(
                 values,
             });
 
-            eval_to_tail_call(hs, code.body(), env)
+            eval_compiled_to_tail_call(hs, code.body(), env)
         }
         _ => Err("apply: not a function".to_string()),
     }
@@ -194,7 +195,7 @@ pub fn apply<'h>(
 /// Evaluate `expr` until we reach a tail call, at which point it is packaged up
 /// as a `Trampoline::TailCall` and returned so we can unwind the stack before
 /// continuing evaluation.
-pub fn eval_to_tail_call<'h>(
+pub fn eval_compiled_to_tail_call<'h>(
     hs: &mut GcHeapSession<'h>,
     expr: Expr<'h>,
     env: EnvironmentRef<'h>,
@@ -225,7 +226,7 @@ pub fn eval_to_tail_call<'h>(
                 for i in 0..(len - 1) {
                     eval_compiled(hs, exprs.get(i), env.clone())?;
                 }
-                eval_to_tail_call(hs, exprs.get(len - 1), env)
+                eval_compiled_to_tail_call(hs, exprs.get(len - 1), env)
             }
         }
         Expr::If(if_parts) => {
@@ -236,7 +237,7 @@ pub fn eval_to_tail_call<'h>(
                 } else {
                     if_parts.f_expr()
                 };
-            eval_to_tail_call(hs, selected_expr, env)
+            eval_compiled_to_tail_call(hs, selected_expr, env)
         }
         Expr::Letrec(letrec) => {
             let names = letrec.names();
@@ -253,7 +254,7 @@ pub fn eval_to_tail_call<'h>(
                 let val = eval_compiled(hs, exprs.get(i), letrec_env.clone())?;
                 values.set(i, val);
             }
-            eval_to_tail_call(hs, letrec.body(), letrec_env)
+            eval_compiled_to_tail_call(hs, letrec.body(), letrec_env)
         }
         Expr::Def(def) => {
             let val = eval_compiled(hs, def.value(), env.clone())?;
@@ -275,32 +276,38 @@ pub fn eval_to_tail_call<'h>(
     }
 }
 
-pub fn eval_compiled<'h>(
-    hs: &mut GcHeapSession<'h>,
-    expr: Expr<'h>,
-    env: EnvironmentRef<'h>,
-) -> Result<Value<'h>, String> {
-    let tail = eval_to_tail_call(hs, expr, env)?;
-    tail.eval(hs)
-}
-
 lazy_static! {
     static ref EXPANDER_SYMBOL: InternedString = InternedString::gensym();
 }
 
-pub fn eval<'h>(
+pub fn eval_to_tail_call<'h>(
     hs: &mut GcHeapSession<'h>,
     mut expr: Value<'h>,
     env: EnvironmentRef<'h>,
-) -> Result<Value<'h>, String> {
+) -> Result<Trampoline<'h>, String> {
     if let Ok(expander) = env.get(EXPANDER_SYMBOL.clone()) {
         let args = vec![expr];
         let tail = apply(hs, expander, args)?;
         expr = tail.eval(hs)?;
     }
+    let expr_compiled = compile::compile_toplevel(hs, expr)?;
+    eval_compiled_to_tail_call(hs, expr_compiled, env)
+}
 
-    let expr = compile::compile_toplevel(hs, expr)?;
-    eval_compiled(hs, expr, env)
+pub fn eval_compiled<'h>(
+    hs: &mut GcHeapSession<'h>,
+    expr: Expr<'h>,
+    env: EnvironmentRef<'h>,
+) -> Result<Value<'h>, String> {
+    eval_compiled_to_tail_call(hs, expr, env)?.eval(hs)
+}
+
+pub fn eval<'h>(
+    hs: &mut GcHeapSession<'h>,
+    expr: Value<'h>,
+    env: EnvironmentRef<'h>,
+) -> Result<Value<'h>, String> {
+    eval_to_tail_call(hs, expr, env)?.eval(hs)
 }
 
 fn eval_str<'h>(hs: &mut GcHeapSession<'h>, env: EnvironmentRef<'h>, code: &str) -> Result<Value<'h>, String> {

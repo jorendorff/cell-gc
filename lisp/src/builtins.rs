@@ -1,5 +1,4 @@
 use cell_gc::{GcHeapSession, GcLeaf};
-use compile;
 use std::sync::Arc;
 use value::{BuiltinFn, BuiltinFnPtr, Pair, Value, InternedString, NonInternedStringObject};
 use value::Value::*;
@@ -762,10 +761,8 @@ fn eval<'h>(
         return Err("eval: 2 arguments required".into());
     }
     let expr = args[0].clone();
-    let expr_compiled = compile::compile_toplevel(hs, expr)?;
     let env = args[1].clone().as_environment("eval: environment required")?;
-
-    vm::eval_to_tail_call(hs, expr_compiled, env)
+    vm::eval_to_tail_call(hs, expr, env)
 }
 
 // Builtin function list ///////////////////////////////////////////////////////
