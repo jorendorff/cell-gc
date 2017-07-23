@@ -137,3 +137,29 @@
 (assert (equal? (assv 5 '((2 3) (5 7) (11 13)))
                 '(5 7)))
 
+
+;; `(for-each proc list1 list2 ...)‌‌` procedure
+;;
+;; The lists should all have the same length. Proc should accept as many
+;; arguments as there are lists. Proc should not mutate any of the lists.
+;;
+;; The for-each procedure applies proc element-wise to the elements of the
+;; lists for its side effects, in order from the first elements to the
+;; last. Proc is always called in the same dynamic environment as for-each
+;; itself. The return values of for-each are unspecified.
+
+;; (assert (equal? (let ((v (make-vector 5)))
+;;                   (for-each (lambda (i)
+;;                               (vector-set! v i (* i i)))
+;;                             '(0 1 2 3 4))
+;;                   v)
+;;                 '#(0 1 4 9 16)))
+
+(define unspecified (if #f #f))
+
+(assert (eq? (for-each (lambda (x) x) '(1 2 3 4))
+             unspecified))
+
+(letrec ((even? (lambda (x) #t)))
+  (assert (eq? (for-each even? '())
+               unspecified)))

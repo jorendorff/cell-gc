@@ -33,6 +33,24 @@
   (if (null? more)
       (map1 ls)
       (map-more ls more)))
+; tail-recursive map
+(define (map+ f . lst)
+  (define r '())
+  (define o #f)
+  (define p #f)
+  (define (map-lst op l)
+    (if (pair? l) (cons (op (car l)) (map-lst op (cdr l))) '()))
+  (define (do-map)
+    (if (pair? (car lst)) (begin
+          (set! o (cons (apply f (map car lst)) '()))
+          (if (null? r) (set! r o) (set-cdr! p o))
+          (set! p o)
+          (set! lst (map cdr lst))
+          (do-map))
+      (if (not (null? (car lst)))
+         (if p (set-cdr! p (apply f lst))
+               (set! r (apply f lst))))))
+  (do-map) r)
 ;
 (define (caar x) (car (car x)))
 (define (cadr x) (car (cdr x)))
@@ -155,3 +173,8 @@
                            #f)
                        #f)))))
      (eqv? x y))))
+;
+(define (for-each f . lst)
+  (if (not (null? (car lst))) (begin
+      (apply f (map+ car lst))
+      (apply for-each f (map+ cdr lst)))))
