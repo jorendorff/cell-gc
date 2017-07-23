@@ -1,7 +1,7 @@
 use std;
 
 /// GcLeaf can be used to embed just about anything in a GC heap type.
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
 pub struct GcLeaf<T: Clone + 'static> {
     // This private field has an underscore in the hopes that it is
     // less likely to collide with useful features of T.
