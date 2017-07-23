@@ -6,15 +6,11 @@ use std::io::Read;
 use std::path::Path;
 
 fn eval_test_file(file: &Path) {
-    println!("Opening test file: {}", file.display());
     let mut file = fs::File::open(file).expect("Should open file OK");
 
     let mut source = String::new();
     file.read_to_string(&mut source)
         .expect("Should read file OK");
-
-    println!("source =");
-    println!("{}", source);
 
     cell_gc::with_heap(|hs| {
         let exprs = lisp::parse::parse(hs, &source).expect("Should parse s-exps OK");
