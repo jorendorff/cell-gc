@@ -21,6 +21,7 @@ pub enum Value<'h> {
     Int(i32),
     Char(char),
     Symbol(GcLeaf<InternedString>),
+    StringObj(GcLeaf<Arc<String>>),
     ImmString(GcLeaf<InternedString>),
     Lambda(PairRef<'h>),
     Code(compile::CodeRef<'h>),
@@ -70,6 +71,7 @@ impl<'h> fmt::Display for Value<'h> {
             Char(c) => write!(f, "#\\{}", c),
             Int(n) => write!(f, "{}", n),
             Symbol(ref s) => write!(f, "{}", s.as_str()),
+            StringObj(ref s) => write!(f, "{:?}", s as &str),
             ImmString(ref s) => write!(f, "{:?}", s.as_str()),
             Lambda(_) => write!(f, "#lambda"),
             Code(_) => write!(f, "#code"),
@@ -187,16 +189,22 @@ impl<'h> Value<'h> {
     pub fn as_symbol(self, error_msg: &str) -> Result<InternedString, String> {
         match self {
             Symbol(s) => Ok(s.unwrap()),
-            _ => Err(error_msg.to_string()),
+            _ => Err(format!("{}: symbol required", error_msg)),
         }
     }
 
-    pattern_predicate!(is_string, ImmString(_));
+    pub fn is_string(&self) -> bool {
+        match *self {
+            ImmString(_) | StringObj(_) => true,
+            _ => false
+        }
+    }
 
-    pub fn as_string(self, error_msg: &str) -> Result<InternedString, String> {
+    pub fn as_string(self, error_msg: &str) -> Result<Arc<String>, String> {
         match self {
-            ImmString(s) => Ok(s.unwrap()),
-            _ => Err(error_msg.to_string()),
+            ImmString(s) => Ok(s.unwrap().0),
+            StringObj(s) => Ok(s.unwrap()),
+            _ => Err(format!("{}: string required", error_msg)),
         }
     }
 
@@ -277,6 +285,15 @@ impl InternedString {
         InternedString(s)
     }
 
+    pub fn intern_arc(s: Arc<String>) -> InternedString {
+        let mut guard = STRINGS.lock().unwrap();
+        if let Some(x) = guard.get(&s as &str) {
+            return InternedString(x.0.clone());
+        }
+        guard.insert(InternedStringByValue(s.clone()));
+        InternedString(s)
+    }
+
     pub fn really_intern(self) -> InternedString {
         if !self.0.starts_with("#<gensym") {
             return self;
@@ -297,6 +314,10 @@ impl InternedString {
         };
         guard.insert(InternedStringByValue(new_arc));
         self
+    }
+
+    pub fn as_string(&self) -> &String {
+        &self.0
     }
 
     pub fn as_str(&self) -> &str {

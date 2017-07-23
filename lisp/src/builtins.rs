@@ -1,5 +1,6 @@
 use cell_gc::{GcHeapSession, GcLeaf};
 use compile;
+use std::sync::Arc;
 use value::{BuiltinFn, BuiltinFnPtr, Pair, Value, InternedString};
 use value::Value::*;
 use vm::{self, EnvironmentRef, Trampoline};
@@ -156,8 +157,9 @@ fn symbol_to_string<'h>(
     if args.len() != 1 {
         return Err("symbol->string: 1 argument required".into());
     }
-    let sym = args.pop().unwrap().as_symbol("symbol->string")?;
-    Ok(Trampoline::Value(ImmString(GcLeaf::new(sym.really_intern()))))
+    let in_str = args.pop().unwrap().as_symbol("symbol->string")?;
+    let s = in_str.as_string().clone();
+    Ok(Trampoline::Value(StringObj(GcLeaf::new(Arc::new(s)))))
 }
 
 fn string_to_symbol<'h>(
@@ -167,8 +169,8 @@ fn string_to_symbol<'h>(
     if args.len() != 1 {
         return Err("string->symbol: 1 argument required".into());
     }
-    let str = args.pop().unwrap().as_string("string->symbol")?;
-    Ok(Trampoline::Value(Symbol(GcLeaf::new(str.really_intern()))))
+    let arc_str = args.pop().unwrap().as_string("string->symbol")?;
+    Ok(Trampoline::Value(Symbol(GcLeaf::new(InternedString::intern_arc(arc_str)))))
 }
 
 // 6.5 Numbers
@@ -299,8 +301,8 @@ fn number_to_string<'h>(
         return Err("number->string: 1 argument required".to_string());
     }
     let n = args[0].clone().as_int("number->string")?;
-    let s = InternedString::get(format!("{}", n));  // heurgh!
-    Ok(Trampoline::Value(Value::ImmString(GcLeaf::new(s))))
+    let s = Arc::new(format!("{}", n));  // heurgh!
+    Ok(Trampoline::Value(StringObj(GcLeaf::new(s))))
 }
 
 
@@ -471,7 +473,7 @@ fn string<'h>(
     for arg in args {
         s.push(arg.as_char("string")?);
     }
-    Ok(Trampoline::Value(Value::ImmString(GcLeaf::new(InternedString::get(s)))))
+    Ok(Trampoline::Value(StringObj(GcLeaf::new(Arc::new(s)))))
 }
 
 fn string_length<'h>(
@@ -523,11 +525,31 @@ fn string_append<'h>(
     let s =
         args.into_iter()
         .map(|v| v.as_string("string-append"))
-        .collect::<Result<Vec<InternedString>, String>>()?
+        .collect::<Result<Vec<Arc<String>>, String>>()?
+        .iter()
+        .map(|arc_str| arc_str as &str)
+        .collect::<Vec<&str>>()
         .concat();
 
-    let in_str = InternedString::get(s);
-    Ok(Trampoline::Value(Value::ImmString(GcLeaf::new(in_str))))
+    Ok(Trampoline::Value(StringObj(GcLeaf::new(Arc::new(s)))))
+}
+
+fn string_to_list<'h>(
+    hs: &mut GcHeapSession<'h>,
+    args: Vec<Value<'h>>,
+) -> Result<Trampoline<'h>, String> {
+    if args.len() != 1 {
+        return Err("string->list: 1 argument required".into());
+    }
+    let arg_str = args[0].clone().as_string("string->list")?;
+    let mut list = Value::Nil;
+    for c in arg_str.chars() {
+        list = Value::Cons(hs.alloc(Pair {
+            car: Value::Char(c),
+            cdr: list
+        }));
+    }
+    Ok(Trampoline::Value(list))
 }
 
 fn list_to_string<'h>(
@@ -541,8 +563,7 @@ fn list_to_string<'h>(
         args.into_iter()
         .map(|v| v.as_char("list->string: list of characters required"))
         .collect::<Result<String, String>>()?;
-    let in_str = InternedString::get(s);
-    Ok(Trampoline::Value(Value::ImmString(GcLeaf::new(in_str))))
+    Ok(Trampoline::Value(StringObj(GcLeaf::new(Arc::new(s)))))
 }
 
 
@@ -795,6 +816,7 @@ pub static BUILTINS: &[(&'static str, BuiltinFn)] = &[
     ("set-cdr!", set_cdr),
     ("string", string),
     ("string->symbol", string_to_symbol),
+    ("string->list", string_to_list),
     ("string?", string_question),
     ("string=?", string_eq_question),
     ("string-append", string_append),

@@ -337,6 +337,12 @@ pub fn compile_expr<'h>(
         Char(v) => Ok(Expr::Con(Char(v))),
         ImmString(v) => Ok(Expr::Con(ImmString(v))),
 
+        // Note: Not sure what R6RS says about "three-dimensional" code,
+        // eval code containing "constants" (either quoted or self-evaluating)
+        // that are passed through. Possibly both this and the (quote) case
+        // should do more work, to "flatten" the constants.
+        StringObj(v) => Ok(Expr::Con(StringObj(v))),
+
         // Everything else is an error.
         _ => Err(format!("not an expression")),
     }
