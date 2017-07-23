@@ -6,6 +6,7 @@
 use gc_leaf::GcLeaf;
 use gc_ref::GcRef;
 use ptr::Pointer;
+use std::hash::Hash;
 
 /// Base trait for values that can be moved into a GC heap.
 pub trait IntoHeapBase: Sized {
@@ -134,7 +135,7 @@ pub unsafe trait IntoHeap<'h>: IntoHeapBase {}
 pub trait IntoHeapAllocation<'h>: IntoHeap<'h> {
     /// The safe reference type that's returned when a value of this type is
     /// moved into the heap (i.e. when it's allocated).
-    type Ref: IntoHeap<'h>;
+    type Ref: Hash + IntoHeap<'h>;
 
     fn wrap_gc_ref(gc_ref: GcRef<'h, Self>) -> Self::Ref;
 

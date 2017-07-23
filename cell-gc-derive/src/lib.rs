@@ -186,7 +186,19 @@ fn impl_into_heap_for_struct(ast: &syn::DeriveInput, data: &syn::VariantData) ->
                 {}
             };
 
-            // 6. Getters and setters.
+            // 6. The ref type also hashes...
+            let ref_type_hash = quote! {
+                impl #impl_generics ::std::hash::Hash for #ref_type_name #ty_generics
+                    #where_clause
+                {
+                    #[inline]
+                    fn hash<H: ::std::hash::Hasher>(&self, state: &mut H) {
+                        self.0.hash(state);
+                    }
+                }
+            };
+
+            // 7. Getters and setters.
             let field_setter_names: Vec<_> = fields
                 .iter()
                 .map(|f| {
@@ -236,6 +248,7 @@ fn impl_into_heap_for_struct(ast: &syn::DeriveInput, data: &syn::VariantData) ->
                 #into_heap_allocation
                 #ref_type
                 #ref_type_into_heap
+                #ref_type_hash
                 #accessors
             }
         }

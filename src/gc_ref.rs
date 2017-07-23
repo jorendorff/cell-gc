@@ -2,6 +2,7 @@ use gc_leaf::GcLeaf;
 use heap::{GcHeap, HeapId, GcHeapSession, HeapSessionId};
 use ptr::Pointer;
 use std::fmt;
+use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
 use std::mem;
 use traits::{IntoHeapAllocation, IntoHeapBase};
@@ -41,6 +42,13 @@ impl<'h, T: IntoHeapAllocation<'h>> GcRef<'h, T> {
         let ptr = self.ptr;
         mem::forget(self); // skip unpinning destructor
         ptr
+    }
+}
+
+impl<'h, T: IntoHeapAllocation<'h>> Hash for GcRef<'h, T> {
+    #[inline]
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.ptr.hash(state);
     }
 }
 
