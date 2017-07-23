@@ -2,8 +2,10 @@ use cell_gc::{GcHeapSession, GcLeaf};
 use cell_gc::collections::VecRef;
 use compile;
 use std::borrow::Borrow;
+use std::cell::RefCell;
 use std::fmt;
 use std::hash::{Hash, Hasher};
+use std::mem;
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicUsize, ATOMIC_USIZE_INIT, Ordering};
 use std::collections::HashSet;
@@ -70,11 +72,29 @@ impl fmt::Debug for BuiltinFnPtr {
     }
 }
 
-impl<'h> fmt::Display for Value<'h> {
+/// A structure to `Display` a value.
+pub struct PrintValue<'h> {
+    value: Value<'h>,
+    // Prevent inifinite recursion from cycles created with `set-car!` and the
+    // like.
+    seen: RefCell<HashSet<Value<'h>>>,
+}
+
+impl<'h> fmt::Display for PrintValue<'h> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        // Note that this will need to add a set of already-printed pairs if we add
-        // `set-car!` and/or `set-cdr!` and introduce the possibility of cycles.
-        match *self {
+        match self.value {
+            Cons(_) | Vector(_) => {
+                if self.seen.borrow().contains(&self.value) {
+                    // TODO: this should do the `#1#` style printing thing. Or maybe the
+                    // standard has something to say about cyclic printing...
+                    return write!(f, "<cycle>");
+                }
+                self.seen.borrow_mut().insert(self.value.clone());
+            }
+            _ => {}
+        }
+
+        match self.value {
             Nil => write!(f, "()"),
             Bool(true) => write!(f, "#t"),
             Bool(false) => write!(f, "#f"),
@@ -87,7 +107,7 @@ impl<'h> fmt::Display for Value<'h> {
             Builtin(_) => write!(f, "#builtin"),
             Cons(ref p) => {
                 write!(f, "(")?;
-                write_pair(f, p.clone())?;
+                write_pair(f, p.clone(), &mut *self.seen.borrow_mut())?;
                 write!(f, ")")
             }
             Vector(ref v) => {
@@ -96,7 +116,12 @@ impl<'h> fmt::Display for Value<'h> {
                     if i != 0 {
                         write!(f, " ")?;
                     }
-                    write!(f, "{}", v.get(i))?;
+                    let print_vi = PrintValue {
+                        value: v.get(i),
+                        seen: RefCell::new(mem::replace(&mut *self.seen.borrow_mut(), Default::default())),
+                    };
+                    write!(f, "{}", print_vi)?;
+                    mem::swap(&mut *self.seen.borrow_mut(), &mut *print_vi.seen.borrow_mut());
                 }
                 write!(f, ")")
             }
@@ -105,17 +130,29 @@ impl<'h> fmt::Display for Value<'h> {
     }
 }
 
-fn write_pair<'h>(f: &mut fmt::Formatter, pair: PairRef<'h>) -> fmt::Result {
-    write!(f, "{}", pair.car())?;
+fn write_pair<'h>(f: &mut fmt::Formatter, pair: PairRef<'h>, seen: &mut HashSet<Value<'h>>) -> fmt::Result {
+    let print_car = PrintValue {
+        value: pair.car(),
+        seen: RefCell::new(mem::replace(seen, Default::default())),
+    };
+    write!(f, "{}", print_car)?;
+    mem::swap(seen, &mut *print_car.seen.borrow_mut());
+
     match pair.cdr() {
         Nil => Ok(()),
         Cons(p) => {
             write!(f, " ")?;
-            write_pair(f, p)
+            write_pair(f, p, seen)
         }
         otherwise => {
             write!(f, " . ")?;
-            write!(f, "{}", otherwise)
+            let print_cdr = PrintValue {
+                value: otherwise,
+                seen: RefCell::new(mem::replace(seen, Default::default())),
+            };
+            write!(f, "{}", print_cdr)?;
+            mem::swap(seen, &mut *print_cdr.seen.borrow_mut());
+            Ok(())
         }
     }
 }
@@ -223,6 +260,13 @@ impl<'h> Value<'h> {
         match self {
             Environment(env) => Ok(env),
             _ => Err(error_msg.to_string())
+        }
+    }
+
+    pub fn print(self) -> PrintValue<'h> {
+        PrintValue {
+            value: self,
+            seen: Default::default(),
         }
     }
 }

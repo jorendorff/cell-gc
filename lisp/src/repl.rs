@@ -31,7 +31,7 @@ pub fn repl() -> io::Result<()> {
             }
 
             // Print
-            println!("{}", result);
+            println!("{}", result.print());
 
             // Loop...
         }

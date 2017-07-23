@@ -678,7 +678,7 @@ fn print<'h>(
     args: Vec<Value<'h>>,
 ) -> Result<Trampoline<'h>, String> {
     let strings: Vec<String> =
-        args.into_iter().map(|v| format!("{}", v)).collect();
+        args.into_iter().map(|v| format!("{}", v.print())).collect();
     println!("{}", strings.join(" "));
     Ok(Trampoline::Value(Nil))
 }
