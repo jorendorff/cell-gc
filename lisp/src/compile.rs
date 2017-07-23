@@ -2,6 +2,7 @@ use value::{InternedString, Pair, Value};
 use value::Value::*;
 use cell_gc::{GcHeapSession, GcLeaf};
 use cell_gc::collections::VecRef;
+use std::fmt;
 
 #[derive(IntoHeap)]
 pub enum Expr<'h> {
@@ -36,6 +37,44 @@ pub enum Expr<'h> {
     /// Evaluates to the current global environment.
     /// Used to implement (interactive-environment), for (eval).
     ToplevelEnv,
+}
+
+impl<'h> fmt::Debug for Expr<'h> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        match *self {
+            Expr::Con(ref v) => write!(f, "'{}", v),
+            Expr::Var(ref s) => write!(f, "{}", Value::Symbol(s.clone())),
+            Expr::Fun(ref c) => write!(f, "(lambda ... {:?})", c.body()),
+            Expr::App(ref args) =>
+                write!(f, "({})",
+                       (0..args.len())
+                       .map(|i| format!("{:?}", args.get(i)))
+                       .collect::<Vec<String>>()
+                       .join(" ")),
+            Expr::Seq(ref exprs) =>
+                write!(f, "(begin {})",
+                       (0..exprs.len())
+                       .map(|i| format!("{:?}", exprs.get(i)))
+                       .collect::<Vec<String>>()
+                       .join(" ")),
+            Expr::If(ref r) =>
+                write!(f, "(if {:?} {:?} {:?})", r.cond(), r.t_expr(), r.f_expr()),
+            Expr::Def(ref r) =>
+                write!(f, "(define {} {:?})", Value::Symbol(r.name()), r.value()),
+            Expr::Set(ref r) =>
+                write!(f, "(set! {} {:?})", Value::Symbol(r.name()), r.value()),
+            Expr::Letrec(ref r) =>
+                write!(f, "(letrec ({}) {:?})",
+                       (0..r.names().len())
+                       .map(|i| format!("({} {:?})",
+                                        Value::Symbol(r.names().get(i)),
+                                        r.exprs().get(i)))
+                       .collect::<Vec<String>>()
+                       .join(" "),
+                       r.body()),
+            Expr::ToplevelEnv => write!(f, "#<toplevel-env>"),
+        }
+    }
 }
 
 #[derive(IntoHeap)]
