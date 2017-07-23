@@ -21,7 +21,7 @@ pub enum Value<'h> {
     Int(i32),
     Char(char),
     Symbol(GcLeaf<InternedString>),
-    StringObj(GcLeaf<Arc<String>>),
+    StringObj(GcLeaf<NonInternedStringObject>),
     ImmString(GcLeaf<InternedString>),
     Lambda(PairRef<'h>),
     Code(compile::CodeRef<'h>),
@@ -203,7 +203,7 @@ impl<'h> Value<'h> {
     pub fn as_string(self, error_msg: &str) -> Result<Arc<String>, String> {
         match self {
             ImmString(s) => Ok(s.unwrap().0),
-            StringObj(s) => Ok(s.unwrap()),
+            StringObj(s) => Ok(s.unwrap().0),
             _ => Err(format!("{}: string required", error_msg)),
         }
     }
@@ -238,13 +238,29 @@ impl<'h> Iterator for Value<'h> {
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct NonInternedStringObject(pub Arc<String>);
+
+impl PartialEq for NonInternedStringObject {
+    fn eq(&self, other: &NonInternedStringObject) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl Eq for NonInternedStringObject {}
+
+impl ::std::ops::Deref for NonInternedStringObject {
+    type Target = Arc<String>;
+    fn deref(&self) -> &Arc<String> { &self.0 }
+}
 
 #[derive(Clone, Debug)]
 pub struct InternedString(Arc<String>);
 
 // Note: If we ever impl Hash for InternedString, it will be better to use a
 // custom pointer-based implementation than to use derive(Hash), which would
-// hash the contents of the string.
+// hash the contents of the string. (Note however that we currently allow
+// InternedStrings that are not actually interned. Kind of a disaster.)
 impl PartialEq for InternedString {
     fn eq(&self, other: &InternedString) -> bool {
         Arc::ptr_eq(&self.0, &other.0)

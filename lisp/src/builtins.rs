@@ -1,7 +1,7 @@
 use cell_gc::{GcHeapSession, GcLeaf};
 use compile;
 use std::sync::Arc;
-use value::{BuiltinFn, BuiltinFnPtr, Pair, Value, InternedString};
+use value::{BuiltinFn, BuiltinFnPtr, Pair, Value, InternedString, NonInternedStringObject};
 use value::Value::*;
 use vm::{self, EnvironmentRef, Trampoline};
 
@@ -159,7 +159,7 @@ fn symbol_to_string<'h>(
     }
     let in_str = args.pop().unwrap().as_symbol("symbol->string")?;
     let s = in_str.as_string().clone();
-    Ok(Trampoline::Value(StringObj(GcLeaf::new(Arc::new(s)))))
+    Ok(Trampoline::Value(StringObj(GcLeaf::new(NonInternedStringObject(Arc::new(s))))))
 }
 
 fn string_to_symbol<'h>(
@@ -302,7 +302,7 @@ fn number_to_string<'h>(
     }
     let n = args[0].clone().as_int("number->string")?;
     let s = Arc::new(format!("{}", n));  // heurgh!
-    Ok(Trampoline::Value(StringObj(GcLeaf::new(s))))
+    Ok(Trampoline::Value(StringObj(GcLeaf::new(NonInternedStringObject(s)))))
 }
 
 
@@ -473,7 +473,7 @@ fn string<'h>(
     for arg in args {
         s.push(arg.as_char("string")?);
     }
-    Ok(Trampoline::Value(StringObj(GcLeaf::new(Arc::new(s)))))
+    Ok(Trampoline::Value(StringObj(GcLeaf::new(NonInternedStringObject(Arc::new(s))))))
 }
 
 fn string_length<'h>(
@@ -531,7 +531,7 @@ fn string_append<'h>(
         .collect::<Vec<&str>>()
         .concat();
 
-    Ok(Trampoline::Value(StringObj(GcLeaf::new(Arc::new(s)))))
+    Ok(Trampoline::Value(StringObj(GcLeaf::new(NonInternedStringObject(Arc::new(s))))))
 }
 
 fn string_to_list<'h>(
@@ -563,7 +563,7 @@ fn list_to_string<'h>(
         args.into_iter()
         .map(|v| v.as_char("list->string: list of characters required"))
         .collect::<Result<String, String>>()?;
-    Ok(Trampoline::Value(StringObj(GcLeaf::new(Arc::new(s)))))
+    Ok(Trampoline::Value(StringObj(GcLeaf::new(NonInternedStringObject(Arc::new(s))))))
 }
 
 
