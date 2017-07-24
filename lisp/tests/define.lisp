@@ -1,16 +1,16 @@
 ((lambda (x)
    (assert (eq? x 5))
 
-   (letrec* ()
+   (letrec ()
      (define x 1)
      (assert (eq? x 1)))
 
    (assert (eq? x 5))
 
-   (letrec* ()
+   (letrec ()
      (define y 2)
      (assert (eq? y 2))
-     (letrec* ()
+     (letrec ()
        (define b 2)
        (define (f a)
          (define b 1)
