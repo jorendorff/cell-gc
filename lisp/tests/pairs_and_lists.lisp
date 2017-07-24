@@ -148,12 +148,12 @@
 ;; last. Proc is always called in the same dynamic environment as for-each
 ;; itself. The return values of for-each are unspecified.
 
-;; (assert (equal? (let ((v (make-vector 5)))
-;;                   (for-each (lambda (i)
-;;                               (vector-set! v i (* i i)))
-;;                             '(0 1 2 3 4))
-;;                   v)
-;;                 '#(0 1 4 9 16)))
+(assert (equal? (let ((v (make-vector 5)))
+                  (for-each (lambda (i)
+                              (vector-set! v i (* i i)))
+                            '(0 1 2 3 4))
+                  v)
+                '#(0 1 4 9 16)))
 
 (define unspecified (if #f #f))
 

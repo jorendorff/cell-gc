@@ -114,10 +114,10 @@
 
 (assert (eqv? (reverse-subtract 7 10) 3))
 
-;; (define add4
-;;   (let ((x 4))
-;;     (lambda (y) (+ x y))))
-;; (assert (eqv? (add4 6) 10))
+(define add4
+  (let ((x 4))
+    (lambda (y) (+ x y))))
+(assert (eqv? (add4 6) 10))
 
 ;; <Formals> should have one of the following forms:
 ;;

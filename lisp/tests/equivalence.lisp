@@ -10,9 +10,9 @@
                    (lambda () 2))
              #f))
 (assert (eq? (eqv? #f 'nil) #f))
-;;(assert (eq? (let ((p (lambda (x) x)))
-;;               (eqv? p p))
-;;             #t))
+(assert (eq? (let ((p (lambda (x) x)))
+               (eqv? p p))
+             #t))
 
 ;; The following examples illustrate cases in which the above rules do not
 ;; fully specify the behavior of eqv?. All that can be said about such cases is
@@ -31,33 +31,33 @@
 ;; equivalent procedures each time, since the local state does not affect the
 ;; value or side effects of the procedures.
 
-;;(define gen-counter
-;;  (lambda ()
-;;    (let ((n 0))
-;;      (lambda () (set! n (+ n 1)) n))))
-;;(assert (eq? (let ((g (gen-counter)))
-;;               (eqv? g g))
-;;             #t))
-;;(assert (eq? (eqv? (gen-counter) (gen-counter))
-;;             #f))
-;;
-;;(define gen-loser
-;;  (lambda ()
-;;    (let ((n 0))
-;;      (lambda () (set! n (+ n 1)) 27))))
-;;(assert (eq? (let ((g (gen-loser)))
-;;               (eqv? g g))
-;;             #t))
-;;(assert (boolean? (eqv? (gen-loser) (gen-loser))))
+(define gen-counter
+  (lambda ()
+    (let ((n 0))
+      (lambda () (set! n (+ n 1)) n))))
+(assert (eq? (let ((g (gen-counter)))
+               (eqv? g g))
+             #t))
+(assert (eq? (eqv? (gen-counter) (gen-counter))
+             #f))
 
-;; (assert (boolean? (letrec ((f (lambda () (if (eqv? f g) 'both 'f)))
-;;                            (g (lambda () (if (eqv? f g) 'both 'g))))
-;;                     (eqv? f g))))
-;; 
-;; (assert (eq? (letrec ((f (lambda () (if (eqv? f g) 'f 'both)))
-;;                       (g (lambda () (if (eqv? f g) 'g 'both))))
-;;                (eqv? f g))
-;;              #f))
+(define gen-loser
+  (lambda ()
+    (let ((n 0))
+      (lambda () (set! n (+ n 1)) 27))))
+(assert (eq? (let ((g (gen-loser)))
+               (eqv? g g))
+             #t))
+(assert (boolean? (eqv? (gen-loser) (gen-loser))))
+
+(assert (boolean? (letrec ((f (lambda () (if (eqv? f g) 'both 'f)))
+                           (g (lambda () (if (eqv? f g) 'both 'g))))
+                    (eqv? f g))))
+
+(assert (eq? (letrec ((f (lambda () (if (eqv? f g) 'f 'both)))
+                      (g (lambda () (if (eqv? f g) 'g 'both))))
+               (eqv? f g))
+             #f))
 
 ;; Since it is an error to modify constant objects (those returned by literal
 ;; expressions), implementations are permitted, though not required, to share
@@ -65,11 +65,11 @@
 ;; constants is sometimes implementation-dependent.
 
 (assert (boolean? (eqv? '(a) '(a))))
-;;(assert (boolean? (eqv? "a" "a")))
+(assert (boolean? (eqv? "a" "a")))
 (assert (boolean? (eqv? '(b) (cdr '(a b)))))
-;;(assert (eq? (let ((x '(a)))
-;;               (eqv? x x))
-;;             #t))
+(assert (eq? (let ((x '(a)))
+               (eqv? x x))
+             #t))
 
 ;; Eq? is similar to eqv? except that in some cases it is capable of discerning
 ;; distinctions finer than those detectable by eqv?.
@@ -83,24 +83,24 @@
 
 (assert (eq? (eq? 'a 'a) #t))
 (assert (boolean? (eq? '(a) '(a))))
-;;(assert (eq? (eq? (list 'a) (list 'a)) #f))
+(assert (eq? (eq? (list 'a) (list 'a)) #f))
 (assert (boolean? (eq? "a" "a")))
 (assert (boolean? (eq? "" "")))
 (assert (eq? (eq? '() '()) #t))
 (assert (boolean? (eq? 2 2)))
-;;(assert (boolean? (eq? #\A #\A)))
+(assert (boolean? (eq? #\A #\A)))
 (assert (eq? (eq? car car) #t))
-;;(assert (boolean? (let ((n (+ 2 3)))
-;;                    (eq? n n))))
-;;(assert (eq? (let ((x '(a)))
-;;               (eq? x x))
-;;             #t))
-;;(assert (eq? (let ((x '#()))
-;;               (eq? x x))
-;;             #t))
-;;(assert (eq? (let ((p (lambda (x) x)))
-;;               (eq? p p))
-;;             #t))
+(assert (boolean? (let ((n (+ 2 3)))
+                    (eq? n n))))
+(assert (eq? (let ((x '(a)))
+               (eq? x x))
+             #t))
+(assert (eq? (let ((x '#()))
+               (eq? x x))
+             #t))
+(assert (eq? (let ((p (lambda (x) x)))
+               (eq? p p))
+             #t))
 
 
 ;; `equal?` recursively compares the contents of pairs, vectors, and strings,
@@ -114,8 +114,8 @@
                      '(a (b) c)) #t))
 (assert (eq? (equal? "abc" "abc") #t))
 (assert (eq? (equal? 2 2) #t))
-;;(assert (eq? (equal? (make-vector 5 'a)
-;;                     (make-vector 5 'a))
-;;             #t))
+(assert (eq? (equal? (make-vector 5 'a)
+                     (make-vector 5 'a))
+             #t))
 (assert (boolean? (equal? (lambda (x) x)
                           (lambda (y) y))))
