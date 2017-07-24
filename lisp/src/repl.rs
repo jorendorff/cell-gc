@@ -19,6 +19,9 @@ pub fn repl() -> io::Result<()> {
             // Read
             let mut source = String::new();
             io::stdin().read_line(&mut source)?;
+            if source.is_empty() {
+                break;
+            }
             let exprs = parse::parse(hs, &source)
                 .map_err(|e| io::Error::new(io::ErrorKind::Other, e.description()))?;
 
@@ -38,6 +41,6 @@ pub fn repl() -> io::Result<()> {
             // Loop...
         }
 
-        // Unreachable...
+        Ok(())
     })
 }
