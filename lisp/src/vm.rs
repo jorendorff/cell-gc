@@ -59,11 +59,11 @@ impl<'h> Environment<'h> {
         const PRELUDE: &'static str = include_str!("prelude.sch");
         let _ = eval_str(hs, env.clone(), PRELUDE).expect("unexpected error running the prelude");
 
-        const EXPANDER_CODE: &'static str =
-            concat!(
-                include_str!("syntax-case-support.sch"),
-                include_str!("psyntax.pp"),
-                "\nsc-expand\n");
+        const EXPANDER_CODE: &'static str = concat!(
+            include_str!("syntax-case-support.sch"),
+            include_str!("psyntax.pp"),
+            "\nsc-expand\n"
+        );
         let xm = Environment {
             parent: Some(env.clone()),
             names: hs.alloc(vec![]),
@@ -136,15 +136,18 @@ pub fn constant_proc<'h>(hs: &mut GcHeapSession<'h>, k: Value<'h>) -> Value<'h> 
     let name = GcLeaf::new(InternedString::get("k"));
     let names = hs.alloc(vec![name.clone()]);
     let values = hs.alloc(vec![k]);
-    let env = hs.alloc(Environment { parent: None, names, values });
+    let env = hs.alloc(Environment {
+        parent: None,
+        names,
+        values,
+    });
 
     let params = hs.alloc(vec![]);
-    let code: CodeRef<'h> =
-        hs.alloc(Code {
-            params,
-            rest: false,
-            body: Expr::Var(name)
-        });
+    let code: CodeRef<'h> = hs.alloc(Code {
+        params,
+        rest: false,
+        body: Expr::Var(name),
+    });
     Value::Lambda(hs.alloc(Pair {
         car: Value::Code(code),
         cdr: Value::Environment(env),
@@ -235,19 +238,15 @@ pub fn eval_compiled_to_tail_call<'h>(
     env: EnvironmentRef<'h>,
 ) -> Result<Trampoline<'h>> {
     match expr {
-        Expr::Con(k) =>
-            Ok(Trampoline::Value(k)),
-        Expr::Var(s) =>
-            Ok(Trampoline::Value(env.get(s.unwrap())?)),
-        Expr::Fun(code) =>
-            Ok(Trampoline::Value(Lambda(hs.alloc(Pair {
-                car: Value::Code(code),
-                cdr: Value::Environment(env.clone()),
-            })))),
+        Expr::Con(k) => Ok(Trampoline::Value(k)),
+        Expr::Var(s) => Ok(Trampoline::Value(env.get(s.unwrap())?)),
+        Expr::Fun(code) => Ok(Trampoline::Value(Lambda(hs.alloc(Pair {
+            car: Value::Code(code),
+            cdr: Value::Environment(env.clone()),
+        })))),
         Expr::App(subexprs) => {
             let func = eval_compiled(hs, subexprs.get(0), env.clone())?;
-            let args: Vec<Value<'h>> =
-                (1..subexprs.len())
+            let args: Vec<Value<'h>> = (1..subexprs.len())
                 .map(|i| eval_compiled(hs, subexprs.get(i), env.clone()))
                 .collect::<Result<Vec<Value<'h>>>>()?;
             Ok(Trampoline::TailCall { func, args })
@@ -265,24 +264,25 @@ pub fn eval_compiled_to_tail_call<'h>(
         }
         Expr::If(if_parts) => {
             let cond_value = eval_compiled(hs, if_parts.cond(), env.clone())?;
-            let selected_expr =
-                if cond_value.to_bool() {
-                    if_parts.t_expr()
-                } else {
-                    if_parts.f_expr()
-                };
+            let selected_expr = if cond_value.to_bool() {
+                if_parts.t_expr()
+            } else {
+                if_parts.f_expr()
+            };
             eval_compiled_to_tail_call(hs, selected_expr, env)
         }
         Expr::Letrec(letrec) => {
             let names = letrec.names();
-            let values: VecRef<'h, Value<'h>> =
-                hs.alloc((0..names.len()).map(|_| Value::Nil).collect::<Vec<Value<'h>>>());
-            let letrec_env =
-                hs.alloc(Environment {
-                    parent: Some(env),
-                    names,
-                    values: values.clone(),
-                });
+            let values: VecRef<'h, Value<'h>> = hs.alloc(
+                (0..names.len())
+                    .map(|_| Value::Nil)
+                    .collect::<Vec<Value<'h>>>(),
+            );
+            let letrec_env = hs.alloc(Environment {
+                parent: Some(env),
+                names,
+                values: values.clone(),
+            });
             let exprs = letrec.exprs();
             for i in 0..exprs.len() {
                 let val = eval_compiled(hs, exprs.get(i), letrec_env.clone())?;
@@ -337,7 +337,11 @@ pub fn eval<'h>(
     eval_to_tail_call(hs, expr, env)?.eval(hs)
 }
 
-fn eval_str<'h>(hs: &mut GcHeapSession<'h>, env: EnvironmentRef<'h>, code: &str) -> Result<Value<'h>> {
+fn eval_str<'h>(
+    hs: &mut GcHeapSession<'h>,
+    env: EnvironmentRef<'h>,
+    code: &str,
+) -> Result<Value<'h>> {
     let forms = parse::parse(hs, code)?;
 
     let mut result = Value::Nil;

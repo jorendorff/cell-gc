@@ -1,18 +1,14 @@
 use cell_gc::{GcHeapSession, GcLeaf};
 use errors::Result;
 use std::sync::Arc;
-use value::{BuiltinFn, BuiltinFnPtr, Pair, Value, InternedString, NonInternedStringObject};
+use value::{BuiltinFn, BuiltinFnPtr, InternedString, NonInternedStringObject, Pair, Value};
 use value::Value::*;
 use vm::{self, EnvironmentRef, Trampoline};
 
 // Builtin function definitions ////////////////////////////////////////////////
 
 // 6.1 Booleans
-fn simple_predicate<'h, F>(
-    fn_name: &str,
-    mut args: Vec<Value<'h>>,
-    f: F,
-) -> Result<Trampoline<'h>>
+fn simple_predicate<'h, F>(fn_name: &str, mut args: Vec<Value<'h>>, f: F) -> Result<Trampoline<'h>>
 where
     F: FnOnce(Value<'h>) -> bool,
 {
@@ -30,10 +26,7 @@ fn boolean_question<'h>(
 }
 
 // 6.2 Equivalence predicates
-fn eq_question<'h>(
-    _hs: &mut GcHeapSession<'h>,
-    args: Vec<Value<'h>>,
-) -> Result<Trampoline<'h>> {
+fn eq_question<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Trampoline<'h>> {
     let first = args.get(0);
     Ok(Trampoline::Value(
         Bool(args.iter().all(|arg| Some(arg) == first)),
@@ -53,17 +46,11 @@ fn eqv_question<'h>(
 }
 
 // 6.3 Pairs and lists
-fn pair_question<'h>(
-    _hs: &mut GcHeapSession<'h>,
-    args: Vec<Value<'h>>,
-) -> Result<Trampoline<'h>> {
+fn pair_question<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Trampoline<'h>> {
     simple_predicate("pair?", args, |v| v.is_pair())
 }
 
-fn cons<'h>(
-    hs: &mut GcHeapSession<'h>,
-    args: Vec<Value<'h>>,
-) -> Result<Trampoline<'h>> {
+fn cons<'h>(hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Trampoline<'h>> {
     if args.len() != 2 {
         Err("cons: require exactly 2 arguments".into())
     } else {
@@ -75,10 +62,7 @@ fn cons<'h>(
     }
 }
 
-fn car<'h>(
-    _hs: &mut GcHeapSession<'h>,
-    args: Vec<Value<'h>>,
-) -> Result<Trampoline<'h>> {
+fn car<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Trampoline<'h>> {
     if args.len() != 1 {
         Err("car: require exactly 1 argument".into())
     } else {
@@ -90,10 +74,7 @@ fn car<'h>(
     }
 }
 
-fn cdr<'h>(
-    _hs: &mut GcHeapSession<'h>,
-    args: Vec<Value<'h>>,
-) -> Result<Trampoline<'h>> {
+fn cdr<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Trampoline<'h>> {
     if args.len() != 1 {
         Err("car: require exactly 1 argument".into())
     } else {
@@ -105,17 +86,11 @@ fn cdr<'h>(
     }
 }
 
-fn null_question<'h>(
-    _hs: &mut GcHeapSession<'h>,
-    args: Vec<Value<'h>>,
-) -> Result<Trampoline<'h>> {
+fn null_question<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Trampoline<'h>> {
     simple_predicate("null?", args, |v| v.is_nil())
 }
 
-fn set_car<'h>(
-    _hs: &mut GcHeapSession<'h>,
-    mut args: Vec<Value<'h>>,
-) -> Result<Trampoline<'h>> {
+fn set_car<'h>(_hs: &mut GcHeapSession<'h>, mut args: Vec<Value<'h>>) -> Result<Trampoline<'h>> {
     if args.len() != 2 {
         return Err("set-car!: exactly 2 arguments required".into());
     }
@@ -127,10 +102,7 @@ fn set_car<'h>(
     Ok(Trampoline::Value(Unspecified))
 }
 
-fn set_cdr<'h>(
-    _hs: &mut GcHeapSession<'h>,
-    mut args: Vec<Value<'h>>,
-) -> Result<Trampoline<'h>> {
+fn set_cdr<'h>(_hs: &mut GcHeapSession<'h>, mut args: Vec<Value<'h>>) -> Result<Trampoline<'h>> {
     if args.len() != 2 {
         return Err("set-cdr!: exactly 2 arguments required".into());
     }
@@ -159,7 +131,9 @@ fn symbol_to_string<'h>(
     }
     let in_str = args.pop().unwrap().as_symbol("symbol->string")?;
     let s = in_str.as_string().clone();
-    Ok(Trampoline::Value(StringObj(GcLeaf::new(NonInternedStringObject(Arc::new(s))))))
+    Ok(Trampoline::Value(
+        StringObj(GcLeaf::new(NonInternedStringObject(Arc::new(s)))),
+    ))
 }
 
 fn string_to_symbol<'h>(
@@ -170,7 +144,9 @@ fn string_to_symbol<'h>(
         return Err("string->symbol: 1 argument required".into());
     }
     let arc_str = args.pop().unwrap().as_string("string->symbol")?;
-    Ok(Trampoline::Value(Symbol(GcLeaf::new(InternedString::intern_arc(arc_str)))))
+    Ok(Trampoline::Value(
+        Symbol(GcLeaf::new(InternedString::intern_arc(arc_str))),
+    ))
 }
 
 // 6.5 Numbers
@@ -181,7 +157,11 @@ fn number_question<'h>(
     simple_predicate("number?", args, |v| v.is_number())
 }
 
-fn numeric_compare<'h, F>(name: &'static str, args: Vec<Value<'h>>, cmp: F) -> Result<Trampoline<'h>>
+fn numeric_compare<'h, F>(
+    name: &'static str,
+    args: Vec<Value<'h>>,
+    cmp: F,
+) -> Result<Trampoline<'h>>
 where
     F: Fn(i32, i32) -> bool,
 {
@@ -199,45 +179,27 @@ where
     Ok(Trampoline::Value(Bool(true)))
 }
 
-fn numeric_eq<'h>(
-    _hs: &mut GcHeapSession<'h>,
-    args: Vec<Value<'h>>,
-) -> Result<Trampoline<'h>> {
+fn numeric_eq<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Trampoline<'h>> {
     numeric_compare("=", args, |a, b| a == b)
 }
 
-fn numeric_lt<'h>(
-    _hs: &mut GcHeapSession<'h>,
-    args: Vec<Value<'h>>,
-) -> Result<Trampoline<'h>> {
+fn numeric_lt<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Trampoline<'h>> {
     numeric_compare("<", args, |a, b| a < b)
 }
 
-fn numeric_gt<'h>(
-    _hs: &mut GcHeapSession<'h>,
-    args: Vec<Value<'h>>,
-) -> Result<Trampoline<'h>> {
+fn numeric_gt<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Trampoline<'h>> {
     numeric_compare(">", args, |a, b| a > b)
 }
 
-fn numeric_le<'h>(
-    _hs: &mut GcHeapSession<'h>,
-    args: Vec<Value<'h>>,
-) -> Result<Trampoline<'h>> {
+fn numeric_le<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Trampoline<'h>> {
     numeric_compare("<=", args, |a, b| a <= b)
 }
 
-fn numeric_ge<'h>(
-    _hs: &mut GcHeapSession<'h>,
-    args: Vec<Value<'h>>,
-) -> Result<Trampoline<'h>> {
+fn numeric_ge<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Trampoline<'h>> {
     numeric_compare(">=", args, |a, b| a >= b)
 }
 
-fn add<'h>(
-    _hs: &mut GcHeapSession<'h>,
-    args: Vec<Value<'h>>,
-) -> Result<Trampoline<'h>> {
+fn add<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Trampoline<'h>> {
     let mut total = 0;
     for v in args {
         if let Int(n) = v {
@@ -249,10 +211,7 @@ fn add<'h>(
     Ok(Trampoline::Value(Int(total)))
 }
 
-fn mul<'h>(
-    _hs: &mut GcHeapSession<'h>,
-    args: Vec<Value<'h>>,
-) -> Result<Trampoline<'h>> {
+fn mul<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Trampoline<'h>> {
     let mut total = 1;
     for v in args {
         if let Int(n) = v {
@@ -264,10 +223,7 @@ fn mul<'h>(
     Ok(Trampoline::Value(Int(total)))
 }
 
-fn sub<'h>(
-    _hs: &mut GcHeapSession<'h>,
-    args: Vec<Value<'h>>,
-) -> Result<Trampoline<'h>> {
+fn sub<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Trampoline<'h>> {
     if args.len() == 0 {
         Err("sub: need at least one argument".into())
     } else if args.len() == 1 {
@@ -301,16 +257,15 @@ fn number_to_string<'h>(
         return Err("number->string: 1 argument required".into());
     }
     let n = args[0].clone().as_int("number->string")?;
-    let s = Arc::new(format!("{}", n));  // heurgh!
-    Ok(Trampoline::Value(StringObj(GcLeaf::new(NonInternedStringObject(s)))))
+    let s = Arc::new(format!("{}", n)); // heurgh!
+    Ok(Trampoline::Value(
+        StringObj(GcLeaf::new(NonInternedStringObject(s))),
+    ))
 }
 
 
 // 6.6 Characters
-fn char_question<'h>(
-    _hs: &mut GcHeapSession<'h>,
-    args: Vec<Value<'h>>,
-) -> Result<Trampoline<'h>> {
+fn char_question<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Trampoline<'h>> {
     simple_predicate("char?", args, |v| v.is_char())
 }
 
@@ -332,47 +287,32 @@ where
     Ok(Trampoline::Value(Bool(true)))
 }
 
-fn char_eq<'h>(
-    _hs: &mut GcHeapSession<'h>,
-    args: Vec<Value<'h>>,
-) -> Result<Trampoline<'h>> {
+fn char_eq<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Trampoline<'h>> {
     char_compare("char=?", args, |a, b| a == b)
 }
 
-fn char_lt<'h>(
-    _hs: &mut GcHeapSession<'h>,
-    args: Vec<Value<'h>>,
-) -> Result<Trampoline<'h>> {
+fn char_lt<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Trampoline<'h>> {
     char_compare("char<?", args, |a, b| a < b)
 }
 
-fn char_gt<'h>(
-    _hs: &mut GcHeapSession<'h>,
-    args: Vec<Value<'h>>,
-) -> Result<Trampoline<'h>> {
+fn char_gt<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Trampoline<'h>> {
     char_compare("char>?", args, |a, b| a > b)
 }
 
-fn char_le<'h>(
-    _hs: &mut GcHeapSession<'h>,
-    args: Vec<Value<'h>>,
-) -> Result<Trampoline<'h>> {
+fn char_le<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Trampoline<'h>> {
     char_compare("char<=?", args, |a, b| a <= b)
 }
 
-fn char_ge<'h>( // CHAAAAARGE!
+// CHAAAAARGE!
+fn char_ge<'h>(
     _hs: &mut GcHeapSession<'h>,
     args: Vec<Value<'h>>,
 ) -> Result<Trampoline<'h>> {
     char_compare("char>=?", args, |a, b| a >= b)
 }
 
-fn char_predicate<'h, F>(
-    name: &'static str,
-    args: Vec<Value<'h>>,
-    f: F
-) -> Result<Trampoline<'h>>
-    where
+fn char_predicate<'h, F>(name: &'static str, args: Vec<Value<'h>>, f: F) -> Result<Trampoline<'h>>
+where
     F: Fn(char) -> bool,
 {
     if args.len() != 1 {
@@ -417,10 +357,7 @@ fn char_lower_case_question<'h>(
     char_predicate("char-lower-case?", args, |c| c.is_lowercase())
 }
 
-fn char_upcase<'h>(
-    _hs: &mut GcHeapSession<'h>,
-    args: Vec<Value<'h>>,
-) -> Result<Trampoline<'h>> {
+fn char_upcase<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Trampoline<'h>> {
     if args.len() != 1 {
         return Err("char-upcase: 1 argument required".into());
     }
@@ -432,20 +369,18 @@ fn char_upcase<'h>(
     let mut up = c.to_uppercase();
     let result = match (up.next(), up.next()) {
         (Some(d), None) => d,
-        _ => c
+        _ => c,
     };
 
     Ok(Trampoline::Value(Value::Char(result)))
 }
 
-fn char_downcase<'h>(
-    _hs: &mut GcHeapSession<'h>,
-    args: Vec<Value<'h>>,
-) -> Result<Trampoline<'h>> {
+fn char_downcase<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Trampoline<'h>> {
     if args.len() != 1 {
         return Err("char-downcase: 1 argument required".into());
     }
-    let c = args[0].clone().as_char("char-downcase: character required")?;
+    let c = args[0].clone()
+        .as_char("char-downcase: character required")?;
 
     // I think the only character that doesn't downcase to a single character
     // is U+0130 LATIN CAPITAL LETTER I WITH DOT ABOVE ('İ'). Guile converts it
@@ -465,44 +400,37 @@ fn string_question<'h>(
     simple_predicate("string?", args, |v| v.is_string())
 }
 
-fn string<'h>(
-    _hs: &mut GcHeapSession<'h>,
-    args: Vec<Value<'h>>,
-) -> Result<Trampoline<'h>> {
+fn string<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Trampoline<'h>> {
     let mut s = String::new();
     for arg in args {
         s.push(arg.as_char("string")?);
     }
-    Ok(Trampoline::Value(StringObj(GcLeaf::new(NonInternedStringObject(Arc::new(s))))))
+    Ok(Trampoline::Value(
+        StringObj(GcLeaf::new(NonInternedStringObject(Arc::new(s)))),
+    ))
 }
 
-fn string_length<'h>(
-    _hs: &mut GcHeapSession<'h>,
-    args: Vec<Value<'h>>,
-) -> Result<Trampoline<'h>> {
+fn string_length<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Trampoline<'h>> {
     if args.len() != 1 {
         return Err("string-length: 1 argument required".into());
     }
     let s = args[0].clone().as_string("string-length")?;
-    let n = s.as_str().chars().count();  // bleurgh! O(n)
+    let n = s.as_str().chars().count(); // bleurgh! O(n)
     if n > i32::max_value() as usize {
         return Err("string-length: integer overflow".into());
     }
     Ok(Trampoline::Value(Value::Int(n as i32)))
 }
 
-fn string_ref<'h>(
-    _hs: &mut GcHeapSession<'h>,
-    args: Vec<Value<'h>>,
-) -> Result<Trampoline<'h>> {
+fn string_ref<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Trampoline<'h>> {
     if args.len() != 2 {
-        return Err("string-ref: 2 arguments required".into())
+        return Err("string-ref: 2 arguments required".into());
     }
     let s = args[0].clone().as_string("string-ref")?;
     let i = args[1].clone().as_index("string-ref")?;
     match s.as_str().chars().nth(i) {  // bleurgh! O(n)
         Some(c) => Ok(Trampoline::Value(Value::Char(c))),
-        None => Err("string-ref: index out of range".into())
+        None => Err("string-ref: index out of range".into()),
     }
 }
 
@@ -518,12 +446,8 @@ fn string_eq_question<'h>(
     Ok(Trampoline::Value(Bool(a.as_str() == b.as_str())))
 }
 
-fn string_append<'h>(
-    _hs: &mut GcHeapSession<'h>,
-    args: Vec<Value<'h>>,
-) -> Result<Trampoline<'h>> {
-    let s =
-        args.into_iter()
+fn string_append<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Trampoline<'h>> {
+    let s = args.into_iter()
         .map(|v| v.as_string("string-append"))
         .collect::<Result<Vec<Arc<String>>>>()?
         .iter()
@@ -531,13 +455,12 @@ fn string_append<'h>(
         .collect::<Vec<&str>>()
         .concat();
 
-    Ok(Trampoline::Value(StringObj(GcLeaf::new(NonInternedStringObject(Arc::new(s))))))
+    Ok(Trampoline::Value(
+        StringObj(GcLeaf::new(NonInternedStringObject(Arc::new(s)))),
+    ))
 }
 
-fn string_to_list<'h>(
-    hs: &mut GcHeapSession<'h>,
-    args: Vec<Value<'h>>,
-) -> Result<Trampoline<'h>> {
+fn string_to_list<'h>(hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Trampoline<'h>> {
     if args.len() != 1 {
         return Err("string->list: 1 argument required".into());
     }
@@ -546,24 +469,22 @@ fn string_to_list<'h>(
     for c in arg_str.chars() {
         list = Value::Cons(hs.alloc(Pair {
             car: Value::Char(c),
-            cdr: list
+            cdr: list,
         }));
     }
     Ok(Trampoline::Value(list))
 }
 
-fn list_to_string<'h>(
-    _hs: &mut GcHeapSession<'h>,
-    args: Vec<Value<'h>>,
-) -> Result<Trampoline<'h>> {
+fn list_to_string<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Trampoline<'h>> {
     if args.len() != 1 {
         return Err("list->string: 1 argument required".into());
     }
-    let s: String =
-        args.into_iter()
+    let s: String = args.into_iter()
         .map(|v| v.as_char("list->string: list of characters required"))
         .collect::<Result<String>>()?;
-    Ok(Trampoline::Value(StringObj(GcLeaf::new(NonInternedStringObject(Arc::new(s))))))
+    Ok(Trampoline::Value(
+        StringObj(GcLeaf::new(NonInternedStringObject(Arc::new(s)))),
+    ))
 }
 
 
@@ -575,26 +496,19 @@ fn vector_question<'h>(
     simple_predicate("vector?", args, |v| v.is_vector())
 }
 
-fn make_vector<'h>(
-    hs: &mut GcHeapSession<'h>,
-    args: Vec<Value<'h>>,
-) -> Result<Trampoline<'h>> {
-    let value =
-        if args.len() == 1 {
-            Value::Unspecified
-        } else if args.len() == 2 {
-            args[1].clone()
-        } else {
-            return Err("make-vector: 1 or 2 arguments required".into());
-        };
+fn make_vector<'h>(hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Trampoline<'h>> {
+    let value = if args.len() == 1 {
+        Value::Unspecified
+    } else if args.len() == 2 {
+        args[1].clone()
+    } else {
+        return Err("make-vector: 1 or 2 arguments required".into());
+    };
     let n = args[0].clone().as_index("make-vector")?;
     Ok(Trampoline::Value(Vector(hs.alloc(vec![value; n]))))
 }
 
-fn vector<'h>(
-    hs: &mut GcHeapSession<'h>,
-    args: Vec<Value<'h>>,
-) -> Result<Trampoline<'h>> {
+fn vector<'h>(hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Trampoline<'h>> {
     Ok(Trampoline::Value(Vector(hs.alloc(args))))
 }
 
@@ -612,29 +526,25 @@ fn vector_length<'h>(
     Ok(Trampoline::Value(Value::Int(n as i32)))
 }
 
-fn vector_ref<'h>(
-    _hs: &mut GcHeapSession<'h>,
-    mut args: Vec<Value<'h>>,
-) -> Result<Trampoline<'h>> {
+fn vector_ref<'h>(_hs: &mut GcHeapSession<'h>, mut args: Vec<Value<'h>>) -> Result<Trampoline<'h>> {
     if args.len() != 2 {
         return Err("vector-ref: exactly 2 arguments required".into());
     }
     let index = args.pop().unwrap().as_index("vector-ref")?;
     let v = args.pop().unwrap().as_vector("vector-ref")?;
     if index >= v.len() {
-        return Err(format!(
-            "vector-ref: index out of bounds (got {}, length {})",
-            index,
-            v.len()
-        ).into());
+        return Err(
+            format!(
+                "vector-ref: index out of bounds (got {}, length {})",
+                index,
+                v.len()
+            ).into(),
+        );
     }
     Ok(Trampoline::Value(v.get(index)))
 }
 
-fn vector_set<'h>(
-    _hs: &mut GcHeapSession<'h>,
-    mut args: Vec<Value<'h>>,
-) -> Result<Trampoline<'h>> {
+fn vector_set<'h>(_hs: &mut GcHeapSession<'h>, mut args: Vec<Value<'h>>) -> Result<Trampoline<'h>> {
     if args.len() != 3 {
         return Err("vector-set!: exactly 3 arguments required".into());
     }
@@ -642,27 +552,24 @@ fn vector_set<'h>(
     let index = args.pop().unwrap().as_index("vector-set!")?;
     let v = args.pop().unwrap().as_vector("vector-set!")?;
     if index >= v.len() {
-        return Err(format!(
-            "vector-set!: index out of bounds (got {}, length {})",
-            index,
-            v.len()
-        ).into());
+        return Err(
+            format!(
+                "vector-set!: index out of bounds (got {}, length {})",
+                index,
+                v.len()
+            ).into(),
+        );
     }
     v.set(index, value);
     Ok(Trampoline::Value(Value::Unspecified))
 }
 
-fn list_to_vector<'h>(
-    hs: &mut GcHeapSession<'h>,
-    args: Vec<Value<'h>>,
-) -> Result<Trampoline<'h>> {
+fn list_to_vector<'h>(hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Trampoline<'h>> {
     if args.len() != 1 {
         return Err("list->vector: exactly 1 argument required".into());
     }
 
-    let v: Result<Vec<Value<'h>>> = args[0].clone()
-        .into_iter()
-        .collect();
+    let v: Result<Vec<Value<'h>>> = args[0].clone().into_iter().collect();
 
     Ok(Trampoline::Value(Value::Vector(hs.alloc(v?))))
 }
@@ -675,10 +582,7 @@ fn procedure_question<'h>(
     simple_predicate("procedure?", args, |v| v.is_procedure())
 }
 
-fn apply<'h>(
-    _hs: &mut GcHeapSession<'h>,
-    mut args: Vec<Value<'h>>,
-) -> Result<Trampoline<'h>> {
+fn apply<'h>(_hs: &mut GcHeapSession<'h>, mut args: Vec<Value<'h>>) -> Result<Trampoline<'h>> {
     if args.len() < 2 {
         return Err("apply: at least 2 arguments required".into());
     }
@@ -690,29 +594,27 @@ fn apply<'h>(
     assert_eq!(args.len(), 1);
     let func = args.pop().unwrap();
 
-    Ok(Trampoline::TailCall { func, args: arg_vec })
+    Ok(Trampoline::TailCall {
+        func,
+        args: arg_vec,
+    })
 }
 
 // Extensions
-fn print<'h>(
-    _hs: &mut GcHeapSession<'h>,
-    args: Vec<Value<'h>>,
-) -> Result<Trampoline<'h>> {
-    let strings: Vec<String> =
-        args.into_iter().map(|v| format!("{}", v)).collect();
+fn print<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Trampoline<'h>> {
+    let strings: Vec<String> = args.into_iter().map(|v| format!("{}", v)).collect();
     println!("{}", strings.join(" "));
     Ok(Trampoline::Value(Unspecified))
 }
 
-fn assert<'h>(
-    _hs: &mut GcHeapSession<'h>,
-    args: Vec<Value<'h>>,
-) -> Result<Trampoline<'h>> {
+fn assert<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Trampoline<'h>> {
     if args.len() < 1 || args.len() > 2 {
-        return Err(format!(
-            "assert: wrong number of args, expected 1 or 2, found {}",
-            args.len()
-        ).into());
+        return Err(
+            format!(
+                "assert: wrong number of args, expected 1 or 2, found {}",
+                args.len()
+            ).into(),
+        );
     }
 
     let v = &args[0];
@@ -730,10 +632,7 @@ fn assert<'h>(
     }
 }
 
-fn gensym<'h>(
-    _hs: &mut GcHeapSession<'h>,
-    args: Vec<Value<'h>>,
-) -> Result<Trampoline<'h>> {
+fn gensym<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Trampoline<'h>> {
     if !args.is_empty() {
         return Err("gensym: 0 arguments required".into());
     }
@@ -746,23 +645,19 @@ fn gensym_question<'h>(
     _hs: &mut GcHeapSession<'h>,
     args: Vec<Value<'h>>,
 ) -> Result<Trampoline<'h>> {
-    simple_predicate("gensym?", args, |v| {
-        match v {
-            Symbol(s) => s.is_gensym(),
-            _ => false
-        }
+    simple_predicate("gensym?", args, |v| match v {
+        Symbol(s) => s.is_gensym(),
+        _ => false,
     })
 }
 
-fn eval<'h>(
-    hs: &mut GcHeapSession<'h>,
-    args: Vec<Value<'h>>,
-) -> Result<Trampoline<'h>> {
+fn eval<'h>(hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Trampoline<'h>> {
     if args.len() != 2 {
         return Err("eval: 2 arguments required".into());
     }
     let expr = args[0].clone();
-    let env = args[1].clone().as_environment("eval: environment required")?;
+    let env = args[1].clone()
+        .as_environment("eval: environment required")?;
     vm::eval_to_tail_call(hs, expr, env)
 }
 
@@ -842,5 +737,6 @@ pub fn define_builtins<'h>(hs: &mut GcHeapSession<'h>, env: EnvironmentRef<'h>) 
     let interaction_env_proc = vm::constant_proc(hs, Value::Environment(env.clone()));
     env.push(
         InternedString::get("interaction-environment"),
-        interaction_env_proc);
+        interaction_env_proc,
+    );
 }

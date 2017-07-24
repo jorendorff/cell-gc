@@ -3,11 +3,11 @@ use cell_gc::collections::VecRef;
 use compile;
 use errors::Result;
 use std::borrow::Borrow;
+use std::collections::HashSet;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::sync::{Arc, Mutex};
-use std::sync::atomic::{AtomicUsize, ATOMIC_USIZE_INIT, Ordering};
-use std::collections::HashSet;
+use std::sync::atomic::{ATOMIC_USIZE_INIT, AtomicUsize, Ordering};
 use vm::{EnvironmentRef, Trampoline};
 
 #[derive(Debug, IntoHeap)]
@@ -36,9 +36,8 @@ pub enum Value<'h> {
 
 pub use self::Value::*;
 
-pub type BuiltinFn =
-    for<'b> fn(&mut GcHeapSession<'b>, Vec<Value<'b>>)
-        -> Result<Trampoline<'b>>;
+pub type BuiltinFn = for<'b> fn(&mut GcHeapSession<'b>, Vec<Value<'b>>)
+    -> Result<Trampoline<'b>>;
 
 #[derive(Copy)]
 pub struct BuiltinFnPtr(pub BuiltinFn);
@@ -80,7 +79,11 @@ impl<'h> fmt::Display for Value<'h> {
     }
 }
 
-fn write_pair<'h>(f: &mut fmt::Formatter, pair: PairRef<'h>, seen: &mut HashSet<Value<'h>>) -> fmt::Result {
+fn write_pair<'h>(
+    f: &mut fmt::Formatter,
+    pair: PairRef<'h>,
+    seen: &mut HashSet<Value<'h>>,
+) -> fmt::Result {
     pair.car().print(f, seen)?;
 
     match pair.cdr() {
@@ -127,7 +130,7 @@ impl<'h> Value<'h> {
     pub fn as_char(self, error_msg: &str) -> Result<char> {
         match self {
             Char(c) => Ok(c),
-            _ => Err(format!("{}: character required", error_msg).into())
+            _ => Err(format!("{}: character required", error_msg).into()),
         }
     }
 
@@ -183,7 +186,7 @@ impl<'h> Value<'h> {
     pub fn is_string(&self) -> bool {
         match *self {
             ImmString(_) | StringObj(_) => true,
-            _ => false
+            _ => false,
         }
     }
 
@@ -206,7 +209,7 @@ impl<'h> Value<'h> {
     pub fn as_environment(self, error_msg: &str) -> Result<EnvironmentRef<'h>> {
         match self {
             Environment(env) => Ok(env),
-            _ => Err(format!("{}: environment required", error_msg).into())
+            _ => Err(format!("{}: environment required", error_msg).into()),
         }
     }
 
@@ -291,7 +294,9 @@ impl Hash for NonInternedStringObject {
 
 impl ::std::ops::Deref for NonInternedStringObject {
     type Target = Arc<String>;
-    fn deref(&self) -> &Arc<String> { &self.0 }
+    fn deref(&self) -> &Arc<String> {
+        &self.0
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -396,11 +401,13 @@ impl InternedString {
         let s: &str = &self.0;
         match guard.get(s) {
             None => false,
-            Some(interned) => Arc::ptr_eq(&interned.0, &self.0)
+            Some(interned) => Arc::ptr_eq(&interned.0, &self.0),
         }
     }
 
-    pub fn is_gensym(&self) -> bool { !self.is_interned() }
+    pub fn is_gensym(&self) -> bool {
+        !self.is_interned()
+    }
 }
 
 impl Borrow<str> for InternedString {

@@ -1,9 +1,9 @@
-use errors::Result;
-use value::{InternedString, Pair, Value};
-use value::Value::*;
 use cell_gc::{GcHeapSession, GcLeaf};
 use cell_gc::collections::VecRef;
+use errors::Result;
 use std::fmt;
+use value::{InternedString, Pair, Value};
+use value::Value::*;
 
 #[derive(IntoHeap)]
 pub enum Expr<'h> {
@@ -42,33 +42,46 @@ impl<'h> fmt::Debug for Expr<'h> {
             Expr::Con(ref v) => write!(f, "'{}", v),
             Expr::Var(ref s) => write!(f, "{}", Value::Symbol(s.clone())),
             Expr::Fun(ref c) => write!(f, "(lambda ... {:?})", c.body()),
-            Expr::App(ref args) =>
-                write!(f, "({})",
-                       (0..args.len())
-                       .map(|i| format!("{:?}", args.get(i)))
-                       .collect::<Vec<String>>()
-                       .join(" ")),
-            Expr::Seq(ref exprs) =>
-                write!(f, "(begin {})",
-                       (0..exprs.len())
-                       .map(|i| format!("{:?}", exprs.get(i)))
-                       .collect::<Vec<String>>()
-                       .join(" ")),
-            Expr::If(ref r) =>
-                write!(f, "(if {:?} {:?} {:?})", r.cond(), r.t_expr(), r.f_expr()),
-            Expr::Def(ref r) =>
-                write!(f, "(define {} {:?})", Value::Symbol(r.name()), r.value()),
-            Expr::Set(ref r) =>
-                write!(f, "(set! {} {:?})", Value::Symbol(r.name()), r.value()),
-            Expr::Letrec(ref r) =>
-                write!(f, "(letrec ({}) {:?})",
-                       (0..r.names().len())
-                       .map(|i| format!("({} {:?})",
-                                        Value::Symbol(r.names().get(i)),
-                                        r.exprs().get(i)))
-                       .collect::<Vec<String>>()
-                       .join(" "),
-                       r.body()),
+            Expr::App(ref args) => {
+                write!(
+                    f,
+                    "({})",
+                    (0..args.len())
+                        .map(|i| format!("{:?}", args.get(i)))
+                        .collect::<Vec<String>>()
+                        .join(" ")
+                )
+            }
+            Expr::Seq(ref exprs) => {
+                write!(
+                    f,
+                    "(begin {})",
+                    (0..exprs.len())
+                        .map(|i| format!("{:?}", exprs.get(i)))
+                        .collect::<Vec<String>>()
+                        .join(" ")
+                )
+            }
+            Expr::If(ref r) => write!(f, "(if {:?} {:?} {:?})", r.cond(), r.t_expr(), r.f_expr()),
+            Expr::Def(ref r) => write!(f, "(define {} {:?})", Value::Symbol(r.name()), r.value()),
+            Expr::Set(ref r) => write!(f, "(set! {} {:?})", Value::Symbol(r.name()), r.value()),
+            Expr::Letrec(ref r) => {
+                write!(
+                    f,
+                    "(letrec ({}) {:?})",
+                    (0..r.names().len())
+                        .map(|i| {
+                            format!(
+                                "({} {:?})",
+                                Value::Symbol(r.names().get(i)),
+                                r.exprs().get(i)
+                            )
+                        })
+                        .collect::<Vec<String>>()
+                        .join(" "),
+                    r.body()
+                )
+            }
         }
     }
 }
@@ -83,7 +96,7 @@ pub struct Code<'h> {
 #[derive(IntoHeap)]
 pub struct Def<'h> {
     pub name: GcLeaf<InternedString>,
-    pub value: Expr<'h>
+    pub value: Expr<'h>,
 }
 
 #[derive(IntoHeap)]
@@ -97,7 +110,7 @@ pub struct If<'h> {
 pub struct Letrec<'h> {
     pub names: VecRef<'h, GcLeaf<InternedString>>,
     pub exprs: VecRef<'h, Expr<'h>>,
-    pub body: Expr<'h>
+    pub body: Expr<'h>,
 }
 
 fn seq<'h>(hs: &mut GcHeapSession<'h>, mut exprs: Vec<Expr<'h>>) -> Expr<'h> {
@@ -121,11 +134,7 @@ fn letrec<'h>(
     } else {
         let names = hs.alloc(names);
         let exprs = hs.alloc(exprs);
-        Expr::Letrec(hs.alloc(Letrec {
-            names,
-            exprs,
-            body,
-        }))
+        Expr::Letrec(hs.alloc(Letrec { names, exprs, body }))
     }
 }
 
@@ -159,10 +168,7 @@ fn is_definition<'h>(form: &Value<'h>) -> bool {
 }
 
 // Compile the body of a lambda or letrec*.
-fn compile_body<'h>(
-    hs: &mut GcHeapSession<'h>,
-    body_list: Value<'h>,
-) -> Result<Expr<'h>> {
+fn compile_body<'h>(hs: &mut GcHeapSession<'h>, body_list: Value<'h>) -> Result<Expr<'h>> {
     let mut forms = vec![];
     flatten_body(body_list, &mut forms)?;
 
@@ -191,9 +197,10 @@ fn compile_body<'h>(
 
 /// On success, returns the two parts of a `(define)` that we care about: the
 /// name to define and the compiled expression to populate it.
-fn parse_define<'h>(hs: &mut GcHeapSession<'h>, mut defn: Value<'h>)
-    -> Result<(GcLeaf<InternedString>, Expr<'h>)>
-{
+fn parse_define<'h>(
+    hs: &mut GcHeapSession<'h>,
+    mut defn: Value<'h>,
+) -> Result<(GcLeaf<InternedString>, Expr<'h>)> {
     loop {
         let (define_symbol, tail) = defn.as_pair("internal error")?;
         let (pattern, rest) = tail.as_pair("(define) with no name")?;
@@ -235,18 +242,15 @@ fn parse_define<'h>(hs: &mut GcHeapSession<'h>, mut defn: Value<'h>)
                 }));
                 defn = Cons(hs.alloc(Pair {
                     car: define_symbol,
-                    cdr: defn_cdr
+                    cdr: defn_cdr,
                 }));
             }
-            _ => return Err("(define) with a non-symbol name".into())
+            _ => return Err("(define) with a non-symbol name".into()),
         }
     }
 }
 
-pub fn compile_toplevel<'h>(
-    hs: &mut GcHeapSession<'h>,
-    expr: Value<'h>,
-) -> Result<Expr<'h>> {
+pub fn compile_toplevel<'h>(hs: &mut GcHeapSession<'h>, expr: Value<'h>) -> Result<Expr<'h>> {
     // TODO: support (begin) here
     if is_definition(&expr) {
         let (name, value) = parse_define(hs, expr)?;
@@ -256,10 +260,7 @@ pub fn compile_toplevel<'h>(
     }
 }
 
-pub fn compile_expr<'h>(
-    hs: &mut GcHeapSession<'h>,
-    expr: Value<'h>,
-) -> Result<Expr<'h>> {
+pub fn compile_expr<'h>(hs: &mut GcHeapSession<'h>, expr: Value<'h>) -> Result<Expr<'h>> {
     match expr {
         Symbol(s) => Ok(Expr::Var(s)),
 
@@ -278,15 +279,14 @@ pub fn compile_expr<'h>(
                         }
                         param_list = pair.cdr();
                     }
-                    let rest =
-                        match param_list {
-                            Nil => false,
-                            Symbol(rest_name) => {
-                                names.push(rest_name);
-                                true
-                            }
-                            _ => return Err("syntax error in lambda arguments".into())
-                        };
+                    let rest = match param_list {
+                        Nil => false,
+                        Symbol(rest_name) => {
+                            names.push(rest_name);
+                            true
+                        }
+                        _ => return Err("syntax error in lambda arguments".into()),
+                    };
 
                     let params = hs.alloc(names);
                     let body = compile_body(hs, body_forms)?;
@@ -302,18 +302,20 @@ pub fn compile_expr<'h>(
                     let cond = compile_expr(hs, cond)?;
                     let (tc, rest) = rest.as_pair("missing arguments after (if COND)")?;
                     let t_expr = compile_expr(hs, tc)?;
-                    let f_expr =
-                        if rest == Nil {
-                            Expr::Con(Unspecified)
-                        } else {
-                            let (fc, rest) =
-                                rest.as_pair("missing 'else' argument after (if COND X)")?;
-                            if !rest.is_nil() {
-                                return Err("too many arguments in (if) expression".into());
-                            }
-                            compile_expr(hs, fc)?
-                        };
-                    return Ok(Expr::If(hs.alloc(If { cond, t_expr, f_expr })));
+                    let f_expr = if rest == Nil {
+                        Expr::Con(Unspecified)
+                    } else {
+                        let (fc, rest) = rest.as_pair("missing 'else' argument after (if COND X)")?;
+                        if !rest.is_nil() {
+                            return Err("too many arguments in (if) expression".into());
+                        }
+                        compile_expr(hs, fc)?
+                    };
+                    return Ok(Expr::If(hs.alloc(If {
+                        cond,
+                        t_expr,
+                        f_expr,
+                    })));
                 } else if s.as_str() == "begin" {
                     // In expression context, this is sequencing, not splicing.
                     let mut exprs = vec![];
@@ -324,8 +326,11 @@ pub fn compile_expr<'h>(
                     return Ok(seq(hs, exprs));
                 } else if s.as_str() == "define" {
                     // In expression context, definitions aren't allowed.
-                    return Err("(define) is allowed only at toplevel or in the body \
-                                of a function or let-form".into());
+                    return Err(
+                        "(define) is allowed only at toplevel or in the body \
+                         of a function or let-form"
+                            .into(),
+                    );
                 } else if s.as_str() == "letrec" || s.as_str() == "letrec*" {
                     // Treat (letrec) forms just like (letrec*). Nonstandard in
                     // R6RS, which requires implementations to detect invalid
@@ -358,16 +363,15 @@ pub fn compile_expr<'h>(
                     let value = compile_expr(hs, expr)?;
                     return Ok(Expr::Set(hs.alloc(Def {
                         name: GcLeaf::new(name),
-                        value: value
+                        value: value,
                     })));
                 }
             }
 
-            let subexprs: Vec<Expr<'h>> =
-                Cons(p)
-                    .into_iter()
-                    .map(|v| compile_expr(hs, v?))
-                    .collect::<Result<_>>()?;
+            let subexprs: Vec<Expr<'h>> = Cons(p)
+                .into_iter()
+                .map(|v| compile_expr(hs, v?))
+                .collect::<Result<_>>()?;
             Ok(Expr::App(hs.alloc(subexprs)))
         }
 

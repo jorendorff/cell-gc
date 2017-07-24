@@ -130,19 +130,10 @@ named!(
 
 #[test]
 fn test_character() {
-    assert_eq!(
-        character(r"#\space "),
-        IResult::Done(" ", ' ')
-    );
-    assert_eq!(
-        character(r"#\s "),
-        IResult::Done(" ", 's')
-    );
+    assert_eq!(character(r"#\space "), IResult::Done(" ", ' '));
+    assert_eq!(character(r"#\s "), IResult::Done(" ", 's'));
     assert!(character(r"#\sp ").is_err());
-    assert_eq!(
-        character(r"#\λ "),
-        IResult::Done(" ", 'λ')
-    );
+    assert_eq!(character(r"#\λ "), IResult::Done(" ", 'λ'));
     assert!(character(r"#\λx").is_err());
 }
 
@@ -421,9 +412,7 @@ pub fn parse<'h>(hs: &mut GcHeapSession<'h>, source: &str) -> Result<Vec<Value<'
             // The parser uses `eof!()` to ensure that on success, all input has been consumed.
             assert!(leftovers.is_empty(), "parser did not consume all input");
 
-            data.into_iter()
-                .map(|d| datum_to_value(hs, d))
-                .collect()
+            data.into_iter().map(|d| datum_to_value(hs, d)).collect()
         }
     }
 }
