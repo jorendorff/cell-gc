@@ -4,9 +4,9 @@ extern crate cell_gc;
 extern crate lisp;
 extern crate test;
 
+use lisp::{parse, vm};
 use std::fs;
 use std::io::Read;
-use lisp::{parse, vm};
 
 macro_rules! bench {
     ( $filename:ident ) => {
