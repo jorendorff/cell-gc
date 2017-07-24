@@ -26,7 +26,7 @@ pub fn repl() -> io::Result<()> {
             let mut result = Value::Unspecified;
             for expr in exprs {
                 let val = vm::eval(hs, expr, env.clone())
-                    .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                    .map_err(|e| io::Error::new(io::ErrorKind::Other, e.description()))?;
                 result = val;
             }
 

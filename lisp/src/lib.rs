@@ -5,6 +5,12 @@ extern crate cell_gc_derive;
 extern crate lazy_static;
 #[macro_use]
 extern crate nom;
+#[macro_use]
+extern crate error_chain;
+
+pub mod errors {
+    error_chain!{}
+}
 
 pub mod builtins;
 mod compile;

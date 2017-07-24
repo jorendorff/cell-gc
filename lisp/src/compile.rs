@@ -1,3 +1,4 @@
+use errors::Result;
 use value::{InternedString, Pair, Value};
 use value::Value::*;
 use cell_gc::{GcHeapSession, GcLeaf};
@@ -36,7 +37,7 @@ pub enum Expr<'h> {
 }
 
 impl<'h> fmt::Debug for Expr<'h> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> ::std::result::Result<(), fmt::Error> {
         match *self {
             Expr::Con(ref v) => write!(f, "'{}", v),
             Expr::Var(ref s) => write!(f, "{}", Value::Symbol(s.clone())),
@@ -130,7 +131,7 @@ fn letrec<'h>(
 
 // Convert the linked list of a `<body>` to a vector; also splice in the
 // contents of `(begin)` expressions nested within the `<body>`.
-fn flatten_body<'h>(forms: Value<'h>, out: &mut Vec<Value<'h>>) -> Result<(), String> {
+fn flatten_body<'h>(forms: Value<'h>, out: &mut Vec<Value<'h>>) -> Result<()> {
     for form_res in forms {
         let form = form_res?;
         if let Cons(ref pair) = form {
@@ -161,7 +162,7 @@ fn is_definition<'h>(form: &Value<'h>) -> bool {
 fn compile_body<'h>(
     hs: &mut GcHeapSession<'h>,
     body_list: Value<'h>,
-) -> Result<Expr<'h>, String> {
+) -> Result<Expr<'h>> {
     let mut forms = vec![];
     flatten_body(body_list, &mut forms)?;
 
@@ -180,7 +181,7 @@ fn compile_body<'h>(
         return Err("expression required".into());
     }
 
-    let body_exprs: Result<Vec<Expr>, String> = forms
+    let body_exprs: Result<Vec<Expr>> = forms
         .drain(i..)
         .map(|form| compile_expr(hs, form))
         .collect();
@@ -191,7 +192,7 @@ fn compile_body<'h>(
 /// On success, returns the two parts of a `(define)` that we care about: the
 /// name to define and the compiled expression to populate it.
 fn parse_define<'h>(hs: &mut GcHeapSession<'h>, mut defn: Value<'h>)
-    -> Result<(GcLeaf<InternedString>, Expr<'h>), String>
+    -> Result<(GcLeaf<InternedString>, Expr<'h>)>
 {
     loop {
         let (define_symbol, tail) = defn.as_pair("internal error")?;
@@ -202,9 +203,7 @@ fn parse_define<'h>(hs: &mut GcHeapSession<'h>, mut defn: Value<'h>)
                 match rest {
                     Nil => {}
                     _ => {
-                        return Err(
-                            "too many arguments in (define)".to_string(),
-                        )
+                        return Err("too many arguments in (define)".into());
                     }
                 };
 
@@ -239,7 +238,7 @@ fn parse_define<'h>(hs: &mut GcHeapSession<'h>, mut defn: Value<'h>)
                     cdr: defn_cdr
                 }));
             }
-            _ => return Err("(define) with a non-symbol name".to_string())
+            _ => return Err("(define) with a non-symbol name".into())
         }
     }
 }
@@ -247,7 +246,7 @@ fn parse_define<'h>(hs: &mut GcHeapSession<'h>, mut defn: Value<'h>)
 pub fn compile_toplevel<'h>(
     hs: &mut GcHeapSession<'h>,
     expr: Value<'h>,
-) -> Result<Expr<'h>, String> {
+) -> Result<Expr<'h>> {
     // TODO: support (begin) here
     if is_definition(&expr) {
         let (name, value) = parse_define(hs, expr)?;
@@ -260,7 +259,7 @@ pub fn compile_toplevel<'h>(
 pub fn compile_expr<'h>(
     hs: &mut GcHeapSession<'h>,
     expr: Value<'h>,
-) -> Result<Expr<'h>, String> {
+) -> Result<Expr<'h>> {
     match expr {
         Symbol(s) => Ok(Expr::Var(s)),
 
@@ -275,7 +274,7 @@ pub fn compile_expr<'h>(
                         if let Symbol(s) = pair.car() {
                             names.push(s);
                         } else {
-                            return Err("syntax error in lambda arguments".to_string());
+                            return Err("syntax error in lambda arguments".into());
                         }
                         param_list = pair.cdr();
                     }
@@ -286,7 +285,7 @@ pub fn compile_expr<'h>(
                                 names.push(rest_name);
                                 true
                             }
-                            _ => return Err("syntax error in lambda arguments".to_string())
+                            _ => return Err("syntax error in lambda arguments".into())
                         };
 
                     let params = hs.alloc(names);
@@ -295,7 +294,7 @@ pub fn compile_expr<'h>(
                 } else if s.as_str() == "quote" {
                     let (datum, rest) = p.cdr().as_pair("(quote) with no arguments")?;
                     if !rest.is_nil() {
-                        return Err("too many arguments to (quote)".to_string());
+                        return Err("too many arguments to (quote)".into());
                     }
                     return Ok(Expr::Con(datum));
                 } else if s.as_str() == "if" {
@@ -310,7 +309,7 @@ pub fn compile_expr<'h>(
                             let (fc, rest) =
                                 rest.as_pair("missing 'else' argument after (if COND X)")?;
                             if !rest.is_nil() {
-                                return Err("too many arguments in (if) expression".to_string());
+                                return Err("too many arguments in (if) expression".into());
                             }
                             compile_expr(hs, fc)?
                         };
@@ -342,7 +341,7 @@ pub fn compile_expr<'h>(
                         let name = name_v.as_symbol("letrec*: name required")?;
                         let (expr, rest) = rest.as_pair("letrec*: value required for binding")?;
                         if !rest.is_nil() {
-                            return Err("(letrec*): too many arguments".to_string());
+                            return Err("(letrec*): too many arguments".into());
                         }
                         names.push(GcLeaf::new(name));
                         exprs.push(compile_expr(hs, expr)?);
@@ -354,7 +353,7 @@ pub fn compile_expr<'h>(
                     let name = first.as_symbol("(set!) first argument must be a name")?;
                     let (expr, rest) = rest.as_pair("(set!) with no value")?;
                     if !rest.is_nil() {
-                        return Err("(set!): too many arguments".to_string());
+                        return Err("(set!): too many arguments".into());
                     }
                     let value = compile_expr(hs, expr)?;
                     return Ok(Expr::Set(hs.alloc(Def {
@@ -368,7 +367,7 @@ pub fn compile_expr<'h>(
                 Cons(p)
                     .into_iter()
                     .map(|v| compile_expr(hs, v?))
-                    .collect::<Result<_, String>>()?;
+                    .collect::<Result<_>>()?;
             Ok(Expr::App(hs.alloc(subexprs)))
         }
 
@@ -385,6 +384,6 @@ pub fn compile_expr<'h>(
         StringObj(v) => Ok(Expr::Con(StringObj(v))),
 
         // Everything else is an error.
-        _ => Err(format!("not an expression")),
+        _ => Err("not an expression".into()),
     }
 }

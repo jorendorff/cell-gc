@@ -4,6 +4,7 @@ use builtins;
 use cell_gc::{GcHeapSession, GcLeaf};
 use cell_gc::collections::VecRef;
 use compile::{self, Expr};
+use errors::Result;
 use parse;
 use value::{InternedString, Pair, Value};
 use value::Value::*;
@@ -23,7 +24,7 @@ pub enum Trampoline<'h> {
 impl<'h> Trampoline<'h> {
     /// Complete the evaluation of this value. Avoids recursion to implement
     /// proper tail calls and keep from blowing the stack.
-    pub fn eval(mut self, hs: &mut GcHeapSession<'h>) -> Result<Value<'h>, String> {
+    pub fn eval(mut self, hs: &mut GcHeapSession<'h>) -> Result<Value<'h>> {
         loop {
             match self {
                 Trampoline::Value(v) => {
@@ -87,7 +88,7 @@ impl<'h> EnvironmentRef<'h> {
         self.values().push(value);
     }
 
-    pub fn lookup(&self, name: InternedString) -> Result<(EnvironmentRef<'h>, usize), String> {
+    pub fn lookup(&self, name: InternedString) -> Result<(EnvironmentRef<'h>, usize)> {
         let mut next = Some(self.clone());
         while let Some(env) = next {
             let names = env.names();
@@ -98,15 +99,15 @@ impl<'h> EnvironmentRef<'h> {
             }
             next = env.parent();
         }
-        Err(format!("undefined symbol: {:?}", name.as_str()))
+        Err(format!("undefined symbol: {:?}", name.as_str()).into())
     }
 
-    pub fn get(&self, name: InternedString) -> Result<Value<'h>, String> {
+    pub fn get(&self, name: InternedString) -> Result<Value<'h>> {
         let (env, i) = self.lookup(name)?;
         Ok(env.values().get(i))
     }
 
-    pub fn set(&self, name: InternedString, value: Value<'h>) -> Result<(), String> {
+    pub fn set(&self, name: InternedString, value: Value<'h>) -> Result<()> {
         let (env, i) = self.lookup(name)?;
         env.values().set(i, value);
         Ok(())
@@ -178,7 +179,7 @@ pub fn apply<'h>(
     hs: &mut GcHeapSession<'h>,
     fval: Value<'h>,
     mut args: Vec<Value<'h>>,
-) -> Result<Trampoline<'h>, String> {
+) -> Result<Trampoline<'h>> {
     match fval {
         Builtin(f) => (f.0)(hs, args),
         Lambda(pair) => {
@@ -196,7 +197,7 @@ pub fn apply<'h>(
 
             let n_required_params = n_names - has_rest as usize;
             if args.len() < n_required_params {
-                return Err("apply: not enough arguments".to_string());
+                return Err("apply: not enough arguments".into());
             }
             if has_rest {
                 let mut rest_list = Nil;
@@ -208,7 +209,7 @@ pub fn apply<'h>(
                 }
                 args.push(rest_list);
             } else if args.len() > n_required_params {
-                return Err("apply: too many arguments".to_string());
+                return Err("apply: too many arguments".into());
             }
 
             assert_eq!(names.len(), args.len());
@@ -221,7 +222,7 @@ pub fn apply<'h>(
 
             eval_compiled_to_tail_call(hs, code.body(), env)
         }
-        _ => Err("apply: not a function".to_string()),
+        _ => Err("apply: not a function".into()),
     }
 }
 
@@ -232,7 +233,7 @@ pub fn eval_compiled_to_tail_call<'h>(
     hs: &mut GcHeapSession<'h>,
     expr: Expr<'h>,
     env: EnvironmentRef<'h>,
-) -> Result<Trampoline<'h>, String> {
+) -> Result<Trampoline<'h>> {
     match expr {
         Expr::Con(k) =>
             Ok(Trampoline::Value(k)),
@@ -248,7 +249,7 @@ pub fn eval_compiled_to_tail_call<'h>(
             let args: Vec<Value<'h>> =
                 (1..subexprs.len())
                 .map(|i| eval_compiled(hs, subexprs.get(i), env.clone()))
-                .collect::<Result<Vec<Value<'h>>, String>>()?;
+                .collect::<Result<Vec<Value<'h>>>>()?;
             Ok(Trampoline::TailCall { func, args })
         }
         Expr::Seq(exprs) => {
@@ -310,7 +311,7 @@ pub fn eval_to_tail_call<'h>(
     hs: &mut GcHeapSession<'h>,
     mut expr: Value<'h>,
     env: EnvironmentRef<'h>,
-) -> Result<Trampoline<'h>, String> {
+) -> Result<Trampoline<'h>> {
     if let Ok(expander) = env.get(EXPANDER_SYMBOL.clone()) {
         let args = vec![expr];
         let tail = apply(hs, expander, args)?;
@@ -324,7 +325,7 @@ pub fn eval_compiled<'h>(
     hs: &mut GcHeapSession<'h>,
     expr: Expr<'h>,
     env: EnvironmentRef<'h>,
-) -> Result<Value<'h>, String> {
+) -> Result<Value<'h>> {
     eval_compiled_to_tail_call(hs, expr, env)?.eval(hs)
 }
 
@@ -332,11 +333,11 @@ pub fn eval<'h>(
     hs: &mut GcHeapSession<'h>,
     expr: Value<'h>,
     env: EnvironmentRef<'h>,
-) -> Result<Value<'h>, String> {
+) -> Result<Value<'h>> {
     eval_to_tail_call(hs, expr, env)?.eval(hs)
 }
 
-fn eval_str<'h>(hs: &mut GcHeapSession<'h>, env: EnvironmentRef<'h>, code: &str) -> Result<Value<'h>, String> {
+fn eval_str<'h>(hs: &mut GcHeapSession<'h>, env: EnvironmentRef<'h>, code: &str) -> Result<Value<'h>> {
     let forms = parse::parse(hs, code)?;
 
     let mut result = Value::Nil;

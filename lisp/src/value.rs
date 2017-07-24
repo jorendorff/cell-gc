@@ -1,6 +1,7 @@
 use cell_gc::{GcHeapSession, GcLeaf};
 use cell_gc::collections::VecRef;
 use compile;
+use errors::Result;
 use std::borrow::Borrow;
 use std::fmt;
 use std::hash::{Hash, Hasher};
@@ -37,7 +38,7 @@ pub use self::Value::*;
 
 pub type BuiltinFn =
     for<'b> fn(&mut GcHeapSession<'b>, Vec<Value<'b>>)
-        -> Result<Trampoline<'b>, String>;
+        -> Result<Trampoline<'b>>;
 
 #[derive(Copy)]
 pub struct BuiltinFnPtr(pub BuiltinFn);
@@ -123,59 +124,59 @@ impl<'h> Value<'h> {
 
     pattern_predicate!(is_char, Char(_));
 
-    pub fn as_char(self, error_msg: &str) -> Result<char, String> {
+    pub fn as_char(self, error_msg: &str) -> Result<char> {
         match self {
             Char(c) => Ok(c),
-            _ => Err(format!("{}: character required", error_msg))
+            _ => Err(format!("{}: character required", error_msg).into())
         }
     }
 
     pattern_predicate!(is_number, Int(_));
 
-    pub fn as_int(self, error_msg: &str) -> Result<i32, String> {
+    pub fn as_int(self, error_msg: &str) -> Result<i32> {
         match self {
             Int(i) => Ok(i),
-            _ => Err(format!("{}: number required", error_msg)),
+            _ => Err(format!("{}: number required", error_msg).into()),
         }
     }
 
-    pub fn as_index(self, error_msg: &str) -> Result<usize, String> {
+    pub fn as_index(self, error_msg: &str) -> Result<usize> {
         match self {
             Int(i) => {
                 if i >= 0 {
                     Ok(i as usize)
                 } else {
-                    Err(format!("{}: negative vector index", error_msg))
+                    Err(format!("{}: negative vector index", error_msg).into())
                 }
             }
-            _ => Err(format!("{}: vector index required", error_msg)),
+            _ => Err(format!("{}: vector index required", error_msg).into()),
         }
     }
 
     pattern_predicate!(is_pair, Cons(_));
 
-    pub fn as_pair(self, msg: &'static str) -> Result<(Value<'h>, Value<'h>), String> {
+    pub fn as_pair(self, error_msg: &'static str) -> Result<(Value<'h>, Value<'h>)> {
         match self {
             Cons(r) => Ok((r.car(), r.cdr())),
-            _ => Err(msg.to_string()),
+            _ => Err(format!("{}: pair required", error_msg).into()),
         }
     }
 
     pattern_predicate!(is_vector, Vector(_));
 
-    pub fn as_vector(self, error_msg: &str) -> Result<VecRef<'h, Value<'h>>, String> {
+    pub fn as_vector(self, error_msg: &str) -> Result<VecRef<'h, Value<'h>>> {
         match self {
             Vector(v) => Ok(v),
-            _ => Err(format!("{}: vector expected", error_msg)),
+            _ => Err(format!("{}: vector expected", error_msg).into()),
         }
     }
 
     pattern_predicate!(is_symbol, Symbol(_));
 
-    pub fn as_symbol(self, error_msg: &str) -> Result<InternedString, String> {
+    pub fn as_symbol(self, error_msg: &str) -> Result<InternedString> {
         match self {
             Symbol(s) => Ok(s.unwrap()),
-            _ => Err(format!("{}: symbol required", error_msg)),
+            _ => Err(format!("{}: symbol required", error_msg).into()),
         }
     }
 
@@ -186,11 +187,11 @@ impl<'h> Value<'h> {
         }
     }
 
-    pub fn as_string(self, error_msg: &str) -> Result<Arc<String>, String> {
+    pub fn as_string(self, error_msg: &str) -> Result<Arc<String>> {
         match self {
             ImmString(s) => Ok(s.unwrap().0),
             StringObj(s) => Ok(s.unwrap().0),
-            _ => Err(format!("{}: string required", error_msg)),
+            _ => Err(format!("{}: string required", error_msg).into()),
         }
     }
 
@@ -202,10 +203,10 @@ impl<'h> Value<'h> {
         }
     }
 
-    pub fn as_environment(self, error_msg: &str) -> Result<EnvironmentRef<'h>, String> {
+    pub fn as_environment(self, error_msg: &str) -> Result<EnvironmentRef<'h>> {
         match self {
             Environment(env) => Ok(env),
-            _ => Err(error_msg.to_string())
+            _ => Err(format!("{}: environment required", error_msg).into())
         }
     }
 
@@ -256,7 +257,7 @@ impl<'h> Value<'h> {
 }
 
 impl<'h> Iterator for Value<'h> {
-    type Item = Result<Value<'h>, String>;
+    type Item = Result<Value<'h>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let (car, cdr) = match *self {
