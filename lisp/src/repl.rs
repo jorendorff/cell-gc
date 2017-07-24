@@ -20,7 +20,7 @@ pub fn repl() -> io::Result<()> {
             let mut source = String::new();
             io::stdin().read_line(&mut source)?;
             let exprs = parse::parse(hs, &source)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+                .map_err(|e| io::Error::new(io::ErrorKind::Other, e.description()))?;
 
             // Eval
             let mut result = Value::Unspecified;

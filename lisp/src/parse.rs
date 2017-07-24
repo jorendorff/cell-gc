@@ -1,6 +1,7 @@
 //! Parsing of s-expressions.
 
 use cell_gc::{GcHeapSession, GcLeaf};
+use errors::Result;
 use nom::IResult;
 use std::str::FromStr;
 use value::{InternedString, Pair, Value};
@@ -370,7 +371,7 @@ fn into_list<'h>(
     hs: &mut GcHeapSession<'h>,
     elements: Vec<Datum>,
     tail: Value<'h>,
-) -> Result<Value<'h>, &'static str> {
+) -> Result<Value<'h>> {
     let mut list = tail;
     for d in elements.into_iter().rev() {
         let value = datum_to_value(hs, d)?;
@@ -382,14 +383,14 @@ fn into_list<'h>(
     Ok(list)
 }
 
-fn datum_to_value<'h>(hs: &mut GcHeapSession<'h>, datum: Datum) -> Result<Value<'h>, &'static str> {
+fn datum_to_value<'h>(hs: &mut GcHeapSession<'h>, datum: Datum) -> Result<Value<'h>> {
     match datum {
         Datum::Boolean(b) => Ok(Value::Bool(b)),
         Datum::Number(s) => {
             if let Ok(i) = i32::from_str(&s) {
                 Ok(Value::Int(i))
             } else {
-                Err("unsupported number token")
+                Err("unsupported number token".into())
             }
         }
         Datum::Char(c) => Ok(Value::Char(c)),
@@ -403,7 +404,7 @@ fn datum_to_value<'h>(hs: &mut GcHeapSession<'h>, datum: Datum) -> Result<Value<
             into_list(hs, data, tail_val)
         }
         Datum::Vector(data) => {
-            let values: Result<Vec<Value<'h>>, &'static str> =
+            let values: Result<Vec<Value<'h>>> =
                 data.into_iter().map(|d| datum_to_value(hs, d)).collect();
             Ok(Value::Vector(hs.alloc(values?)))
         }
@@ -412,17 +413,17 @@ fn datum_to_value<'h>(hs: &mut GcHeapSession<'h>, datum: Datum) -> Result<Value<
 
 /// Top level entry point to s-expression parsing. Takes a source string and
 /// returns a `Value` which can contain `Pair`s allocated in the GC heap.
-pub fn parse<'h>(hs: &mut GcHeapSession<'h>, source: &str) -> Result<Vec<Value<'h>>, &'static str> {
+pub fn parse<'h>(hs: &mut GcHeapSession<'h>, source: &str) -> Result<Vec<Value<'h>>> {
     match file_to_data(source) {
-        IResult::Error(_e) => Err("syntax error"),
-        IResult::Incomplete(_e) => Err("incomplete input"),
+        IResult::Error(_e) => Err("syntax error".into()),
+        IResult::Incomplete(_e) => Err("incomplete input".into()),
         IResult::Done(leftovers, data) => {
             // The parser uses `eof!()` to ensure that on success, all input has been consumed.
             assert!(leftovers.is_empty(), "parser did not consume all input");
 
-            Ok(data.into_iter()
+            data.into_iter()
                 .map(|d| datum_to_value(hs, d))
-                .collect::<Result<Vec<_>, _>>()?)
+                .collect()
         }
     }
 }
