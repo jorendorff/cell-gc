@@ -33,10 +33,6 @@ pub enum Expr<'h> {
 
     /// A `letrec*` expression.
     Letrec(LetrecRef<'h>),
-
-    /// Evaluates to the current global environment.
-    /// Used to implement (interactive-environment), for (eval).
-    ToplevelEnv,
 }
 
 impl<'h> fmt::Debug for Expr<'h> {
@@ -72,7 +68,6 @@ impl<'h> fmt::Debug for Expr<'h> {
                        .collect::<Vec<String>>()
                        .join(" "),
                        r.body()),
-            Expr::ToplevelEnv => write!(f, "#<toplevel-env>"),
         }
     }
 }

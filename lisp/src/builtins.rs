@@ -837,23 +837,9 @@ pub fn define_builtins<'h>(hs: &mut GcHeapSession<'h>, env: EnvironmentRef<'h>) 
     }
 
     // One last extension, implemented as a "lambda" because builtins don't
-    // have an environment pointer. It is not actually possible to write this
-    // lambda in scheme, though.
-    use compile::{Expr, Code, CodeRef};
-
-    let params = hs.alloc(vec![]);
-    let code: CodeRef<'h> =
-        hs.alloc(Code {
-            params,
-            rest: false,
-            body: Expr::ToplevelEnv,
-        });
-    let interaction_environment_fn =
-        Lambda(hs.alloc(Pair {
-            car: Value::Code(code),
-            cdr: Value::Environment(env.clone()),
-        }));
+    // have an environment pointer.
+    let interaction_env_proc = vm::constant_proc(hs, Value::Environment(env.clone()));
     env.push(
         InternedString::get("interaction-environment"),
-        interaction_environment_fn);
+        interaction_env_proc);
 }

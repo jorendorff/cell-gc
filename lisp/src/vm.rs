@@ -117,6 +117,28 @@ impl<'h> EnvironmentRef<'h> {
     }
 }
 
+/// Create and return a procedure that takes no arguments and always returns the same value, k.
+pub fn constant_proc<'h>(hs: &mut GcHeapSession<'h>, k: Value<'h>) -> Value<'h> {
+    use compile::{Code, CodeRef};
+
+    let name = GcLeaf::new(InternedString::get("k"));
+    let names = hs.alloc(vec![name.clone()]);
+    let values = hs.alloc(vec![k]);
+    let env = hs.alloc(Environment { parent: None, names, values });
+
+    let params = hs.alloc(vec![]);
+    let code: CodeRef<'h> =
+        hs.alloc(Code {
+            params,
+            rest: false,
+            body: Expr::Var(name)
+        });
+    Value::Lambda(hs.alloc(Pair {
+        car: Value::Code(code),
+        cdr: Value::Environment(env),
+    }))
+}
+
 #[macro_export]
 macro_rules! lisp {
     { ( ) , $_hs:expr } => {
@@ -265,13 +287,6 @@ pub fn eval_compiled_to_tail_call<'h>(
             let val = eval_compiled(hs, def.value(), env.clone())?;
             env.set(def.name().unwrap(), val)?;
             Ok(Trampoline::Value(Value::Unspecified))
-        }
-        Expr::ToplevelEnv => {
-            let mut env = env;
-            while let Some(parent) = env.parent() {
-                env = parent;
-            }
-            Ok(Trampoline::Value(Value::Environment(env)))
         }
     }
 }
