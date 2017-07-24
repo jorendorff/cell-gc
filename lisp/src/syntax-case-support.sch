@@ -4,7 +4,9 @@
 ;;;
 ;;; (void)
 ;;; returns the implementation's cannonical "unspecified value".
-(define void (lambda () (if #f #f)))
+;;
+;; (note: this also has to be present in the target environment,
+;; so we define it in prelude.sch instead of here).
 
 ;;; (andmap proc list1 list2 ...)
 ;;; returns true if proc returns true when applied to each element of list1
@@ -44,8 +46,7 @@
 ;;; to support the "noexpand" flag, since it is handled by sc-expand.
 
 (define original-eval eval)
-(define env (interaction-environment))
-(define (eval datum) (original-eval datum env))
+(define (eval datum) (original-eval datum psyntax-environment))
 
 ;;; (error who format-string why what)
 ;;; where who is either a symbol or #f, format-string is always "~a ~s",

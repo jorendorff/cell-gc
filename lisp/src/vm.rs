@@ -63,7 +63,18 @@ impl<'h> Environment<'h> {
                 include_str!("syntax-case-support.sch"),
                 include_str!("psyntax.pp"),
                 "\nsc-expand\n");
-        let expander = eval_str(hs, env.clone(), EXPANDER_CODE).expect("unexpected error initializing the expander");
+        let xm = Environment {
+            parent: Some(env.clone()),
+            names: hs.alloc(vec![]),
+            values: hs.alloc(vec![]),
+        };
+        let expander_module = hs.alloc(xm);
+        expander_module.push(
+            InternedString::get("psyntax-environment"),
+            Value::Environment(expander_module.clone()),
+        );
+        let expander = eval_str(hs, expander_module, EXPANDER_CODE)
+            .expect("unexpected error initializing the expander");
         env.set_expander(expander);
 
         env

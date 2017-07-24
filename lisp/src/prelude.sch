@@ -189,3 +189,7 @@
         l
         (loop (- i 1) (cons (vector-ref v i) l))))
   (loop (- (vector-length v) 1) '()))
+
+(define void
+  (letrec ((unspecified (if #f #f)))
+    (lambda () unspecified)))
