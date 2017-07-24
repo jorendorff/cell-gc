@@ -2,6 +2,7 @@
 
 use pages::{PAGE_ALIGN, TypedPage};
 use std::fmt;
+use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
 use std::mem;
 
@@ -23,10 +24,17 @@ use std::mem;
 /// `GcRef<T>` for that instead), only for GC internals. We have to make it
 /// `pub` so that `#[derive(IntoHeap)]` can generate code that uses it, but no
 /// one else should!
-#[derive(Hash, PartialOrd, Ord)]
+#[derive(PartialOrd, Ord)]
 pub struct Pointer<T> {
     ptr: UntypedPointer,
     phantom: PhantomData<*const T>,
+}
+
+impl<'h, T> Hash for Pointer<T> {
+    #[inline]
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.ptr.hash(state);
+    }
 }
 
 impl<T> Pointer<T> {

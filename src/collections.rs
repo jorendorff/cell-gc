@@ -3,6 +3,7 @@
 use gc_ref::GcRef;
 use ptr::Pointer;
 use std::cmp::Ordering;
+use std::hash::{Hash, Hasher};
 use std::mem;
 use traits::{IntoHeap, IntoHeapAllocation, IntoHeapBase, Tracer};
 
@@ -61,6 +62,14 @@ impl<'h, T: IntoHeap<'h>> IntoHeapAllocation<'h> for Vec<T> {
 /// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VecRef<'h, T: IntoHeap<'h>>(GcRef<'h, Vec<T>>);
+
+impl<'h, T: IntoHeap<'h>> Hash for VecRef<'h, T> {
+    #[inline]
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.0.hash(state);
+    }
+}
+
 
 impl<'h, T: IntoHeap<'h>> IntoHeapBase for VecRef<'h, T> {
     type In = Pointer<Vec<T::In>>;

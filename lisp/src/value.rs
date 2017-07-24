@@ -3,6 +3,7 @@ use cell_gc::collections::VecRef;
 use compile;
 use std::borrow::Borrow;
 use std::fmt;
+use std::hash::{Hash, Hasher};
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicUsize, ATOMIC_USIZE_INIT, Ordering};
 use std::collections::HashSet;
@@ -14,7 +15,7 @@ pub struct Pair<'h> {
     pub cdr: Value<'h>,
 }
 
-#[derive(Clone, Debug, PartialEq, IntoHeap)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, IntoHeap)]
 pub enum Value<'h> {
     Unspecified,
     Nil,
@@ -38,6 +39,7 @@ pub type BuiltinFn =
     for<'b> fn(&mut GcHeapSession<'b>, Vec<Value<'b>>)
         -> Result<Trampoline<'b>, String>;
 
+#[derive(Copy)]
 pub struct BuiltinFnPtr(pub BuiltinFn);
 
 // This can't be #[derive]d because function pointers aren't Clone.
@@ -48,11 +50,20 @@ impl Clone for BuiltinFnPtr {
     }
 }
 
+impl Hash for BuiltinFnPtr {
+    #[inline]
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.0.hash(state);
+    }
+}
+
 impl PartialEq for BuiltinFnPtr {
     fn eq(&self, other: &BuiltinFnPtr) -> bool {
         self.0 as usize == other.0 as usize
     }
 }
+
+impl Eq for BuiltinFnPtr {}
 
 impl fmt::Debug for BuiltinFnPtr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -63,52 +74,24 @@ impl fmt::Debug for BuiltinFnPtr {
 
 impl<'h> fmt::Display for Value<'h> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        // Note that this will need to add a set of already-printed pairs if we add
-        // `set-car!` and/or `set-cdr!` and introduce the possibility of cycles.
-        match *self {
-            Unspecified => write!(f, "#<unspecified>"),
-            Nil => write!(f, "()"),
-            Bool(true) => write!(f, "#t"),
-            Bool(false) => write!(f, "#f"),
-            Char(c) => write!(f, "#\\{}", c),
-            Int(n) => write!(f, "{}", n),
-            Symbol(ref s) => write!(f, "{}", s.as_str()),
-            StringObj(ref s) => write!(f, "{:?}", s as &str),
-            ImmString(ref s) => write!(f, "{:?}", s.as_str()),
-            Lambda(_) => write!(f, "#lambda"),
-            Code(_) => write!(f, "#code"),
-            Builtin(_) => write!(f, "#builtin"),
-            Cons(ref p) => {
-                write!(f, "(")?;
-                write_pair(f, p.clone())?;
-                write!(f, ")")
-            }
-            Vector(ref v) => {
-                write!(f, "#(")?;
-                for i in 0..v.len() {
-                    if i != 0 {
-                        write!(f, " ")?;
-                    }
-                    write!(f, "{}", v.get(i))?;
-                }
-                write!(f, ")")
-            }
-            Environment(_) => write!(f, "#environment"),
-        }
+        let mut seen = HashSet::new();
+        self.print(f, &mut seen)
     }
 }
 
-fn write_pair<'h>(f: &mut fmt::Formatter, pair: PairRef<'h>) -> fmt::Result {
-    write!(f, "{}", pair.car())?;
+fn write_pair<'h>(f: &mut fmt::Formatter, pair: PairRef<'h>, seen: &mut HashSet<Value<'h>>) -> fmt::Result {
+    pair.car().print(f, seen)?;
+
     match pair.cdr() {
         Nil => Ok(()),
         Cons(p) => {
             write!(f, " ")?;
-            write_pair(f, p)
+            write_pair(f, p, seen)
         }
         otherwise => {
             write!(f, " . ")?;
-            write!(f, "{}", otherwise)
+            otherwise.print(f, seen)?;
+            Ok(())
         }
     }
 }
@@ -225,6 +208,51 @@ impl<'h> Value<'h> {
             _ => Err(error_msg.to_string())
         }
     }
+
+    fn print(&self, f: &mut fmt::Formatter, seen: &mut HashSet<Value<'h>>) -> fmt::Result {
+        match *self {
+            Cons(_) | Vector(_) => {
+                if seen.contains(self) {
+                    // TODO: this should do the `#1#` style printing thing. Or maybe the
+                    // standard has something to say about cyclic printing...
+                    return write!(f, "<cycle>");
+                }
+                seen.insert(self.clone());
+            }
+            _ => {}
+        }
+
+        match *self {
+            Unspecified => write!(f, "#<unspecified>"),
+            Nil => write!(f, "()"),
+            Bool(true) => write!(f, "#t"),
+            Bool(false) => write!(f, "#f"),
+            Char(c) => write!(f, "#\\{}", c),
+            Int(n) => write!(f, "{}", n),
+            Symbol(ref s) => write!(f, "{}", s.as_str()),
+            StringObj(ref s) => write!(f, "{:?}", s.as_str()),
+            ImmString(ref s) => write!(f, "{:?}", s.as_str()),
+            Lambda(_) => write!(f, "#lambda"),
+            Code(_) => write!(f, "#code"),
+            Builtin(_) => write!(f, "#builtin"),
+            Cons(ref p) => {
+                write!(f, "(")?;
+                write_pair(f, p.clone(), seen)?;
+                write!(f, ")")
+            }
+            Vector(ref v) => {
+                write!(f, "#(")?;
+                for i in 0..v.len() {
+                    if i != 0 {
+                        write!(f, " ")?;
+                    }
+                    v.get(i).print(f, seen)?;
+                }
+                write!(f, ")")
+            }
+            Environment(_) => write!(f, "#environment"),
+        }
+    }
 }
 
 impl<'h> Iterator for Value<'h> {
@@ -252,6 +280,14 @@ impl PartialEq for NonInternedStringObject {
 
 impl Eq for NonInternedStringObject {}
 
+impl Hash for NonInternedStringObject {
+    #[inline]
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        let ptr: *const String = &self.0 as &String;
+        ptr.hash(state);
+    }
+}
+
 impl ::std::ops::Deref for NonInternedStringObject {
     type Target = Arc<String>;
     fn deref(&self) -> &Arc<String> { &self.0 }
@@ -271,6 +307,17 @@ impl PartialEq for InternedString {
 }
 
 impl Eq for InternedString {}
+
+impl Hash for InternedString {
+    #[inline]
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        let ptr: &str = &**self.0;
+        let ptr = ptr as *const str;
+        let ptr = ptr as *const ();
+        let ptr = ptr as usize;
+        ptr.hash(state);
+    }
+}
 
 lazy_static! {
     static ref STRINGS: Mutex<HashSet<InternedStringByValue>> = Mutex::new(HashSet::new());
