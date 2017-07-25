@@ -78,6 +78,7 @@ use marking::{MarkingTracer, mark};
 use pages::{PageSet, PageSetRef, TypedPage, heap_type_id};
 use pages::TypeId;
 use ptr::{Pointer, UntypedPointer};
+use signposts;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::marker::PhantomData;
@@ -339,6 +340,7 @@ impl GcHeap {
         self.unpin_dropped_ptrs();
         mark(self);
 
+        let _sp = signposts::Sweeping::new();
         for page_set in self.page_sets.values_mut() {
             unsafe {
                 page_set.sweep();
@@ -425,6 +427,7 @@ impl<'h> GcHeapSession<'h> {
     /// If a page limit has been set, all pages are full, and GC fails to shake
     /// anything loose.
     pub fn alloc<T: IntoHeapAllocation<'h>>(&mut self, value: T) -> T::Ref {
+        let _sp = signposts::Allocating::new();
         self.try_alloc(value)
             .expect("out of memory (gc did not collect anything)")
     }

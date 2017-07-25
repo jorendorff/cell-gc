@@ -3,11 +3,13 @@
 use heap::GcHeap;
 use pages::PageHeader;
 use ptr::{Pointer, UntypedPointer};
+use signposts;
 use traits::{IntoHeapAllocation, Tracer};
-
 
 /// Perform all the marking for a collection.
 pub fn mark<'h>(heap: &mut GcHeap) {
+    let _sp = signposts::Marking::new();
+
     unsafe {
         heap.clear_mark_bits();
     }

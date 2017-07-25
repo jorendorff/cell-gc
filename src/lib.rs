@@ -237,6 +237,7 @@ mod gc_leaf;
 pub mod collections;
 pub mod ptr;
 mod marking;
+mod signposts;
 
 pub use gc_leaf::GcLeaf;
 pub use gc_ref::{GcFrozenRef, GcRef};
