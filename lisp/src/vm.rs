@@ -56,11 +56,11 @@ impl<'h> Environment<'h> {
 
         builtins::define_builtins(hs, env.clone());
 
-        const PRELUDE: &'static str = include_str!("prelude.sch");
+        const PRELUDE: &'static str = include_str!("prelude.scm");
         let _ = eval_str(hs, env.clone(), PRELUDE).expect("unexpected error running the prelude");
 
         const EXPANDER_CODE: &'static str = concat!(
-            include_str!("syntax-case-support.sch"),
+            include_str!("psyntax-support.scm"),
             include_str!("psyntax.pp"),
             "\nsc-expand\n"
         );
