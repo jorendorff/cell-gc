@@ -13,8 +13,10 @@ use std::marker::PhantomData;
 pub trait IntoHeapBase: Sized {
     /// The type of the value when it is physically stored in the heap.
     ///
-    /// GC types come in pairs: an `IntoHeap` type and an `In` type. Both
-    /// types have the same layout, bit for bit.
+    /// GC types come in pairs: an `IntoHeap` type and an `In` type. Ideally
+    /// both types would have the same layout, bit for bit, but Rust makes no
+    /// promises about struct and enum layout generally, so we can't guarantee
+    /// this.
     ///
     /// The `In` type is stored physically inside the heap, and may be packed
     /// with pointer fields and unsafe methods. The `IntoHeap` type is safe, is
