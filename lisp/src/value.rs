@@ -158,7 +158,14 @@ impl<'h> Value<'h> {
 
     pattern_predicate!(is_pair, Cons(_));
 
-    pub fn as_pair(self, error_msg: &'static str) -> Result<(Value<'h>, Value<'h>)> {
+    pub fn as_pair_ref(self, error_msg: &str) -> Result<PairRef<'h>> {
+        match self {
+            Cons(r) => Ok(r),
+            _ => Err(format!("{}: pair required", error_msg).into()),
+        }
+    }
+
+    pub fn as_pair(self, error_msg: &str) -> Result<(Value<'h>, Value<'h>)> {
         match self {
             Cons(r) => Ok((r.car(), r.cdr())),
             _ => Err(format!("{}: pair required", error_msg).into()),
@@ -413,5 +420,130 @@ impl InternedString {
 impl Borrow<str> for InternedString {
     fn borrow(&self) -> &str {
         self.as_str()
+    }
+}
+
+
+/// Conversion traits //////////////////////////////////////////////////////////
+
+pub trait ArgType<'h>: Sized {
+    fn try_unpack(proc_name: &str, value: Value<'h>) -> Result<Self>;
+}
+
+impl<'h> ArgType<'h> for Value<'h> {
+    fn try_unpack(_: &str, value: Value<'h>) -> Result<Value<'h>> {
+        Ok(value)
+    }
+}
+
+impl<'h> ArgType<'h> for char {
+    fn try_unpack(proc_name: &str, value: Value<'h>) -> Result<char> {
+        value.as_char(proc_name)
+    }
+}
+
+impl<'h> ArgType<'h> for i32 {
+    fn try_unpack(proc_name: &str, value: Value<'h>) -> Result<i32> {
+        value.as_int(proc_name)
+    }
+}
+
+impl<'h> ArgType<'h> for usize {
+    fn try_unpack(proc_name: &str, value: Value<'h>) -> Result<usize> {
+        value.as_index(proc_name)
+    }
+}
+
+impl<'h> ArgType<'h> for Arc<String> {
+    fn try_unpack(proc_name: &str, value: Value<'h>) -> Result<Arc<String>> {
+        value.as_string(proc_name)
+    }
+}
+
+impl<'h> ArgType<'h> for PairRef<'h> {
+    fn try_unpack(proc_name: &str, value: Value<'h>) -> Result<PairRef<'h>> {
+        value.as_pair_ref(proc_name)
+    }
+}
+
+impl<'h> ArgType<'h> for VecRef<'h, Value<'h>> {
+    fn try_unpack(proc_name: &str, value: Value<'h>) -> Result<VecRef<'h, Value<'h>>> {
+        value.as_vector(proc_name)
+    }
+}
+
+impl<'h> ArgType<'h> for EnvironmentRef<'h> {
+    fn try_unpack(proc_name: &str, value: Value<'h>) -> Result<EnvironmentRef<'h>> {
+        value.as_environment(proc_name)
+    }
+}
+
+
+pub trait RetType<'h> {
+    fn pack(self, hs: &mut GcHeapSession<'h>) -> Result<Trampoline<'h>>;
+}
+
+impl<'h> RetType<'h> for Value<'h> {
+    fn pack(self, _hs: &mut GcHeapSession<'h>) -> Result<Trampoline<'h>> {
+        Ok(Trampoline::Value(self))
+    }
+}
+
+impl<'h, T: RetType<'h>> RetType<'h> for Result<T> {
+    fn pack(self, hs: &mut GcHeapSession<'h>) -> Result<Trampoline<'h>> {
+        self.and_then(|x| <T as RetType<'h>>::pack(x, hs))
+    }
+}
+
+impl<'h> RetType<'h> for bool {
+    fn pack(self, _hs: &mut GcHeapSession<'h>) -> Result<Trampoline<'h>> {
+        Ok(Trampoline::Value(Value::Bool(self)))
+    }
+}
+
+impl<'h> RetType<'h> for char {
+    fn pack(self, _hs: &mut GcHeapSession<'h>) -> Result<Trampoline<'h>> {
+        Ok(Trampoline::Value(Value::Char(self)))
+    }
+}
+
+impl<'h> RetType<'h> for usize {
+    fn pack(self, _hs: &mut GcHeapSession<'h>) -> Result<Trampoline<'h>> {
+        if self > i32::max_value() as usize {
+            return Err("string-length: integer overflow".into());
+        }
+        Ok(Trampoline::Value(Value::Int(self as i32)))
+    }
+}
+
+impl<'h> RetType<'h> for String {
+    fn pack(self, _hs: &mut GcHeapSession<'h>) -> Result<Trampoline<'h>> {
+        Ok(Trampoline::Value(
+            StringObj(GcLeaf::new(NonInternedStringObject(Arc::new(self)))),
+        ))
+    }
+}
+
+impl<'h> RetType<'h> for PairRef<'h> {
+    fn pack(self, _hs: &mut GcHeapSession<'h>) -> Result<Trampoline<'h>> {
+        Ok(Trampoline::Value(Value::Cons(self)))
+    }
+}
+
+impl<'h> RetType<'h> for Vec<Value<'h>> {
+    fn pack(self, hs: &mut GcHeapSession<'h>) -> Result<Trampoline<'h>> {
+        Ok(Trampoline::Value(Value::Vector(hs.alloc(self))))
+    }
+}
+
+impl<'h> RetType<'h> for () {
+    fn pack(self, _hs: &mut GcHeapSession<'h>) -> Result<Trampoline<'h>> {
+        Ok(Trampoline::Value(Value::Unspecified))
+    }
+}
+
+impl<'h> RetType<'h> for Trampoline<'h> {
+    fn pack(self, _hs: &mut GcHeapSession<'h>) -> Result<Trampoline<'h>> {
+        Ok(self)
     }
 }
