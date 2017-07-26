@@ -9,12 +9,8 @@ pub fn repl() -> io::Result<()> {
         let env = vm::Environment::default_env(hs);
 
         loop {
-            {
-                let stdout = io::stdout();
-                let mut stdout = stdout.lock();
-                write!(&mut stdout, "lisp> ")?;
-                stdout.flush()?;
-            }
+            print!("lisp> ");
+            io::stdout().flush()?;
 
             // Read
             let mut source = String::new();
