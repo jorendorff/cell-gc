@@ -5,6 +5,7 @@ use ptr::Pointer;
 use std::cmp::Ordering;
 use std::hash::{Hash, Hasher};
 use std::mem;
+use std::ops::Range;
 use traits::{IntoHeap, IntoHeapAllocation, IntoHeapBase, Tracer};
 
 impl<T: IntoHeapBase> IntoHeapBase for Vec<T> {
@@ -303,5 +304,40 @@ impl<'h, T: IntoHeap<'h>> VecRef<'h, T> {
         unsafe {
             self.with_storage_mut(|v| mem::swap(&mut tmp, v));
         }
+    }
+}
+
+pub struct VecRefIter<'h, T: IntoHeap<'h>> {
+    indexes: Range<usize>,
+    data: VecRef<'h, T>,
+}
+
+impl<'h, T: IntoHeap<'h>> IntoIterator for VecRef<'h, T> {
+    type Item = T;
+    type IntoIter = VecRefIter<'h, T>;
+
+    fn into_iter(self) -> VecRefIter<'h, T> {
+        VecRefIter {
+            indexes: 0..self.len(),
+            data: self
+        }
+    }
+}
+
+impl<'h, T: IntoHeap<'h>> Iterator for VecRefIter<'h, T> {
+    type Item = T;
+
+    fn next(&mut self) -> Option<T> {
+        self.indexes.next().map(|i| self.data.get(i))
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.indexes.size_hint()
+    }
+}
+
+impl<'h, T: IntoHeap<'h>> DoubleEndedIterator for VecRefIter<'h, T> {
+    fn next_back(&mut self) -> Option<T> {
+        self.indexes.next_back().map(|i| self.data.get(i))
     }
 }
