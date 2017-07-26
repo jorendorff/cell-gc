@@ -14,6 +14,9 @@ pub enum Expr<'h> {
     /// A variable-expression (evaluates to the variable's value).
     Var(GcLeaf<InternedString>),
 
+    /// A variable-expression, but at a known location in the environment chain.
+    FastVar { up_count: u32, index: u32 },
+
     /// A lambda expression.
     Fun(CodeRef<'h>),
 
@@ -36,11 +39,46 @@ pub enum Expr<'h> {
     Letrec(LetrecRef<'h>),
 }
 
+#[derive(IntoHeap)]
+pub struct StaticEnvironment<'h> {
+    pub parent: Option<StaticEnvironmentRef<'h>>,
+    pub names: VecRef<'h, GcLeaf<InternedString>>,
+}
+
+#[derive(IntoHeap)]
+pub struct Code<'h> {
+    pub senv: StaticEnvironmentRef<'h>,
+    pub rest: bool,
+    pub body: Expr<'h>,
+}
+
+#[derive(IntoHeap)]
+pub struct Def<'h> {
+    pub name: GcLeaf<InternedString>,
+    pub value: Expr<'h>,
+}
+
+#[derive(IntoHeap)]
+pub struct If<'h> {
+    pub cond: Expr<'h>,
+    pub t_expr: Expr<'h>,
+    pub f_expr: Expr<'h>,
+}
+
+#[derive(IntoHeap)]
+pub struct Letrec<'h> {
+    pub senv: StaticEnvironmentRef<'h>,
+    pub exprs: VecRef<'h, Expr<'h>>,
+    pub body: Expr<'h>,
+}
+
 impl<'h> fmt::Debug for Expr<'h> {
     fn fmt(&self, f: &mut fmt::Formatter) -> ::std::result::Result<(), fmt::Error> {
         match *self {
             Expr::Con(ref v) => write!(f, "'{}", v),
             Expr::Var(ref s) => write!(f, "{}", Value::Symbol(s.clone())),
+            Expr::FastVar { up_count, index } =>
+                write!(f, "#get<{}, {}>", up_count, index),
             Expr::Fun(ref c) => write!(f, "(lambda ... {:?})", c.body()),
             Expr::App(ref args) => {
                 write!(
@@ -69,14 +107,9 @@ impl<'h> fmt::Debug for Expr<'h> {
                 write!(
                     f,
                     "(letrec ({}) {:?})",
-                    (0..r.names().len())
-                        .map(|i| {
-                            format!(
-                                "({} {:?})",
-                                Value::Symbol(r.names().get(i)),
-                                r.exprs().get(i)
-                            )
-                        })
+                    r.senv().names().into_iter()
+                        .zip(r.exprs())
+                        .map(|(name, expr)| format!("({} {:?})", name.as_str(), expr))
                         .collect::<Vec<String>>()
                         .join(" "),
                     r.body()
@@ -86,31 +119,22 @@ impl<'h> fmt::Debug for Expr<'h> {
     }
 }
 
-#[derive(IntoHeap)]
-pub struct Code<'h> {
-    pub params: VecRef<'h, GcLeaf<InternedString>>,
-    pub rest: bool,
-    pub body: Expr<'h>,
-}
-
-#[derive(IntoHeap)]
-pub struct Def<'h> {
-    pub name: GcLeaf<InternedString>,
-    pub value: Expr<'h>,
-}
-
-#[derive(IntoHeap)]
-pub struct If<'h> {
-    pub cond: Expr<'h>,
-    pub t_expr: Expr<'h>,
-    pub f_expr: Expr<'h>,
-}
-
-#[derive(IntoHeap)]
-pub struct Letrec<'h> {
-    pub names: VecRef<'h, GcLeaf<InternedString>>,
-    pub exprs: VecRef<'h, Expr<'h>>,
-    pub body: Expr<'h>,
+impl<'h> StaticEnvironmentRef<'h> {
+    pub fn lookup(&self, name: &InternedString) -> Option<(usize, usize)> {
+        let mut up_count = 0;
+        let mut next = Some(self.clone());
+        while let Some(senv) = next {
+            let names = senv.names();
+            for (index, s) in names.into_iter().enumerate() {
+                if name == &*s {
+                    return Some((up_count, index));
+                }
+            }
+            next = senv.parent();
+            up_count += 1;
+        }
+        None
+    }
 }
 
 fn seq<'h>(hs: &mut GcHeapSession<'h>, mut exprs: Vec<Expr<'h>>) -> Expr<'h> {
@@ -125,21 +149,21 @@ fn seq<'h>(hs: &mut GcHeapSession<'h>, mut exprs: Vec<Expr<'h>>) -> Expr<'h> {
 
 fn letrec<'h>(
     hs: &mut GcHeapSession<'h>,
-    names: Vec<GcLeaf<InternedString>>,
+    senv: StaticEnvironmentRef<'h>,
     exprs: Vec<Expr<'h>>,
     body: Expr<'h>,
 ) -> Expr<'h> {
-    if names.is_empty() {
-        body
-    } else {
-        let names = hs.alloc(names);
-        let exprs = hs.alloc(exprs);
-        Expr::Letrec(hs.alloc(Letrec { names, exprs, body }))
-    }
+    assert!(!exprs.is_empty());
+    assert_eq!(senv.names().len(), exprs.len());
+    let exprs = hs.alloc(exprs);
+    Expr::Letrec(hs.alloc(Letrec { senv, exprs, body }))
 }
 
 // Convert the linked list of a `<body>` to a vector; also splice in the
 // contents of `(begin)` expressions nested within the `<body>`.
+//
+// Bug: Both (begin defn ...) and (begin expr ...) forms flatten, but this
+// also permits (begin defn ... expr ...) cases that should be errors.
 fn flatten_body<'h>(forms: Value<'h>, out: &mut Vec<Value<'h>>) -> Result<()> {
     for form_res in forms {
         let form = form_res?;
@@ -168,39 +192,64 @@ fn is_definition<'h>(form: &Value<'h>) -> bool {
 }
 
 // Compile the body of a lambda or letrec*.
-fn compile_body<'h>(hs: &mut GcHeapSession<'h>, body_list: Value<'h>) -> Result<Expr<'h>> {
+fn compile_body<'h>(
+    hs: &mut GcHeapSession<'h>,
+    senv: &StaticEnvironmentRef<'h>,
+    body_list: Value<'h>
+) -> Result<Expr<'h>> {
     let mut forms = vec![];
     flatten_body(body_list, &mut forms)?;
 
     let mut names = vec![];
-    let mut exprs = vec![];
+    let mut init_exprs = vec![];
 
     let mut i = 0;
     while i < forms.len() && is_definition(&forms[i]) {
         let (name, expr) = parse_define(hs, forms[i].clone())?;
         names.push(name);
-        exprs.push(expr);
+        init_exprs.push(expr);
         i += 1;
     }
-
     if i == forms.len() {
         return Err("expression required".into());
     }
 
-    let body_exprs: Result<Vec<Expr>> = forms
+    let no_defines = names.is_empty();
+    let body_senv =
+        if no_defines {
+            senv.clone()
+        } else {
+            let names = hs.alloc(names);
+            hs.alloc(StaticEnvironment {
+                parent: Some(senv.clone()),
+                names: names,
+            })
+        };
+
+    let init_exprs: Vec<Expr> = init_exprs
+        .into_iter()
+        .map(|expr| compile_expr(hs, &body_senv, expr))
+        .collect::<Result<Vec<Expr>>>()?;
+    let body_exprs: Vec<Expr> = forms
         .drain(i..)
-        .map(|form| compile_expr(hs, form))
-        .collect();
-    let body = seq(hs, body_exprs?);
-    Ok(letrec(hs, names, exprs, body))
+        .map(|form| compile_expr(hs, &body_senv, form))
+        .collect::<Result<Vec<Expr>>>()?;
+    let body = seq(hs, body_exprs);
+    Ok(
+        if no_defines {
+            body
+        } else {
+            letrec(hs, body_senv, init_exprs, body)
+        }
+    )
 }
 
 /// On success, returns the two parts of a `(define)` that we care about: the
-/// name to define and the compiled expression to populate it.
+/// name to define and the expression to populate it.
 fn parse_define<'h>(
     hs: &mut GcHeapSession<'h>,
     mut defn: Value<'h>,
-) -> Result<(GcLeaf<InternedString>, Expr<'h>)> {
+) -> Result<(GcLeaf<InternedString>, Value<'h>)> {
     loop {
         let (define_symbol, tail) = defn.as_pair("internal error")?;
         let (pattern, rest) = tail.as_pair("(define) with no name")?;
@@ -213,9 +262,7 @@ fn parse_define<'h>(
                         return Err("too many arguments in (define)".into());
                     }
                 };
-
-                let value = compile_expr(hs, expr)?;
-                return Ok((ident, value));
+                return Ok((ident, expr));
             }
             Cons(pair) => {
                 // Build desugared definition and compile that.
@@ -250,19 +297,39 @@ fn parse_define<'h>(
     }
 }
 
-pub fn compile_toplevel<'h>(hs: &mut GcHeapSession<'h>, expr: Value<'h>) -> Result<Expr<'h>> {
+pub fn compile_toplevel<'h>(
+    hs: &mut GcHeapSession<'h>,
+    senv: &StaticEnvironmentRef<'h>,
+    expr: Value<'h>
+) -> Result<Expr<'h>> {
     // TODO: support (begin) here
     if is_definition(&expr) {
-        let (name, value) = parse_define(hs, expr)?;
-        Ok(Expr::Def(hs.alloc(Def { name, value })))
+        let (name, init_expr) = parse_define(hs, expr)?;
+        let init_expr = compile_expr(hs, senv, init_expr)?;
+        Ok(Expr::Def(hs.alloc(Def { name, value: init_expr })))
     } else {
-        compile_expr(hs, expr)
+        compile_expr(hs, senv, expr)
     }
 }
 
-pub fn compile_expr<'h>(hs: &mut GcHeapSession<'h>, expr: Value<'h>) -> Result<Expr<'h>> {
+pub fn compile_expr<'h>(
+    hs: &mut GcHeapSession<'h>,
+    senv: &StaticEnvironmentRef<'h>,
+    expr: Value<'h>
+) -> Result<Expr<'h>> {
     match expr {
-        Symbol(s) => Ok(Expr::Var(s)),
+        Symbol(s) =>
+            match senv.lookup(&s) {
+                Some((up_count, index))
+                    if up_count <= u32::max_value() as usize &&
+                    index <= u32::max_value() as usize =>
+                    Ok(Expr::FastVar {
+                        up_count: up_count as u32,
+                        index: index as u32
+                    }),
+                _ =>
+                    Ok(Expr::Var(s)),
+            },
 
         Cons(p) => {
             let f = p.car();
@@ -289,8 +356,12 @@ pub fn compile_expr<'h>(hs: &mut GcHeapSession<'h>, expr: Value<'h>) -> Result<E
                     };
 
                     let params = hs.alloc(names);
-                    let body = compile_body(hs, body_forms)?;
-                    return Ok(Expr::Fun(hs.alloc(Code { params, rest, body })));
+                    let lambda_senv = hs.alloc(StaticEnvironment {
+                        parent: Some(senv.clone()),
+                        names: params
+                    });
+                    let body = compile_body(hs, &lambda_senv, body_forms)?;
+                    return Ok(Expr::Fun(hs.alloc(Code { senv: lambda_senv, rest, body })));
                 } else if s.as_str() == "quote" {
                     let (datum, rest) = p.cdr().as_pair("(quote) with no arguments")?;
                     if !rest.is_nil() {
@@ -299,9 +370,9 @@ pub fn compile_expr<'h>(hs: &mut GcHeapSession<'h>, expr: Value<'h>) -> Result<E
                     return Ok(Expr::Con(datum));
                 } else if s.as_str() == "if" {
                     let (cond, rest) = p.cdr().as_pair("(if) with no arguments")?;
-                    let cond = compile_expr(hs, cond)?;
+                    let cond = compile_expr(hs, senv, cond)?;
                     let (tc, rest) = rest.as_pair("missing arguments after (if COND)")?;
-                    let t_expr = compile_expr(hs, tc)?;
+                    let t_expr = compile_expr(hs, senv, tc)?;
                     let f_expr = if rest == Nil {
                         Expr::Con(Unspecified)
                     } else {
@@ -309,7 +380,7 @@ pub fn compile_expr<'h>(hs: &mut GcHeapSession<'h>, expr: Value<'h>) -> Result<E
                         if !rest.is_nil() {
                             return Err("too many arguments in (if) expression".into());
                         }
-                        compile_expr(hs, fc)?
+                        compile_expr(hs, senv, fc)?
                     };
                     return Ok(Expr::If(hs.alloc(If {
                         cond,
@@ -321,7 +392,7 @@ pub fn compile_expr<'h>(hs: &mut GcHeapSession<'h>, expr: Value<'h>) -> Result<E
                     let mut exprs = vec![];
                     for expr_result in p.cdr() {
                         let expr = expr_result?;
-                        exprs.push(compile_expr(hs, expr)?);
+                        exprs.push(compile_expr(hs, senv, expr)?);
                     }
                     return Ok(seq(hs, exprs));
                 } else if s.as_str() == "define" {
@@ -349,10 +420,23 @@ pub fn compile_expr<'h>(hs: &mut GcHeapSession<'h>, expr: Value<'h>) -> Result<E
                             return Err("(letrec*): too many arguments".into());
                         }
                         names.push(GcLeaf::new(name));
-                        exprs.push(compile_expr(hs, expr)?);
+                        exprs.push(expr);
                     }
-                    let body = compile_body(hs, body_forms)?;
-                    return Ok(letrec(hs, names, exprs, body));
+                    if names.is_empty() {
+                        return compile_body(hs, senv, body_forms);
+                    }
+
+                    let names = hs.alloc(names);
+                    let body_senv = hs.alloc(StaticEnvironment {
+                        parent: Some(senv.clone()),
+                        names,
+                    });
+
+                    let exprs = exprs.into_iter()
+                        .map(|expr| compile_expr(hs, &body_senv, expr))
+                        .collect::<Result<Vec<Expr<'h>>>>()?;
+                    let body = compile_body(hs, &body_senv, body_forms)?;
+                    return Ok(letrec(hs, body_senv, exprs, body));
                 } else if s.as_str() == "set!" {
                     let (first, rest) = p.cdr().as_pair("(set!) with no name")?;
                     let name = first.as_symbol("(set!) first argument must be a name")?;
@@ -360,7 +444,7 @@ pub fn compile_expr<'h>(hs: &mut GcHeapSession<'h>, expr: Value<'h>) -> Result<E
                     if !rest.is_nil() {
                         return Err("(set!): too many arguments".into());
                     }
-                    let value = compile_expr(hs, expr)?;
+                    let value = compile_expr(hs, senv, expr)?;
                     return Ok(Expr::Set(hs.alloc(Def {
                         name: GcLeaf::new(name),
                         value: value,
@@ -370,7 +454,7 @@ pub fn compile_expr<'h>(hs: &mut GcHeapSession<'h>, expr: Value<'h>) -> Result<E
 
             let subexprs: Vec<Expr<'h>> = Cons(p)
                 .into_iter()
-                .map(|v| compile_expr(hs, v?))
+                .map(|v| compile_expr(hs, senv, v?))
                 .collect::<Result<_>>()?;
             Ok(Expr::App(hs.alloc(subexprs)))
         }
