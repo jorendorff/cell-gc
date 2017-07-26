@@ -7,6 +7,7 @@ use gc_leaf::GcLeaf;
 use gc_ref::GcRef;
 use ptr::Pointer;
 use std::hash::Hash;
+use std::marker::PhantomData;
 
 /// Base trait for values that can be moved into a GC heap.
 pub trait IntoHeapBase: Sized {
@@ -37,7 +38,7 @@ pub trait IntoHeapBase: Sized {
     /// Users never get a direct `&` reference to any in-heap value. All access is
     /// through safe `IntoHeap` types, like the `Ref` type that is automatically
     /// declared for you when you use `#[derive(IntoHeap)]` on a struct or union.
-    type In;
+    type In: 'static;
 
     /// Convert the value to the form it should have in the heap.
     /// This is for cell-gc to call.
@@ -212,10 +213,20 @@ macro_rules! gc_generic_trivial_impl {
 }
 
 gc_generic_trivial_impl!([T: ?Sized + Sync] &'static T);
-gc_generic_trivial_impl!([T: ?Sized + Send] ::std::marker::PhantomData<T>);
 gc_generic_trivial_impl!([T: Clone + Send + 'static] GcLeaf<T>);
 gc_generic_trivial_impl!([T: Clone + Send + 'static] Box<T>);
 gc_generic_trivial_impl!([T: Clone + Sync + 'static] ::std::sync::Arc<T>);
+
+/// Currently, `#[derive(IntoHeap)]` only works for types that have a lifetime
+/// parameter.  This poses a problem because sometimes you want to store stuff
+/// in the heap that doesn't contain any `GcRef`s or other heap lifetimes.
+/// As a hackaround, we allow `PhantomData<&'h T>` fields (for now).
+impl<'h, T: 'static> IntoHeapBase for PhantomData<&'h T> {
+    type In = PhantomData<&'static T>;
+    fn into_heap(self) -> Self::In { PhantomData }
+    unsafe fn from_heap(_storage: &Self::In) -> Self { PhantomData }
+    unsafe fn trace<R: Tracer>(_storage: &Self::In, _tracer: &mut R) {}
+}
 
 // GCRef has a special implementation.
 impl<'h, T: IntoHeapAllocation<'h>> IntoHeapBase for GcRef<'h, T> {

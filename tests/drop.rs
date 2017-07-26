@@ -18,7 +18,7 @@ enum SomethingWithLifetime<'h> {
 
 use SomethingWithLifetime::Nothing;
 
-impl<'h> Drop for DropperStorage<'h> {
+impl<'h> Drop for DropperStorage {
     fn drop(&mut self) {
         unsafe {
             *(self.addr as *mut i32) += 1;

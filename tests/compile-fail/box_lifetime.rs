@@ -1,6 +1,6 @@
 //! A Box can be a field of a heap struct only if the boxed type has 'static lifetime.
 
-// error-pattern: the trait bound `*const (): std::marker::Send` is not satisfied in `std::option::Option<ThingRef<'_>>`
+// error-pattern: the trait bound `*const (): std::marker::Send` is not satisfied in `std::option::Option<ThingRef<'static>>`
 
 #[macro_use] extern crate cell_gc;
 #[macro_use] extern crate cell_gc_derive;
