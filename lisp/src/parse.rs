@@ -3,7 +3,7 @@
 use cell_gc::{GcHeapSession, GcLeaf};
 use cell_gc::collections::VecRef;
 use errors::Result;
-use nom::IResult;
+use nom::{IResult, Needed};
 use std::str::FromStr;
 use value::{InternedString, Pair, PairRef, Value};
 
@@ -223,6 +223,7 @@ impl<'s, B: Builder> Parser<'s, B> {
 
     pub fn parse(mut self) -> Result<B> {
         loop {
+            self.skip_space();
             let t = token(&self.source[self.point..]);
             match t {
                 IResult::Done(rest, token) => {
@@ -297,27 +298,42 @@ enum Token {
     Dot,
 }
 
+fn token(s: &str) -> IResult<&str, Token> {
+    let mut it = s.chars();
+    match it.next() {
+        None => IResult::Incomplete(Needed::Unknown),
+        Some(c) => match c {
+            '(' => IResult::Done(it.as_str(), Token::Open),
+            ')' => IResult::Done(it.as_str(), Token::Close),
+            '\'' => IResult::Done(it.as_str(), Token::Quote),
+            '`' => IResult::Done(it.as_str(), Token::Quasiquote),
+            '"' => string(s).map(Token::String),
+
+            'A' ... 'Z' | 'a' ... 'z' |
+            '!' | '$' | '%' | '&' | '*' | '/' | ':' |
+            '<' | '=' | '>' | '?' | '~' | '_' | '^' =>
+                identifier(s).map(Token::Identifier),
+
+            _ => other_token(s)
+        }
+    }
+}
+
+// A token that is not one of ``( ) ' ` "` or a symbol starting with an ASCII
+// letter.
 named!(
-    token(&str) -> Token,
-    preceded!(
-        intertoken_space,
-        alt!(
-            // Achtung! 'number' must precede 'identifier' in this alt!()
-            // So that `-1` is parsed as a single number token, not `- 1`.
-            map!(number, Token::Number)  
-          | map!(identifier, |s| Token::Identifier(s))
-          | map!(boolean, Token::Boolean)
-          | map!(character, Token::Char)
-          | map!(string, |s| Token::String(s))
-          | value!(Token::Open, char!('('))
-          | value!(Token::Close, char!(')'))
-          | value!(Token::OpenVector, tag!("#("))
-          | value!(Token::Quote, char!('\''))
-          | value!(Token::Quasiquote, char!('`'))
-          | value!(Token::UnquoteSplicing, tag!(",@"))
-          | value!(Token::Unquote, char!(','))
-          | value!(Token::Dot, char!('.'))
-        )
+    other_token(&str) -> Token,
+    alt!(
+        // Achtung! 'number' must precede 'identifier' in this alt!()
+        // So that `-1` is parsed as a single number token, not `- 1`.
+        map!(number, Token::Number)
+      | map!(identifier, |s| Token::Identifier(s))
+      | map!(boolean, Token::Boolean)
+      | map!(character, Token::Char)
+      | value!(Token::OpenVector, tag!("#("))
+      | value!(Token::UnquoteSplicing, tag!(",@"))
+      | value!(Token::Unquote, char!(','))
+      | value!(Token::Dot, terminated!(char!('.'), peek!(delimiter)))
     )
 );
 
