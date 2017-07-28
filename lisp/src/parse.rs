@@ -224,12 +224,14 @@ impl<'s, B: Builder> Parser<'s, B> {
     pub fn parse(mut self) -> Result<B> {
         loop {
             self.skip_space();
-            let t = token(&self.source[self.point..]);
+            let start = self.point;
+            let t = token(&self.source[start..]);
             match t {
                 IResult::Done(rest, token) => {
                     self.point = self.source.len() - rest.len();
                     match token {
-                        Token::Identifier(s) => {
+                        Token::Identifier => {
+                            let s = &self.source[start..self.point];
                             let s = self.builder.identifier(&s);
                             self.push(s)?;
                         }
@@ -283,7 +285,7 @@ impl<'s, B: Builder> Parser<'s, B> {
 // === Tokens
 
 enum Token {
-    Identifier(String),
+    Identifier,
     Boolean(bool),
     Number(String),
     Char(char),
@@ -312,7 +314,7 @@ fn token(s: &str) -> IResult<&str, Token> {
             'A' ... 'Z' | 'a' ... 'z' |
             '!' | '$' | '%' | '&' | '*' | '/' | ':' |
             '<' | '=' | '>' | '?' | '~' | '_' | '^' =>
-                identifier(s).map(Token::Identifier),
+                ordinary_identifier(s),
 
             _ => other_token(s)
         }
@@ -327,7 +329,7 @@ named!(
         // Achtung! 'number' must precede 'identifier' in this alt!()
         // So that `-1` is parsed as a single number token, not `- 1`.
         map!(number, Token::Number)
-      | map!(identifier, |s| Token::Identifier(s))
+      | map!(other_identifier, |_| Token::Identifier)
       | map!(boolean, Token::Boolean)
       | map!(character, Token::Char)
       | value!(Token::OpenVector, tag!("#("))
@@ -362,36 +364,39 @@ fn test_whitespace() {
     );
 }
 
+/// An identifier starting with a character that matches `<letter>` or
+/// `<special initial>`. The first character of s must already have matched!
+fn ordinary_identifier(s: &str) -> IResult<&str, Token> {
+    let mut ci = s.chars();
+    ci.next();
+    loop {
+        let rest = ci.as_str();
+        match ci.next() {
+            None => return IResult::Incomplete(Needed::Unknown),
+            Some(c) => match c {
+                // <subsequent>
+                'A' ... 'Z' | 'a' ... 'z' |
+                '!' | '$' | '%' | '&' | '*' | '/' | ':' |
+                '<' | '=' | '>' | '?' | '~' | '_' | '^' |
+                '0' ... '9' | '.' | '+' | '-' => {}
+                _ => return IResult::Done(
+                    rest,
+                    // &s[..s.len() - rest.len()]
+                    Token::Identifier
+                ),
+            }
+        }
+    }
+}
+
 named!(
-    identifier(&str) -> String,
+    other_identifier(&str) -> &str,
     alt!(
-        do_parse!(
-            first: initial >>
-            s: fold_many0!(
-                subsequent,
-                first.to_string(),
-                push_char
-            ) >>
-            (s)
-        )
-      | map!(
-            alt!(
-                tag!("+")
-                    | tag!("-")
-                    | tag!("...")
-            ),
-            str::to_string
-        )
+        tag!("+")
+      | tag!("-")
+      | tag!("...")
     )
 );
-
-named!(initial(&str) -> char, alt!(letter | special_initial));
-
-named!(letter(&str) -> char, one_of!("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"));
-
-named!(special_initial(&str) -> char, one_of!("!$%&*/:<=>?~_^"));
-
-named!(subsequent(&str) -> char, alt!(initial | digit | one_of!(".+-")));
 
 named!(digit(&str) -> char, one_of!("0123456789"));
 
