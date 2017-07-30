@@ -74,27 +74,39 @@ impl fmt::Debug for BuiltinFnPtr {
 
 impl<'h> fmt::Display for Value<'h> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let mut seen = HashSet::new();
-        self.print(f, &mut seen)
+        self.print(f, false, &mut HashSet::new())
     }
 }
+
+/// The `(display)` procedure prints values in a different style: strings and
+/// characters are written verbatim. Use this wrapper type to get that
+/// style of output.
+pub struct DisplayValue<'h>(pub Value<'h>);
+
+impl<'h> fmt::Display for DisplayValue<'h> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.0.print(f, true, &mut HashSet::new())
+    }
+}
+
 
 fn write_pair<'h>(
     f: &mut fmt::Formatter,
     pair: PairRef<'h>,
+    display: bool,
     seen: &mut HashSet<Value<'h>>,
 ) -> fmt::Result {
-    pair.car().print(f, seen)?;
+    pair.car().print(f, display, seen)?;
 
     match pair.cdr() {
         Nil => Ok(()),
         Cons(p) => {
             write!(f, " ")?;
-            write_pair(f, p, seen)
+            write_pair(f, p, display, seen)
         }
         otherwise => {
             write!(f, " . ")?;
-            otherwise.print(f, seen)?;
+            otherwise.print(f, display, seen)?;
             Ok(())
         }
     }
@@ -220,7 +232,9 @@ impl<'h> Value<'h> {
         }
     }
 
-    fn print(&self, f: &mut fmt::Formatter, seen: &mut HashSet<Value<'h>>) -> fmt::Result {
+    fn print(&self, f: &mut fmt::Formatter, display: bool, seen: &mut HashSet<Value<'h>>)
+        -> fmt::Result
+    {
         match *self {
             Cons(_) | Vector(_) => {
                 if seen.contains(self) {
@@ -238,17 +252,32 @@ impl<'h> Value<'h> {
             Nil => write!(f, "()"),
             Bool(true) => write!(f, "#t"),
             Bool(false) => write!(f, "#f"),
-            Char(c) => write!(f, "#\\{}", c),
+            Char(c) =>
+                if display {
+                    write!(f, "{}", c)
+                } else {
+                    write!(f, "#\\{}", c)
+                },
             Int(n) => write!(f, "{}", n),
             Symbol(ref s) => write!(f, "{}", s.as_str()),
-            StringObj(ref s) => write!(f, "{:?}", s.as_str()),
-            ImmString(ref s) => write!(f, "{:?}", s.as_str()),
+            StringObj(ref s) =>
+                if display {
+                    write!(f, "{}", s.as_str())
+                } else {
+                    write!(f, "{:?}", s.as_str())
+                },
+            ImmString(ref s) =>
+                if display {
+                    write!(f, "{}", s.as_str())
+                } else {
+                    write!(f, "{:?}", s.as_str())
+                },
             Lambda(_) => write!(f, "#lambda"),
             Code(_) => write!(f, "#code"),
             Builtin(_) => write!(f, "#builtin"),
             Cons(ref p) => {
                 write!(f, "(")?;
-                write_pair(f, p.clone(), seen)?;
+                write_pair(f, p.clone(), display, seen)?;
                 write!(f, ")")
             }
             Vector(ref v) => {
@@ -257,7 +286,7 @@ impl<'h> Value<'h> {
                     if i != 0 {
                         write!(f, " ")?;
                     }
-                    v.get(i).print(f, seen)?;
+                    v.get(i).print(f, display, seen)?;
                 }
                 write!(f, ")")
             }

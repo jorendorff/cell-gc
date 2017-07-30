@@ -1,6 +1,7 @@
 use cell_gc::{GcHeapSession, GcLeaf};
 use cell_gc::collections::VecRef;
-use errors::Result;
+use errors::*;
+use std::io::{self, Write};
 use std::sync::Arc;
 use std::vec;
 use value::{self, BuiltinFn, BuiltinFnPtr, InternedString, NonInternedStringObject, Pair, Value};
@@ -31,7 +32,7 @@ fn check_done<'h>(proc_name: &str, iter: &mut vec::IntoIter<Value<'h>>) -> Resul
 macro_rules! builtins {
     {
         $(
-            fn $name:ident $namestr:tt <$h:tt>($hs:ident, $( $arg:ident : $argty:ty ),* )
+            fn $name:ident $namestr:tt <$h:tt>($hs:ident $(, $arg:ident : $argty:ty )* )
             -> $retty:ty
             $body:block
         )*
@@ -471,13 +472,35 @@ fn apply<'h>(_hs: &mut GcHeapSession<'h>, mut args: Vec<Value<'h>>) -> Result<Tr
     })
 }
 
-// Extensions
-fn print<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Trampoline<'h>> {
-    let strings: Vec<String> = args.into_iter().map(|v| format!("{}", v)).collect();
-    println!("{}", strings.join(" "));
-    Ok(Trampoline::Value(Unspecified))
+// 6.10 Input and output
+
+builtins! {
+    fn write "write" <'h>(_hs, obj: Value<'h>) -> Result<()> {
+        let stdout = io::stdout();
+        let mut guard = stdout.lock();
+        write!(guard, "{}", obj)
+            .chain_err(|| "error writing to stdout")
+    }
+
+    fn display "display" <'h>(_hs, obj: Value<'h>) -> Result<()> {
+        let stdout = io::stdout();
+        let mut guard = stdout.lock();
+        write!(guard, "{}", value::DisplayValue(obj))
+            .chain_err(|| "error writing to stdout")
+    }
+
+    fn newline "newline" <'h>(_hs) -> Result<()> {
+        write!(io::stdout(), "\n")
+            .chain_err(|| "error writing to stdout")
+    }
+
+    fn write_char "write-char" <'h>(_hs, c: char) -> Result<()> {
+        write!(io::stdout(), "{}", c)
+            .chain_err(|| "error writing to stdout")
+    }
 }
 
+// Extensions
 fn assert<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Trampoline<'h>> {
     if args.len() < 1 || args.len() > 2 {
         return Err(
@@ -504,7 +527,7 @@ fn assert<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Tramp
 }
 
 builtins! {
-    fn gensym "gensym" <'h>(_hs, ) -> Value<'h> {
+    fn gensym "gensym" <'h>(_hs) -> Value<'h> {
         let sym = InternedString::gensym();
         assert!(sym.is_gensym());
         Value::Symbol(GcLeaf::new(sym))
@@ -552,6 +575,7 @@ pub static BUILTINS: &[(&'static str, BuiltinFn)] = &[
     ("char>?", char_gt),
     ("char>=?", char_ge),
     ("cons", cons),
+    ("display", display),
     ("eq?", eq_question),
     ("eqv?", eqv_question),
     ("eval", eval),
@@ -560,11 +584,11 @@ pub static BUILTINS: &[(&'static str, BuiltinFn)] = &[
     ("list->string", list_to_string),
     ("list->vector", list_to_vector),
     ("make-vector", make_vector),
+    ("newline", newline),
     ("null?", null_question),
     ("number?", number_question),
     ("number->string", number_to_string),
     ("pair?", pair_question),
-    ("print", print),
     ("procedure?", procedure_question),
     ("set-car!", set_car),
     ("set-cdr!", set_cdr),
@@ -583,6 +607,8 @@ pub static BUILTINS: &[(&'static str, BuiltinFn)] = &[
     ("vector-length", vector_length),
     ("vector-ref", vector_ref),
     ("vector-set!", vector_set),
+    ("write", write),
+    ("write-char", write_char),
 ];
 
 pub fn define_builtins<'h>(hs: &mut GcHeapSession<'h>, env: EnvironmentRef<'h>) {
