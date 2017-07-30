@@ -55,7 +55,13 @@
 ;;;
 ;;;    "error in <who>: <why> <what>"
 (define (error who format-string why what)
-  (print "error in " who ": " why " " what)
+  (display "error in ")
+  (display who)
+  (display ": ")
+  (display why)
+  (display " ")
+  (write what)
+  (newline)
   *ERROR*)
 
 
