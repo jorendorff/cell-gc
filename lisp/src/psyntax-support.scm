@@ -16,7 +16,7 @@
     (if (null? first)
         #t
         (if (apply f (car first) (map car rest))
-            (andmap f (cdr first) (map cdr rest))
+            (apply andmap f (cdr first) (map cdr rest))
             #f))))
 
 ;;; (ormap proc list1)
