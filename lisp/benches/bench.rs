@@ -39,3 +39,4 @@ fn run_benchmark(b: &mut test::Bencher, code: &str) {
 
 bench!(allocate_no_garbage);
 bench!(allocate_all_garbage);
+bench!(nboyer);
