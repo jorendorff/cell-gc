@@ -229,8 +229,9 @@ impl<U> TypedPage<U> {
         }
     }
 
-    unsafe fn sweep(&mut self) {
+    unsafe fn sweep(&mut self) -> bool {
         let mut addr = self.first_object_addr();
+        let mut swept_any = false;
         for i in 0..Self::capacity() {
             if self.header.allocated_bits[i] && !self.header.mark_bits[i] {
                 ptr::drop_in_place(addr as *mut U);
@@ -241,9 +242,11 @@ impl<U> TypedPage<U> {
                 }
                 self.header.allocated_bits.set(i, false);
                 self.add_to_free_list(addr as *mut U);
+                swept_any = true;
             }
             addr += Self::allocation_size();
         }
+        swept_any
     }
 }
 
@@ -253,30 +256,61 @@ impl<U> TypedPage<U> {
 ///
 /// This must be called only after a full mark phase, to avoid sweeping objects
 /// that are still reachable.
-unsafe fn sweep_entry_point<'h, T: IntoHeapAllocation<'h>>(header: &mut PageHeader) {
-    header.downcast_mut::<T>().expect("page header corrupted").sweep();
+unsafe fn sweep_entry_point<'h, T: IntoHeapAllocation<'h>>(header: &mut PageHeader) -> bool {
+    header.downcast_mut::<T>().expect("page header corrupted").sweep()
 }
 
 /// An unordered collection of memory pages that all share an allocation type.
+///
+/// All pages in this collection have matching `.heap` and `.mark_fn` fields.
 pub struct PageSet {
     heap: *mut GcHeap,
 
-    sweep_fn: unsafe fn(&mut PageHeader),
+    sweep_fn: unsafe fn(&mut PageHeader) -> bool,
 
-    /// The collection of pages.
-    ///
-    /// All pages in this collection have matching `.heap`, `.mark_fn`, and
-    /// `.sweep_fn` fields.
-    pages: *mut PageHeader,
+    /// Total number of pages in the following lists.
+    page_count: usize,
+
+    /// Head of the linked list of fully allocated pages.
+    full_pages: *mut PageHeader,
+
+    /// Head of the linkedlist of nonfull pages.
+    other_pages: *mut PageHeader,
 
     /// The maximum number of pages, or None for no limit.
     limit: Option<usize>,
 }
 
+/// Apply a closure to every page in a linked list.
+fn each_page<F: FnMut(&PageHeader)>(first_page: *mut PageHeader, mut f: F) {
+    unsafe {
+        let mut page = first_page;
+        while !page.is_null() {
+            let header = &*page;
+            f(header);
+            page = header.next_page;
+        }
+    }
+}
+
+/// Apply a closure to every page in a linked list.
+fn each_page_mut<F: FnMut(&mut PageHeader)>(first_page: *mut PageHeader, mut f: F) {
+    unsafe {
+        let mut page = first_page;
+        while !page.is_null() {
+            let header = &mut *page;
+            f(header);
+            page = header.next_page;
+        }
+    }
+}
+
 impl Drop for PageSet {
     fn drop(&mut self) {
+        assert!(self.full_pages.is_null());
         unsafe {
-            let mut p = self.pages;
+            // Don't use each_page here: we're dropping them.
+            let mut p = self.other_pages;
             while !p.is_null() {
                 let next = (*p).next_page;
                 ptr::drop_in_place(p); // drop the header
@@ -297,7 +331,9 @@ impl PageSet {
         PageSet {
             heap,
             sweep_fn: sweep_entry_point::<T>,
-            pages: ptr::null_mut(),
+            page_count: 0,
+            full_pages: ptr::null_mut(),
+            other_pages: ptr::null_mut(),
             limit: None,
         }
     }
@@ -323,17 +359,23 @@ impl PageSet {
         }
     }
 
+    fn each_page<F: FnMut(&PageHeader)>(&self, mut f: F) {
+        each_page(self.full_pages, &mut f);
+        each_page(self.other_pages, &mut f);
+    }
+
+    fn each_page_mut<F: FnMut(&mut PageHeader)>(&mut self, mut f: F) {
+        each_page_mut(self.full_pages, &mut f);
+        each_page_mut(self.other_pages, &mut f);
+    }
+
     /// Clear mark bits from each page in this set.
     ///
     /// # Safety
     ///
     /// This must be called only at the beginning of a GC cycle.
     pub unsafe fn clear_mark_bits(&mut self) {
-        let mut page = self.pages;
-        while !page.is_null() {
-            (*page).clear_mark_bits();
-            page = (*page).next_page;
-        }
+        self.each_page_mut(|page| page.clear_mark_bits());
     }
 
     /// Sweep all unmarked objects from all pages.
@@ -342,25 +384,43 @@ impl PageSet {
     ///
     /// Safe to call only as the final part of GC.
     pub unsafe fn sweep(&mut self) {
-        let mut page = self.pages;
+        // Sweep nonfull pages.
+        each_page_mut(self.other_pages, |page| {
+            (self.sweep_fn)(page);
+        });
+
+        // Sweep full pages. Much more complicated because we have to move
+        // pages from one list to the other if any space is freed.
+        let mut prev_page = &mut self.full_pages;
+        let mut page = *prev_page;
         while !page.is_null() {
-            (self.sweep_fn)(&mut *page);
-            page = (*page).next_page;
+            if (self.sweep_fn)(&mut *page) {
+                let next_page = (*page).next_page;
+
+                // remove from full list
+                *prev_page = next_page;
+
+                // add to nonfull list
+                (*page).next_page = self.other_pages;
+                self.other_pages = page;
+
+                page = next_page;
+            } else {
+                prev_page = &mut (*page).next_page;
+                page = *prev_page;
+            }
         }
     }
 
-    /// Assert that nothing is allocated in this set of pages.
+    /// True if nothing is allocated in this set of pages.
     pub fn all_pages_are_empty(&self) -> bool {
-        unsafe {
-            let mut page = self.pages;
-            while !page.is_null() {
-                if !(*page).is_empty() {
-                    return false;
-                }
-                page = (*page).next_page;
-            }
-        }
-        true
+        let mut empty = true;
+        self.each_page(|page| { empty &= page.is_empty(); });
+        empty
+    }
+
+    pub fn set_page_limit(&mut self, limit: Option<usize>) {
+        self.limit = limit;
     }
 }
 
@@ -370,33 +430,46 @@ pub struct PageSetRef<'a, 'h, T: IntoHeapAllocation<'h> + 'a> {
     also: PhantomData<&'a mut T>,
 }
 
-impl<'a, 'h, T: IntoHeapAllocation<'h> + 'a> PageSetRef<'a, 'h, T> {
-    pub fn set_page_limit(&mut self, limit: Option<usize>) {
-        self.page_set.limit = limit;
-    }
+impl<'a, 'h, T: IntoHeapAllocation<'h> + 'a> Deref for PageSetRef<'a, 'h, T> {
+    type Target = PageSet;
 
+    fn deref(&self) -> &PageSet { self.page_set }
+}
+
+impl<'a, 'h, T: IntoHeapAllocation<'h> + 'a> DerefMut for PageSetRef<'a, 'h, T> {
+    fn deref_mut(&mut self) -> &mut PageSet { self.page_set }
+}
+
+impl<'a, 'h, T: IntoHeapAllocation<'h> + 'a> PageSetRef<'a, 'h, T> {
     /// Allocate memory for a value of type `T::In`.
     ///
     /// # Safety
     ///
     /// Safe to call as long as GC is not happening.
     pub unsafe fn try_alloc(&mut self) -> Option<Pointer<T::In>> {
-        // First, try to allocate from each existing page. (Obviously slow.)
-        let mut page = self.page_set.pages;
-        let mut page_count = 0;
-        while !page.is_null() {
-            let t_page = (*page).downcast_mut::<T>().unwrap();
-            if let Some(ptr) = t_page.try_alloc() {
-                return Some(ptr);
-            }
+        // First, try to allocate from an existing page.
+        let front_page = self.other_pages;
+        if !front_page.is_null() {
+            // We have a nonfull page. Allocation can't fail.
+            assert!(!(*front_page).freelist.is_null());
+            let page = (*front_page).downcast_mut::<T>().unwrap();
+            let ptr = page.try_alloc().unwrap();
 
-            page_count += 1;
-            page = (*page).next_page;
+            // If the page is full now, move it to the other list.
+            if page.freelist.is_null() {
+                // Pop this page from the nonfull page list.
+                self.other_pages = page.next_page;
+
+                // Add it to the full-page list.
+                page.next_page = self.full_pages;
+                self.full_pages = &mut page.header;
+            }
+            return Some(ptr);
         }
 
         // If there is a limit and we already have at least that many pages, fail.
-        match self.page_set.limit {
-            Some(limit) if page_count >= limit => None,
+        match self.limit {
+            Some(limit) if self.page_count >= limit => None,
             _ => self.new_page().try_alloc(),
         }
     }
@@ -428,12 +501,22 @@ impl<'a, 'h, T: IntoHeapAllocation<'h> + 'a> PageSetRef<'a, 'h, T> {
         let page_ptr: *mut TypedPage<T::In> = raw_page as *mut TypedPage<T::In>;
         let capacity = TypedPage::<T::In>::capacity();
         unsafe {
+            // Normally we insert the new page in the nonfull page list.
+            // However, if T::In is so large that only one allocation fits in a
+            // page, the new page must go directly into the full page list.
+            let list_head =
+                if capacity == 1 {
+                    &mut self.page_set.full_pages
+                } else {
+                    &mut self.page_set.other_pages
+                };
+
             ptr::write(
                 page_ptr,
                 TypedPage {
                     header: PageHeader {
                         heap: self.page_set.heap,
-                        next_page: self.page_set.pages,
+                        next_page: *list_head,
                         mark_bits: BitVec::from_elem(capacity, false),
                         allocated_bits: BitVec::from_elem(capacity, false),
                         mark_fn: mark_entry_point::<T>,
@@ -449,7 +532,8 @@ impl<'a, 'h, T: IntoHeapAllocation<'h> + 'a> PageSetRef<'a, 'h, T> {
             // Remove the memory from the vector and link it into
             // the PageSet's linked list.
             mem::forget(vec);
-            self.page_set.pages = &mut page.header;
+            *list_head = &mut page.header;
+            self.page_set.page_count += 1;
 
             page
         }
