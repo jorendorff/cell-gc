@@ -8,6 +8,9 @@ extern crate nom;
 #[macro_use]
 extern crate error_chain;
 
+#[cfg(feature = "repl-edit")]
+extern crate rustyline;
+
 pub mod errors {
     error_chain!{}
 }
@@ -18,3 +21,11 @@ pub mod parse;
 pub mod repl;
 pub mod value;
 pub mod vm;
+
+#[cfg(feature = "repl-edit")]
+#[path = "rustyline-prompt.rs"]
+mod prompt;
+
+#[cfg(not(feature = "repl-edit"))]
+#[path = "plain-prompt.rs"]
+mod prompt;

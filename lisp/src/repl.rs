@@ -1,23 +1,23 @@
 use cell_gc;
 use parse;
-use std::io::{self, Write};
+use prompt;
+use std::io;
 use value::Value;
 use vm;
 
 pub fn repl() -> io::Result<()> {
+    let mut prompt = prompt::Prompt::new();
+
     cell_gc::with_heap(|hs| {
         let env = vm::Environment::default_env(hs);
 
         loop {
-            print!("lisp> ");
-            io::stdout().flush()?;
-
             // Read
-            let mut source = String::new();
-            io::stdin().read_line(&mut source)?;
-            if source.is_empty() {
-                break;
-            }
+            let source = match prompt.read_expr("lisp> ")? {
+                None => return Ok(()),
+                Some(source) => source
+            };
+
             let exprs = parse::parse(hs, &source)
                 .map_err(|e| io::Error::new(io::ErrorKind::Other, e.description()))?;
 
@@ -36,7 +36,5 @@ pub fn repl() -> io::Result<()> {
 
             // Loop...
         }
-
-        Ok(())
     })
 }
