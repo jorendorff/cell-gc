@@ -402,28 +402,6 @@ impl InternedString {
         InternedString(s)
     }
 
-    pub fn really_intern(self) -> InternedString {
-        if !self.0.starts_with("#<gensym") {
-            return self;
-        }
-        let mut guard = STRINGS.lock().unwrap();
-        {
-            let s: &str = &self.0;
-            match guard.get(s) {
-                Some(interned) => return InternedString(interned.0.clone()),
-                None => {}
-            }
-        }
-
-        // Don't cause other references to this string to become interned!
-        let new_arc = {
-            let s: &str = &self.0;
-            Arc::new(s.to_string())
-        };
-        guard.insert(InternedStringByValue(new_arc));
-        self
-    }
-
     pub fn as_string(&self) -> &String {
         &self.0
     }
