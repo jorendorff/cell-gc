@@ -341,10 +341,6 @@ impl ::std::ops::Deref for NonInternedStringObject {
 #[derive(Clone, Debug)]
 pub struct InternedString(Arc<String>);
 
-// Note: If we ever impl Hash for InternedString, it will be better to use a
-// custom pointer-based implementation than to use derive(Hash), which would
-// hash the contents of the string. (Note however that we currently allow
-// InternedStrings that are not actually interned. Kind of a disaster.)
 impl PartialEq for InternedString {
     fn eq(&self, other: &InternedString) -> bool {
         Arc::ptr_eq(&self.0, &other.0)
@@ -356,10 +352,7 @@ impl Eq for InternedString {}
 impl Hash for InternedString {
     #[inline]
     fn hash<H: Hasher>(&self, state: &mut H) {
-        let ptr: &str = &**self.0;
-        let ptr = ptr as *const str;
-        let ptr = ptr as *const ();
-        let ptr = ptr as usize;
+        let ptr: *const String = &self.0 as &String;
         ptr.hash(state);
     }
 }
