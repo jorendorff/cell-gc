@@ -405,18 +405,29 @@ impl<'h> GcHeapSession<'h> {
         // possible to do this later, closer to the `ptr::write()` call. (And
         // the compiler might optimize away this temporary if we do it that
         // way.) Looking forward to placement new!
-        let u = value.into_heap();
+        let mut u = value.into_heap();
         unsafe {
-            let alloc = self.get_page_set::<T>().try_alloc();
-            alloc
-                .or_else(|| {
+            let p = match self.get_page_set::<T>().try_alloc() {
+                Some(p) => p,
+                None => {
+                    // Careful: moving `value` into the heap may have unpinned
+                    // other objects it points to. Re-pin them before
+                    // attempting GC! And rebuild `u` afterward, since the GC
+                    // doesn't know it exists.
+                    let tmp_value = T::from_heap(&u);
+                    drop(u);
                     self.heap.gc();
-                    self.get_page_set::<T>().try_alloc()
-                })
-                .map(move |p| {
-                    ptr::write(p.as_raw() as *mut _, u);
-                    T::wrap_gc_ref(GcRef::new(p))
-                })
+                    u = tmp_value.into_heap();
+                    match self.get_page_set::<T>().try_alloc() {
+                        Some(p) => p,
+                        None => return None,
+                    }
+                }
+            };
+
+            ptr::write(p.as_raw() as *mut _, u);
+            let gc_ref = T::wrap_gc_ref(GcRef::new(p));
+            Some(gc_ref)
         }
     }
 
