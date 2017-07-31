@@ -22,7 +22,7 @@ fn size_zero() {
         assert!(n >= 500);
         assert!(n <= 1024);
 
-        let _: Vec<UnitRef> = (0..n)
+        let _refs: Vec<UnitRef> = (0..n)
             .map(|_| hs.alloc(Unit { phantom: PhantomData }))
             .collect();
 
