@@ -550,3 +550,18 @@ impl<'h> RetType<'h> for Trampoline<'h> {
         Ok(self)
     }
 }
+
+
+// Tests ///////////////////////////////////////////////////////////////////////
+
+#[test]
+fn value_size() {
+    use std::mem;
+
+    // The point of this is to avoid accidentally bloating Value when adding
+    // new variants.
+    assert_eq!(
+        mem::size_of::<Value>(),
+        mem::size_of::<(usize, usize)>()
+    );
+}
