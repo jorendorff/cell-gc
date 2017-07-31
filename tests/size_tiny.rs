@@ -18,8 +18,8 @@ fn size_tiny() {
         let n = cell_gc::page_capacity::<Tiny>();
 
         // see comment in size_medium.rs
-        assert!(n >= 500);
-        assert!(n <= 1024);
+        assert!(n >= 253);
+        assert!(n <= 512);
 
         let refs: Vec<TinyRef> = (0..n)
             .map(|i| {

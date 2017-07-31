@@ -1,5 +1,6 @@
 use gc_leaf::GcLeaf;
 use heap::{GcHeap, HeapId, GcHeapSession, HeapSessionId};
+use pages;
 use ptr::Pointer;
 use std::fmt;
 use std::hash::{Hash, Hasher};
@@ -18,8 +19,7 @@ impl<'h, T: IntoHeapAllocation<'h>> GcRef<'h, T> {
     /// type `T::In` --- and a complete allocation, not a sub-object of one ---
     /// then later unsafe code will explode.
     pub unsafe fn new(p: Pointer<T::In>) -> GcRef<'h, T> {
-        let heap: *const GcHeap = GcHeap::from_allocation::<T>(p);
-        (*heap).pin::<T>(p);
+        pages::pin(p);
         GcRef {
             ptr: p,
             heap_id: PhantomData,
@@ -71,8 +71,7 @@ impl<'h, T: Clone + Send + 'static> GcRef<'h, GcLeaf<T>> {
 impl<'h, T: IntoHeapAllocation<'h>> Drop for GcRef<'h, T> {
     fn drop(&mut self) {
         unsafe {
-            let heap = GcHeap::from_allocation::<T>(self.ptr);
-            (*heap).unpin::<T>(self.ptr);
+            pages::unpin(self.ptr);
         }
     }
 }
@@ -81,8 +80,7 @@ impl<'h, T: IntoHeapAllocation<'h>> Clone for GcRef<'h, T> {
     fn clone(&self) -> GcRef<'h, T> {
         let &GcRef { ptr, heap_id } = self;
         unsafe {
-            let heap = GcHeap::from_allocation::<T>(ptr);
-            (*heap).pin::<T>(ptr);
+            pages::pin(ptr);
         }
         GcRef {
             ptr: ptr,

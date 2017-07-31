@@ -1,23 +1,28 @@
 //! Marking heap tracer and mark stack implementation.
 
 use heap::GcHeap;
-use pages::PageHeader;
+use pages::{self, PageHeader};
 use ptr::{Pointer, UntypedPointer};
 use signposts;
 use traits::{IntoHeapAllocation, Tracer};
 
 /// Perform all the marking for a collection.
-pub fn mark<'h>(heap: &mut GcHeap) {
+pub fn mark<'h>(heap: &mut GcHeap, dropping: bool) {
     let _sp = signposts::Marking::new();
 
-    unsafe {
-        heap.clear_mark_bits();
-    }
-
     heap.with_marking_tracer(|heap, mut tracer| {
-        heap.each_pin(|ptr| unsafe {
-            (*PageHeader::find(ptr)).mark(ptr, &mut tracer);
-        });
+        let mut roots = vec![];
+        unsafe {
+            heap.clear_mark_bits(&mut roots);
+        }
+
+        if !dropping {
+            for ptr in roots {
+                unsafe {
+                    (*PageHeader::find(ptr)).mark(ptr, &mut tracer);
+                }
+            }
+        }
 
         tracer.mark_to_fix_point();
     });
@@ -86,13 +91,13 @@ impl Tracer for MarkingTracer {
     where
         T: IntoHeapAllocation<'h>,
     {
-        let is_marked = unsafe { GcHeap::get_mark_bit::<T>(ptr) };
+        let is_marked = unsafe { pages::get_mark_bit(ptr) };
         if is_marked {
             return;
         }
 
         unsafe {
-            GcHeap::set_mark_bit::<T>(ptr);
+            pages::set_mark_bit(ptr);
         }
 
         if self.fuel == 0 {

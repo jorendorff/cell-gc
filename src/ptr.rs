@@ -154,7 +154,7 @@ pub struct UntypedPointer(*const ());
 
 impl UntypedPointer {
     #[inline]
-    unsafe fn new(ptr: *const ()) -> UntypedPointer {
+    pub unsafe fn new(ptr: *const ()) -> UntypedPointer {
         assert!(!ptr.is_null(), "GC heap pointers can't be null.");
         assert_eq!(
             ptr as usize & (mem::size_of::<usize>() - 1),

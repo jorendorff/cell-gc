@@ -19,8 +19,8 @@ fn size_zero() {
         let n = cell_gc::page_capacity::<Unit>();
 
         // see comment in size_medium.rs
-        assert!(n >= 500);
-        assert!(n <= 1024);
+        assert!(n >= 253);
+        assert!(n <= 512);
 
         let _refs: Vec<UnitRef> = (0..n)
             .map(|_| hs.alloc(Unit { phantom: PhantomData }))

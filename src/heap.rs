@@ -75,11 +75,9 @@
 
 use gc_ref::{GcFrozenRef, GcRef};
 use marking::{MarkingTracer, mark};
-use pages::{PageSet, PageSetRef, TypedPage, heap_type_id};
-use pages::TypeId;
+use pages::{self, PageSet, PageSetRef, TypeId, TypedPage, heap_type_id};
 use ptr::{Pointer, UntypedPointer};
 use signposts;
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::mem;
@@ -93,10 +91,6 @@ use traits::IntoHeapAllocation;
 pub struct GcHeap {
     /// Map from heap types to the set of pages for that type.
     page_sets: HashMap<TypeId, PageSet>,
-
-    /// The root set. This tracks allocations that are "pinned", referred to
-    /// from outside the heap.
-    pins: RefCell<HashMap<UntypedPointer, usize>>,
 
     /// Tracer for the mark phase of GC.
     marking_tracer: Option<MarkingTracer>,
@@ -146,7 +140,6 @@ impl GcHeap {
     pub fn new() -> GcHeap {
         GcHeap {
             page_sets: HashMap::new(),
-            pins: RefCell::new(HashMap::new()),
             marking_tracer: Some(MarkingTracer::default()),
             dropped_frozen_ptrs: Arc::new(Mutex::new(Vec::new())),
         }
@@ -216,69 +209,10 @@ impl GcHeap {
         f(&mut self.open())
     }
 
-    /// Add the value `*p` to the root set, protecting it from GC.
-    ///
-    /// A value that has been pinned *n* times stays in the root set
-    /// until it has been unpinned *n* times.
-    ///
-    /// # Safety
-    ///
-    /// `p` must point to a live allocation of type `T` in this heap.
-    pub unsafe fn pin<'h, T: IntoHeapAllocation<'h>>(&self, p: Pointer<T::In>) {
-        let mut pins = self.pins.borrow_mut();
-        let entry = pins.entry(p.into()).or_insert(0);
-        *entry += 1;
-    }
-
-    /// Unpin a heap-allocated value (see `pin`).
-    ///
-    /// # Safety
-    ///
-    /// `p` must point to a pinned allocation of type `T` in this heap.
-    pub unsafe fn unpin<'h, T: IntoHeapAllocation<'h>>(&self, p: Pointer<T::In>) {
-        self.unpin_untyped(p.into());
-    }
-
-    /// Unpin a heap allocation.
-    ///
-    /// # Safety
-    ///
-    /// `p` must point to a pinned allocation in this heap.
-    unsafe fn unpin_untyped(&self, p: UntypedPointer) {
-        let mut pins = self.pins.borrow_mut();
-        let done = {
-            let entry = pins.entry(p.into()).or_insert(0);
-            assert!(*entry != 0, "unpin: allocation not pinned");
-            *entry -= 1;
-            *entry == 0
-        };
-        if done {
-            pins.remove(&p.into());
-        }
-    }
-
-    /// Call the given function on each pinned root.
-    pub fn each_pin<F>(&self, mut f: F)
-    where
-        F: FnMut(UntypedPointer),
-    {
-        for (&ptr, _) in self.pins.borrow().iter() {
-            f(ptr);
-        }
-    }
-
     pub unsafe fn from_allocation<'h, T: IntoHeapAllocation<'h>>(
         ptr: Pointer<T::In>,
     ) -> *const GcHeap {
         (*TypedPage::find(ptr)).header.heap
-    }
-
-    pub unsafe fn get_mark_bit<'h, T: IntoHeapAllocation<'h>>(ptr: Pointer<T::In>) -> bool {
-        (*TypedPage::find(ptr)).get_mark_bit(ptr)
-    }
-
-    pub unsafe fn set_mark_bit<'h, T: IntoHeapAllocation<'h>>(ptr: Pointer<T::In>) {
-        (*TypedPage::find(ptr)).set_mark_bit(ptr);
     }
 
     fn take_marking_tracer(&mut self) -> MarkingTracer {
@@ -311,9 +245,9 @@ impl GcHeap {
     /// # Safety
     ///
     /// This must be called only at the beginning of a GC cycle.
-    pub(crate) unsafe fn clear_mark_bits(&mut self) {
+    pub(crate) unsafe fn clear_mark_bits(&mut self, roots: &mut Vec<UntypedPointer>) {
         for page_set in self.page_sets.values_mut() {
-            page_set.clear_mark_bits();
+            page_set.clear_mark_bits(roots);
         }
     }
 
@@ -328,7 +262,7 @@ impl GcHeap {
 
         for p in dropped_ptrs {
             unsafe {
-                self.unpin_untyped(p);
+                pages::unpin_untyped(p);
             }
         }
     }
@@ -337,8 +271,12 @@ impl GcHeap {
     /// unreachable values found by GC must be dropped synchronously, before
     /// this returns.
     fn gc(&mut self) {
+        self.gc_cycle(false);
+    }
+
+    fn gc_cycle(&mut self, dropping: bool) {
         self.unpin_dropped_ptrs();
-        mark(self);
+        mark(self, dropping);
 
         let _sp = signposts::Sweeping::new();
         for page_set in self.page_sets.values_mut() {
@@ -361,8 +299,7 @@ impl Drop for GcHeap {
         // We do not mark anything. This is safe because nothing that's pinned
         // will ever be touched again; allocations can be pinned when we get
         // here, but only if we leaked a `GcRef`.
-        self.pins.borrow_mut().clear();
-        self.gc();
+        self.gc_cycle(true);
 
         for page_set in self.page_sets.values() {
             assert!(page_set.all_pages_are_empty());
