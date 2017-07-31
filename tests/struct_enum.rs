@@ -21,7 +21,8 @@ enum Thing<'h> {
     },
 }
 
-fn main() {
+#[test]
+fn struct_enum() {
     cell_gc::with_heap(|hs| {
         let zero = hs.alloc(ThingBox { thing: Thing::Zero });
         let one = hs.alloc(ThingBox { thing: Thing::One { it: zero.clone() } });

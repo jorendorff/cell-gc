@@ -6,7 +6,8 @@ extern crate cell_gc_derive;
 mod aux;
 use aux::pairs::*;
 
-fn main() {
+#[test]
+fn cycle() {
     cell_gc::with_heap(|hs| {
         // Set up obj1 and obj2 to point to each other.
         let obj1 = alloc_null_pair(hs);

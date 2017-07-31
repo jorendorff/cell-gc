@@ -7,7 +7,8 @@ extern crate cell_gc_derive;
 mod aux;
 use aux::pairs::*;
 
-fn main() {
+#[test]
+fn root_self_references() {
     cell_gc::with_heap(|hs| {
         // Create a root object that contains pointers to itself.
         let root = alloc_null_pair(hs);

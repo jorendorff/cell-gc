@@ -12,7 +12,8 @@ struct Tiny<'h> {
     phantom: PhantomData<&'h u8>,
 }
 
-fn main() {
+#[test]
+fn size_tiny() {
     cell_gc::with_heap(|hs| {
         let n = cell_gc::page_capacity::<Tiny>();
 

@@ -7,7 +7,8 @@ extern crate cell_gc_derive;
 mod aux;
 use aux::pairs::*;
 
-fn main() {
+#[test]
+fn reachable_objects_not_collected() {
     cell_gc::with_heap(|hs| {
         let obj1 = alloc_null_pair(hs);
         let (p2, p3, p4, p5);

@@ -15,7 +15,8 @@ struct Big<'h> {
     next: Option<BigRef<'h>>,
 }
 
-fn main() {
+#[test]
+fn size_big() {
     cell_gc::with_heap(|hs| {
         hs.set_page_limit::<Big>(Some(1));
 

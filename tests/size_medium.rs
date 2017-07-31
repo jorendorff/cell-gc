@@ -17,7 +17,8 @@ struct Chunk<'h> {
     next: Option<ChunkRef<'h>>,
 }
 
-fn main() {
+#[test]
+fn size_medium() {
     cell_gc::with_heap(|hs| {
         hs.set_page_limit::<Chunk>(Some(1));
 

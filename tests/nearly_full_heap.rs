@@ -6,7 +6,8 @@ extern crate cell_gc_derive;
 mod aux;
 use aux::pairs::*;
 
-fn main() {
+#[test]
+fn nearly_full_heap() {
     cell_gc::with_heap(|hs| {
         hs.set_page_limit::<Pair>(Some(1));
 

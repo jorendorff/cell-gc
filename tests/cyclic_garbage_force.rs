@@ -10,7 +10,8 @@ struct Chain<'h> {
     next: Option<ChainRef<'h>>,
 }
 
-fn main() {
+#[test]
+fn cyclic_garbage_force() {
     cell_gc::with_heap(|hs| {
         // Make a cycle.
         {

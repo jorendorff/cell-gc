@@ -5,7 +5,8 @@ mod aux;
 use aux::pairs::*;
 
 /// Test that a heap can at least allocate two objects.
-fn main() {
+#[test]
+fn pairs() {
     cell_gc::with_heap(|hs| {
         let obj1 = alloc_pair(hs, Value::Int(1), Value::Null);
         let obj2 = alloc_pair(hs, Value::Int(2), Value::Null);

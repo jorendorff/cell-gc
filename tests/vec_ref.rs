@@ -6,7 +6,7 @@ use cell_gc::GcHeap;
 use cell_gc::collections::VecRef;
 
 #[test]
-fn test_vec_ref() {
+fn vec_ref() {
     #[derive(IntoHeap)]
     struct Car<'h> {
         wheels: VecRef<'h, String>

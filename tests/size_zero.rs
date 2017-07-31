@@ -10,7 +10,8 @@ struct Unit<'h> {
     phantom: PhantomData<&'h u8>,
 }
 
-fn main() {
+#[test]
+fn size_zero() {
     assert_eq!(std::mem::size_of::<UnitStorage>(), 0);
 
     cell_gc::with_heap(|hs| {

@@ -14,7 +14,8 @@ fn null_pair<'h>() -> Pair<'h> {
     }
 }
 
-fn main() {
+#[test]
+fn full_heap() {
     cell_gc::with_heap(|hs| {
         hs.set_page_limit::<Pair>(Some(1));
 

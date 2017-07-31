@@ -10,7 +10,8 @@ struct List<'h> {
     tail: Option<ListRef<'h>>,
 }
 
-fn main() {
+#[test]
+fn pointer_equality() {
     // Create a heap (do this only once)
     cell_gc::with_heap(|hs| {
         let a = hs.alloc(List { tail: None });

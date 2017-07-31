@@ -25,7 +25,8 @@ struct Obj<'h> {
     more: Option<ObjRef<'h>>,
 }
 
-fn main() {
+#[test]
+fn drop_box() {
     cell_gc::with_heap(|hs| {
         let mut drop_count: i32 = 0;
         let ptr: *mut i32 = &mut drop_count;

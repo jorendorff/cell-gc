@@ -7,7 +7,8 @@ mod aux;
 use aux::pairs::*;
 use std::sync::Arc;
 
-fn main() {
+#[test]
+fn root_is_not_recycled() {
     cell_gc::with_heap(|hs| {
         // Create and root one object.
         let root = alloc_pair(

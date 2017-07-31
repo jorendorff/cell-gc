@@ -10,7 +10,8 @@ struct Philosopher<'h> {
     teacher: Option<PhilosopherRef<'h>>,
 }
 
-fn main() {
+#[test]
+fn strings_in_heap() {
     cell_gc::with_heap(|hs| {
         let s = hs.alloc(Philosopher {
             name: "Socrates",
