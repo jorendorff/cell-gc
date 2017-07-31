@@ -1,10 +1,10 @@
 extern crate lisp;
 
-use lisp::repl::repl;
+use lisp::toplevel;
 use std::process;
 
 fn main() {
-    if let Err(e) = repl() {
+    if let Err(e) = toplevel::repl() {
         println!("Error: {}", e);
         process::exit(1);
     }

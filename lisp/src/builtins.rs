@@ -1,13 +1,17 @@
+//! Essential procedures.
+
 use cell_gc::{GcHeapSession, GcLeaf};
 use cell_gc::collections::VecRef;
+use env::{self, EnvironmentRef};
 use errors::*;
 use std::io::{self, Write};
 use std::sync::Arc;
 use std::vec;
+use toplevel;
 use value::{self, BuiltinFn, BuiltinFnPtr, InternedString, NonInternedStringObject, Pair, Value};
 use value::{ArgType, RetType};
 use value::Value::*;
-use vm::{self, EnvironmentRef, Trampoline};
+use vm::Trampoline;
 
 
 // The builtins! macro /////////////////////////////////////////////////////////
@@ -541,7 +545,7 @@ builtins! {
     }
 
     fn eval "eval" <'h>(hs, expr: Value<'h>, env: EnvironmentRef<'h>) -> Result<Trampoline<'h>> {
-        vm::eval_to_tail_call(hs, expr, env)
+        toplevel::eval_to_tail_call(hs, expr, env)
     }
 }
 
@@ -621,7 +625,7 @@ pub fn define_builtins<'h>(hs: &mut GcHeapSession<'h>, env: EnvironmentRef<'h>) 
 
     // One last extension, implemented as a "lambda" because builtins don't
     // have an environment pointer.
-    let interaction_env_proc = vm::constant_proc(hs, Value::Environment(env.clone()));
+    let interaction_env_proc = env::constant_proc(hs, Value::Environment(env.clone()));
     env.push(
         InternedString::get("interaction-environment"),
         interaction_env_proc,

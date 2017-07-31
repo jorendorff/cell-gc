@@ -12,9 +12,12 @@ pub mod errors {
     error_chain!{}
 }
 
-pub mod builtins;
-mod compile;
-pub mod parse;
-pub mod repl;
 pub mod value;
+
+pub mod parse;
+mod compile;
+mod env;
 pub mod vm;
+
+mod builtins;
+pub mod toplevel;

@@ -1,12 +1,11 @@
-//! If you use enough force, you can actually use this GC to implement a toy VM.
+//! Interpreter for compiled code.
 
-use builtins;
-use cell_gc::{GcHeapSession, GcLeaf};
+use cell_gc::GcHeapSession;
 use cell_gc::collections::VecRef;
-use compile::{self, Expr, StaticEnvironment, StaticEnvironmentRef};
+use compile::Expr;
+use env::{Environment, EnvironmentRef};
 use errors::Result;
-use parse;
-use value::{InternedString, Pair, Value};
+use value::{Pair, Value};
 use value::Value::*;
 
 /// A potentially partially evaluated value.
@@ -36,202 +35,6 @@ impl<'h> Trampoline<'h> {
             }
         }
     }
-}
-
-#[derive(Debug, IntoHeap)]
-pub struct Environment<'h> {
-    parent: Option<EnvironmentRef<'h>>,
-    senv: StaticEnvironmentRef<'h>,
-    values: VecRef<'h, Value<'h>>,
-}
-
-impl<'h> Environment<'h> {
-    pub fn default_env(hs: &mut GcHeapSession<'h>) -> EnvironmentRef<'h> {
-        let senv = StaticEnvironment {
-            parent: None,
-            names: hs.alloc(vec![]),
-        };
-        let senv = hs.alloc(senv);
-        let env = Environment {
-            parent: None,
-            senv: senv.clone(),
-            values: hs.alloc(vec![]),
-        };
-        let env = hs.alloc(env);
-
-        builtins::define_builtins(hs, env.clone());
-
-        const PRELUDE: &'static str = include_str!("prelude.scm");
-        let _ = eval_str(hs, env.clone(), PRELUDE).expect("unexpected error running the prelude");
-
-        const EXPANDER_CODE: &'static str = concat!(
-            include_str!("psyntax-support.scm"),
-            include_str!("psyntax.pp"),
-            "\nsc-expand\n"
-        );
-        let xsenv = StaticEnvironment {
-            parent: Some(senv.clone()),
-            names: hs.alloc(vec![]),
-        };
-        let xsenv = hs.alloc(xsenv);
-        let xenv = Environment {
-            parent: Some(env.clone()),
-            senv: xsenv,
-            values: hs.alloc(vec![]),
-        };
-        let xenv = hs.alloc(xenv);
-        xenv.push(
-            InternedString::get("psyntax-environment"),
-            Value::Environment(xenv.clone()),
-        );
-        xenv.debug_assert_consistent();
-
-        let expander = eval_str(hs, xenv, EXPANDER_CODE)
-            .expect("unexpected error initializing the expander");
-        env.set_expander(expander);
-
-        env
-    }
-}
-
-impl<'h> EnvironmentRef<'h> {
-    pub fn push(&self, key: InternedString, value: Value<'h>) {
-        self.senv().names().push(GcLeaf::new(key));
-        self.values().push(value);
-    }
-
-    pub fn dynamic_lookup(&self, name: &InternedString) -> Result<(EnvironmentRef<'h>, usize)> {
-        match self.senv().lookup(name) {
-            None =>
-                Err(format!("undefined symbol: {:?}", name.as_str()).into()),
-            Some((up_count, index)) =>
-                Ok((self.clone().up(up_count), index)),
-        }
-    }
-
-    pub fn dynamic_get(&self, name: &InternedString) -> Result<Value<'h>> {
-        let (env, i) = self.dynamic_lookup(name)?;
-        Ok(env.values().get(i))
-    }
-
-    pub fn dynamic_set(&self, name: &InternedString, value: Value<'h>) -> Result<()> {
-        let (env, i) = self.dynamic_lookup(name)?;
-        env.values().set(i, value);
-        Ok(())
-    }
-
-    pub fn up(self, up_count: usize) -> EnvironmentRef<'h> {
-        let mut env = self;
-        for _ in 0..up_count {
-            env = env.parent().unwrap();
-        }
-        env
-    }
-
-    pub fn get(&self, up_count: usize, index: usize) -> Value<'h> {
-        self.clone().up(up_count).values().get(index)
-    }
-
-    pub fn set(&self, up_count: usize, index: usize, value: Value<'h>) {
-        self.clone().up(up_count).values().set(index, value);
-    }
-
-    pub fn define(&self, key: InternedString, value: Value<'h>) {
-        let names = self.senv().names();
-        for i in 0..names.len() {
-            if key == *names.get(i) {
-                self.values().set(i, value);
-                return;
-            }
-        }
-        self.push(key, value);
-    }
-
-    pub fn set_expander(&self, expander: Value<'h>) {
-        self.define(EXPANDER_SYMBOL.clone(), expander);
-    }
-
-    #[cfg(debug_assertions)]
-    pub fn debug_assert_consistent(&self) {
-        let mut env = self.clone();
-        loop {
-            assert_eq!(env.values().len(), env.senv().names().len());
-            match (env.parent(), env.senv().parent()) {
-                (None, None) => break,
-                (Some(penv), Some(psenv)) => {
-                    assert_eq!(penv.senv(), psenv);
-                    env = penv;
-                }
-                _ => panic!("bad environment"),
-            }
-        }
-    }
-
-    #[cfg(not(debug_assertions))]
-    pub fn debug_assert_consistent(&self) {}
-}
-
-/// Create and return a procedure that takes no arguments and always returns
-/// the same value, k.
-pub fn constant_proc<'h>(hs: &mut GcHeapSession<'h>, k: Value<'h>) -> Value<'h> {
-    use compile::{Code, CodeRef};
-
-    // The procedure closes over an environment `env` containing a single slot
-    // (for the constant value `k`).
-    let name = GcLeaf::new(InternedString::get("k"));
-    let names = hs.alloc(vec![name.clone()]);
-    let senv = hs.alloc(StaticEnvironment {
-        parent: None,
-        names,
-    });
-    let values = hs.alloc(vec![k]);
-    let env = hs.alloc(Environment {
-        parent: None,
-        senv: senv.clone(),
-        values,
-    });
-
-    // The procedure itself takes no arguments.
-    let params = hs.alloc(vec![]);
-    let params_senv = hs.alloc(StaticEnvironment {
-        parent: Some(senv),
-        names: params
-    });
-
-    // Its source code is pretty straightforward.
-    let code: CodeRef<'h> = hs.alloc(Code {
-        senv: params_senv,
-        rest: false,
-        body: Expr::FastVar { up_count: 1, index: 0 },
-    });
-    Value::Lambda(hs.alloc(Pair {
-        car: Value::Code(code),
-        cdr: Value::Environment(env),
-    }))
-}
-
-#[macro_export]
-macro_rules! lisp {
-    { ( ) , $_hs:expr } => {
-        Nil
-    };
-    { ( $h:tt $($t:tt)* ) , $hs:expr } => {
-        {
-            let h = lisp!($h, $hs);
-            let t = lisp!(($($t)*), $hs);
-            Cons($hs.alloc(Pair { car: h, cdr: t }))
-        }
-    };
-    { $s:tt , $_hs:expr } => {
-        {
-            let s = stringify!($s);  // lame, but nothing else matches after an `ident` match fails
-            if s.starts_with(|c: char| c.is_digit(10)) {
-                Int(s.parse().expect("invalid numeric literal in `lisp!`"))
-            } else {
-                Symbol($crate::cell_gc::GcLeaf::new($crate::value::InternedString::get(s)))
-            }
-        }
-    };
 }
 
 pub fn apply<'h>(
@@ -272,15 +75,8 @@ pub fn apply<'h>(
                 return Err("apply: too many arguments".into());
             }
 
-            assert_eq!(names.len(), args.len());
             let values = hs.alloc(args);
-            let env = hs.alloc(Environment {
-                parent,
-                senv,
-                values,
-            });
-            env.debug_assert_consistent();
-
+            let env = Environment::new(hs, parent, senv, values);
             eval_compiled_to_tail_call(hs, code.body(), env)
         }
         _ => Err("apply: not a function".into()),
@@ -339,11 +135,7 @@ pub fn eval_compiled_to_tail_call<'h>(
                     .map(|_| Value::Nil)
                     .collect::<Vec<Value<'h>>>(),
             );
-            let letrec_env = hs.alloc(Environment {
-                parent: Some(env),
-                senv,
-                values: values.clone(),
-            });
+            let letrec_env = Environment::new(hs, Some(env), senv, values.clone());
             let exprs = letrec.exprs();
             for i in 0..exprs.len() {
                 let val = eval_compiled(hs, exprs.get(i), letrec_env.clone())?;
@@ -364,52 +156,12 @@ pub fn eval_compiled_to_tail_call<'h>(
     }
 }
 
-lazy_static! {
-    static ref EXPANDER_SYMBOL: InternedString = InternedString::gensym();
-}
-
-pub fn eval_to_tail_call<'h>(
-    hs: &mut GcHeapSession<'h>,
-    mut expr: Value<'h>,
-    env: EnvironmentRef<'h>,
-) -> Result<Trampoline<'h>> {
-    if let Ok(expander) = env.dynamic_get(&EXPANDER_SYMBOL) {
-        let args = vec![expr];
-        let tail = apply(hs, expander, args)?;
-        expr = tail.eval(hs)?;
-    }
-    let expr_compiled = compile::compile_toplevel(hs, &env.senv(), expr)?;
-    eval_compiled_to_tail_call(hs, expr_compiled, env)
-}
-
 pub fn eval_compiled<'h>(
     hs: &mut GcHeapSession<'h>,
     expr: Expr<'h>,
     env: EnvironmentRef<'h>,
 ) -> Result<Value<'h>> {
     eval_compiled_to_tail_call(hs, expr, env)?.eval(hs)
-}
-
-pub fn eval<'h>(
-    hs: &mut GcHeapSession<'h>,
-    expr: Value<'h>,
-    env: EnvironmentRef<'h>,
-) -> Result<Value<'h>> {
-    eval_to_tail_call(hs, expr, env)?.eval(hs)
-}
-
-fn eval_str<'h>(
-    hs: &mut GcHeapSession<'h>,
-    env: EnvironmentRef<'h>,
-    code: &str,
-) -> Result<Value<'h>> {
-    let forms = parse::parse(hs, code)?;
-
-    let mut result = Value::Nil;
-    for form in forms {
-        result = eval(hs, form, env.clone())?;
-    }
-    Ok(result)
 }
 
 #[cfg(test)]

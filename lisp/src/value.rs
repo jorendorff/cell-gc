@@ -1,6 +1,9 @@
+//! `Value` is the type of all variables in Scheme programs.
+
 use cell_gc::{GcHeapSession, GcLeaf};
 use cell_gc::collections::VecRef;
 use compile;
+use env::EnvironmentRef;
 use errors::Result;
 use std::borrow::Borrow;
 use std::collections::HashSet;
@@ -8,7 +11,7 @@ use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{ATOMIC_USIZE_INIT, AtomicUsize, Ordering};
-use vm::{EnvironmentRef, Trampoline};
+use vm::Trampoline;
 
 #[derive(Debug, IntoHeap)]
 pub struct Pair<'h> {

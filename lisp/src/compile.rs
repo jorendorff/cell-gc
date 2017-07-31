@@ -1,5 +1,8 @@
+//! Compile Scheme forms into an internal representation, Expr.
+
 use cell_gc::{GcHeapSession, GcLeaf};
 use cell_gc::collections::VecRef;
+use env::StaticEnvironmentRef;
 use errors::Result;
 use std::fmt;
 use value::{InternedString, Pair, Value};
@@ -37,12 +40,6 @@ pub enum Expr<'h> {
 
     /// A `letrec*` expression.
     Letrec(LetrecRef<'h>),
-}
-
-#[derive(IntoHeap)]
-pub struct StaticEnvironment<'h> {
-    pub parent: Option<StaticEnvironmentRef<'h>>,
-    pub names: VecRef<'h, GcLeaf<InternedString>>,
 }
 
 #[derive(IntoHeap)]
@@ -116,24 +113,6 @@ impl<'h> fmt::Debug for Expr<'h> {
                 )
             }
         }
-    }
-}
-
-impl<'h> StaticEnvironmentRef<'h> {
-    pub fn lookup(&self, name: &InternedString) -> Option<(usize, usize)> {
-        let mut up_count = 0;
-        let mut next = Some(self.clone());
-        while let Some(senv) = next {
-            let names = senv.names();
-            for (index, s) in names.into_iter().enumerate() {
-                if name == &*s {
-                    return Some((up_count, index));
-                }
-            }
-            next = senv.parent();
-            up_count += 1;
-        }
-        None
     }
 }
 
@@ -219,11 +198,7 @@ fn compile_body<'h>(
         if no_defines {
             senv.clone()
         } else {
-            let names = hs.alloc(names);
-            hs.alloc(StaticEnvironment {
-                parent: Some(senv.clone()),
-                names: names,
-            })
+            senv.new_nested_environment(hs, names)
         };
 
     let init_exprs: Vec<Expr> = init_exprs
@@ -355,11 +330,7 @@ pub fn compile_expr<'h>(
                         _ => return Err("syntax error in lambda arguments".into()),
                     };
 
-                    let params = hs.alloc(names);
-                    let lambda_senv = hs.alloc(StaticEnvironment {
-                        parent: Some(senv.clone()),
-                        names: params
-                    });
+                    let lambda_senv = senv.new_nested_environment(hs, names);
                     let body = compile_body(hs, &lambda_senv, body_forms)?;
                     return Ok(Expr::Fun(hs.alloc(Code { senv: lambda_senv, rest, body })));
                 } else if s.as_str() == "quote" {
@@ -426,12 +397,7 @@ pub fn compile_expr<'h>(
                         return compile_body(hs, senv, body_forms);
                     }
 
-                    let names = hs.alloc(names);
-                    let body_senv = hs.alloc(StaticEnvironment {
-                        parent: Some(senv.clone()),
-                        names,
-                    });
-
+                    let body_senv = senv.new_nested_environment(hs, names);
                     let exprs = exprs.into_iter()
                         .map(|expr| compile_expr(hs, &body_senv, expr))
                         .collect::<Result<Vec<Expr<'h>>>>()?;
