@@ -8,6 +8,7 @@ extern crate nom;
 #[macro_use]
 extern crate error_chain;
 
+#[allow(unused_doc_comment)] // silence new warning in Nightly
 pub mod errors {
     error_chain!{}
 }
