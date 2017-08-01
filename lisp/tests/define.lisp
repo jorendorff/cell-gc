@@ -40,3 +40,11 @@
        (even? (- n 1))))
    (assert (even? 0))
    (assert (not (even? 7)))))
+
+;; Toplevel define reuses existing bindings.
+
+(define x 'old)
+(define (f) x)
+(assert (eq? (f) 'old))
+(define x 'new)
+(assert (eq? (f) 'new))

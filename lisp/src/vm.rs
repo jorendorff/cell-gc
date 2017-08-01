@@ -145,7 +145,7 @@ pub fn eval_compiled_to_tail_call<'h>(
         }
         Expr::Def(def) => {
             let val = eval_compiled(hs, env, def.value())?;
-            env.push(def.name().unwrap(), val);
+            env.define(def.name().unwrap(), val);
             Ok(Trampoline::Value(Value::Unspecified))
         }
         Expr::Set(def) => {
