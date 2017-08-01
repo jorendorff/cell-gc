@@ -16,7 +16,7 @@ fn eval_test_file(file: &Path) {
         let exprs = lisp::parse::parse(hs, &source).expect("Should parse s-exps OK");
         let env = lisp::toplevel::default_env(hs);
         for expr in exprs {
-            lisp::toplevel::eval(hs, expr, env.clone()).expect("Should eval exprs OK");
+            lisp::toplevel::eval(hs, &env, expr).expect("Should eval exprs OK");
             hs.force_gc();
         }
     });

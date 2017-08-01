@@ -545,7 +545,7 @@ builtins! {
     }
 
     fn eval "eval" <'h>(hs, expr: Value<'h>, env: EnvironmentRef<'h>) -> Result<Trampoline<'h>> {
-        toplevel::eval_to_tail_call(hs, expr, env)
+        toplevel::eval_to_tail_call(hs, &env, expr)
     }
 }
 
@@ -615,7 +615,7 @@ pub static BUILTINS: &[(&'static str, BuiltinFn)] = &[
     ("write-char", write_char),
 ];
 
-pub fn define_builtins<'h>(hs: &mut GcHeapSession<'h>, env: EnvironmentRef<'h>) {
+pub fn define_builtins<'h>(hs: &mut GcHeapSession<'h>, env: &EnvironmentRef<'h>) {
     for &(name, f) in BUILTINS {
         env.push(
             InternedString::get(name),

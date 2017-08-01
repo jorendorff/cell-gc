@@ -77,7 +77,7 @@ pub fn apply<'h>(
 
             let values = hs.alloc(args);
             let env = Environment::new(hs, parent, senv, values);
-            eval_compiled_to_tail_call(hs, code.body(), env)
+            eval_compiled_to_tail_call(hs, &env, code.body())
         }
         _ => Err("apply: not a function".into()),
     }
@@ -88,8 +88,8 @@ pub fn apply<'h>(
 /// continuing evaluation.
 pub fn eval_compiled_to_tail_call<'h>(
     hs: &mut GcHeapSession<'h>,
+    env: &EnvironmentRef<'h>,
     expr: Expr<'h>,
-    env: EnvironmentRef<'h>,
 ) -> Result<Trampoline<'h>> {
     match expr {
         Expr::Con(k) => Ok(Trampoline::Value(k)),
@@ -101,9 +101,9 @@ pub fn eval_compiled_to_tail_call<'h>(
             cdr: Value::Environment(env.clone()),
         })))),
         Expr::App(subexprs) => {
-            let func = eval_compiled(hs, subexprs.get(0), env.clone())?;
+            let func = eval_compiled(hs, env, subexprs.get(0))?;
             let args: Vec<Value<'h>> = (1..subexprs.len())
-                .map(|i| eval_compiled(hs, subexprs.get(i), env.clone()))
+                .map(|i| eval_compiled(hs, env, subexprs.get(i)))
                 .collect::<Result<Vec<Value<'h>>>>()?;
             Ok(Trampoline::TailCall { func, args })
         }
@@ -113,19 +113,19 @@ pub fn eval_compiled_to_tail_call<'h>(
                 Ok(Trampoline::Value(Nil))
             } else {
                 for i in 0..(len - 1) {
-                    eval_compiled(hs, exprs.get(i), env.clone())?;
+                    eval_compiled(hs, env, exprs.get(i))?;
                 }
-                eval_compiled_to_tail_call(hs, exprs.get(len - 1), env)
+                eval_compiled_to_tail_call(hs, env, exprs.get(len - 1))
             }
         }
         Expr::If(if_parts) => {
-            let cond_value = eval_compiled(hs, if_parts.cond(), env.clone())?;
+            let cond_value = eval_compiled(hs, env, if_parts.cond())?;
             let selected_expr = if cond_value.to_bool() {
                 if_parts.t_expr()
             } else {
                 if_parts.f_expr()
             };
-            eval_compiled_to_tail_call(hs, selected_expr, env)
+            eval_compiled_to_tail_call(hs, env, selected_expr)
         }
         Expr::Letrec(letrec) => {
             let senv = letrec.senv();
@@ -135,21 +135,21 @@ pub fn eval_compiled_to_tail_call<'h>(
                     .map(|_| Value::Nil)
                     .collect::<Vec<Value<'h>>>(),
             );
-            let letrec_env = Environment::new(hs, Some(env), senv, values.clone());
+            let letrec_env = Environment::new(hs, Some(env.clone()), senv, values.clone());
             let exprs = letrec.exprs();
             for i in 0..exprs.len() {
-                let val = eval_compiled(hs, exprs.get(i), letrec_env.clone())?;
+                let val = eval_compiled(hs, &letrec_env, exprs.get(i))?;
                 values.set(i, val);
             }
-            eval_compiled_to_tail_call(hs, letrec.body(), letrec_env)
+            eval_compiled_to_tail_call(hs, &letrec_env, letrec.body())
         }
         Expr::Def(def) => {
-            let val = eval_compiled(hs, def.value(), env.clone())?;
+            let val = eval_compiled(hs, env, def.value())?;
             env.push(def.name().unwrap(), val);
             Ok(Trampoline::Value(Value::Unspecified))
         }
         Expr::Set(def) => {
-            let val = eval_compiled(hs, def.value(), env.clone())?;
+            let val = eval_compiled(hs, env, def.value())?;
             env.dynamic_set(&def.name(), val)?;
             Ok(Trampoline::Value(Value::Unspecified))
         }
@@ -158,10 +158,10 @@ pub fn eval_compiled_to_tail_call<'h>(
 
 pub fn eval_compiled<'h>(
     hs: &mut GcHeapSession<'h>,
+    env: &EnvironmentRef<'h>,
     expr: Expr<'h>,
-    env: EnvironmentRef<'h>,
 ) -> Result<Value<'h>> {
-    eval_compiled_to_tail_call(hs, expr, env)?.eval(hs)
+    eval_compiled_to_tail_call(hs, env, expr)?.eval(hs)
 }
 
 #[cfg(test)]
