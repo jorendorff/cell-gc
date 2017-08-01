@@ -7,7 +7,7 @@ use signposts;
 use traits::{IntoHeapAllocation, Tracer};
 
 /// Perform all the marking for a collection.
-pub fn mark<'h>(heap: &mut GcHeap, dropping: bool) {
+pub fn mark<'h>(heap: &mut GcHeap) {
     let _sp = signposts::Marking::new();
 
     heap.with_marking_tracer(|heap, mut tracer| {
@@ -16,11 +16,9 @@ pub fn mark<'h>(heap: &mut GcHeap, dropping: bool) {
             heap.clear_mark_bits(&mut roots);
         }
 
-        if !dropping {
-            for ptr in roots {
-                unsafe {
-                    (*PageHeader::find(ptr)).mark(ptr, &mut tracer);
-                }
+        for ptr in roots {
+            unsafe {
+                (*PageHeader::find(ptr)).mark(ptr, &mut tracer);
             }
         }
 

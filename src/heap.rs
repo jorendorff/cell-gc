@@ -90,6 +90,9 @@ use traits::IntoHeapAllocation;
 /// other, in cycles.
 pub struct GcHeap {
     /// Map from heap types to the set of pages for that type.
+    ///
+    /// This owns the page sets, which own the pages. The cleanup when you drop
+    /// a `GcHeap` is done by `PageSet::drop`.
     page_sets: HashMap<TypeId, PageSet>,
 
     /// Tracer for the mark phase of GC.
@@ -267,16 +270,10 @@ impl GcHeap {
         }
     }
 
-    /// Perform GC. This is called from `<GcHeap as Drop>::drop()`, so
-    /// unreachable values found by GC must be dropped synchronously, before
-    /// this returns.
+    /// Perform GC.
     fn gc(&mut self) {
-        self.gc_cycle(false);
-    }
-
-    fn gc_cycle(&mut self, dropping: bool) {
         self.unpin_dropped_ptrs();
-        mark(self, dropping);
+        mark(self);
 
         let _sp = signposts::Sweeping::new();
         for page_set in self.page_sets.values_mut() {
@@ -290,20 +287,6 @@ impl GcHeap {
         self.page_sets
             .values()
             .all(|page_set| page_set.all_pages_are_empty())
-    }
-}
-
-impl Drop for GcHeap {
-    fn drop(&mut self) {
-        // Perform a final GC to call destructors on any remaining allocations.
-        // We do not mark anything. This is safe because nothing that's pinned
-        // will ever be touched again; allocations can be pinned when we get
-        // here, but only if we leaked a `GcRef`.
-        self.gc_cycle(true);
-
-        for page_set in self.page_sets.values() {
-            assert!(page_set.all_pages_are_empty());
-        }
     }
 }
 

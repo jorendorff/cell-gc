@@ -472,15 +472,19 @@ fn each_page_mut<F: FnMut(&mut PageHeader)>(first_page: *mut PageHeader, mut f: 
 
 impl Drop for PageSet {
     fn drop(&mut self) {
-        assert!(self.full_pages.is_null());
-        unsafe {
-            // Don't use each_page here: we're dropping them.
-            let mut p = self.other_pages;
-            while !p.is_null() {
-                let next = (*p).next_page;
-                ptr::drop_in_place(p); // drop the header
-                Vec::from_raw_parts(p as *mut u8, 0, PAGE_SIZE); // free the page
-                p = next;
+        // Don't use each_page here: we're dropping them.
+        for page_list in &[self.full_pages, self.other_pages] {
+            let mut page = *page_list;
+            while !page.is_null() {
+                unsafe {
+                    let mut roots_to_ignore = vec![];
+                    let next = (*page).next_page;
+                    (*page).clear_mark_bits(&mut roots_to_ignore);
+                    (self.sweep_fn)(&mut *page); // drop all objects remaining in the page
+                    ptr::drop_in_place(page); // drop the header
+                    Vec::from_raw_parts(page as *mut u8, 0, PAGE_SIZE); // free the page
+                    page = next;
+                }
             }
         }
     }
