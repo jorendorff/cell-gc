@@ -7,6 +7,7 @@ extern crate lazy_static;
 extern crate nom;
 #[macro_use]
 extern crate error_chain;
+extern crate rustyline;
 
 pub mod errors {
     error_chain!{}

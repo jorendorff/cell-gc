@@ -8,6 +8,7 @@ workspace = ".."
 nom = { git = "https://github.com/Geal/nom", branch = "master" }
 lazy_static = "0.2.8"
 error-chain = "0.10"
+rustyline = "1.0.0"
 
 [dependencies.cell-gc]
 path = ".."
