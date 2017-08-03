@@ -157,15 +157,15 @@ macro_rules! gc_trivial_impl {
     ($t:ty) => {
         impl IntoHeapBase for $t {
             type In = $t;
-            fn into_heap(self) -> $t { self }
-            unsafe fn from_heap(storage: &$t) -> $t { storage.clone() }
-            unsafe fn trace<R>(_storage: &$t, _tracer: &mut R) where R: Tracer {}
+            #[inline] fn into_heap(self) -> $t { self }
+            #[inline] unsafe fn from_heap(storage: &$t) -> $t { storage.clone() }
+            #[inline] unsafe fn trace<R>(_storage: &$t, _tracer: &mut R) where R: Tracer {}
         }
         unsafe impl<'h> IntoHeap<'h> for $t {}
         impl<'h> IntoHeapAllocation<'h> for $t {
             type Ref = GcRef<'h, Self>;
-            fn wrap_gc_ref(gc_ref: GcRef<'h, Self>) -> Self::Ref { gc_ref }
-            fn into_gc_ref(gc_ref: Self::Ref) -> GcRef<'h, Self> { gc_ref }
+            #[inline] fn wrap_gc_ref(gc_ref: GcRef<'h, Self>) -> Self::Ref { gc_ref }
+            #[inline] fn into_gc_ref(gc_ref: Self::Ref) -> GcRef<'h, Self> { gc_ref }
         }
     }
 }
