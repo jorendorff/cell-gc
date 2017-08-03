@@ -5,7 +5,6 @@ extern crate lisp;
 extern crate test;
 
 use lisp::parse;
-use lisp::vm::{self, Environment};
 
 macro_rules! bench {
     ( $filename:ident ) => {
@@ -28,10 +27,10 @@ fn run_benchmark(b: &mut test::Bencher, code: &str) {
     b.iter(|| {
         let mut heap = cell_gc::GcHeap::new();
         heap.enter(|hs| {
-            let env = Environment::default_env(hs);
+            let env = lisp::toplevel::default_env(hs);
             let exprs = parse::parse(hs, code).expect("should parse source OK");
             for expr in exprs {
-                vm::eval(hs, expr, env.clone()).expect("should eval OK");
+                lisp::toplevel::eval(hs, &env, expr).expect("should eval OK");
             }
         });
     });

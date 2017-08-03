@@ -17,7 +17,7 @@ pub mod value;
 
 pub mod parse;
 mod compile;
-mod env;
+pub mod env;
 pub mod vm;
 
 mod builtins;
