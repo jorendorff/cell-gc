@@ -2,7 +2,7 @@
 
 use cell_gc::GcHeapSession;
 use cell_gc::collections::VecRef;
-use compile::Expr;
+use compile::{Op, CodeRef};
 use env::{Environment, EnvironmentRef};
 use errors::Result;
 use value::{Pair, Value};
@@ -53,7 +53,7 @@ pub fn apply<'h>(
                 Environment(pe) => pe,
                 _ => panic!("internal error: bad lambda"),
             });
-            let senv = code.senv();
+            let senv = code.environments().get(0);
             let names = senv.names();
             let n_names = names.len();
             let has_rest = code.rest();
@@ -77,7 +77,7 @@ pub fn apply<'h>(
 
             let values = hs.alloc(args);
             let env = Environment::new(hs, parent, senv, values);
-            eval_compiled_to_tail_call(hs, &env, code.body())
+            eval_compiled_to_tail_call(hs, &env, code)
         }
         _ => Err("apply: not a function".into()),
     }
@@ -89,69 +89,140 @@ pub fn apply<'h>(
 pub fn eval_compiled_to_tail_call<'h>(
     hs: &mut GcHeapSession<'h>,
     env: &EnvironmentRef<'h>,
-    expr: Expr<'h>,
+    code: CodeRef<'h>,
 ) -> Result<Trampoline<'h>> {
-    match expr {
-        Expr::Con(k) => Ok(Trampoline::Value(k)),
-        Expr::Var(ref s) => Ok(Trampoline::Value(env.dynamic_get(s)?)),
-        Expr::FastVar { up_count, index } =>
-            Ok(Trampoline::Value(env.get(up_count as usize, index as usize))),
-        Expr::Fun(code) => Ok(Trampoline::Value(Lambda(hs.alloc(Pair {
-            car: Value::Code(code),
-            cdr: Value::Environment(env.clone()),
-        })))),
-        Expr::App(subexprs) => {
-            let func = eval_compiled(hs, env, subexprs.get(0))?;
-            let args: Vec<Value<'h>> = (1..subexprs.len())
-                .map(|i| eval_compiled(hs, env, subexprs.get(i)))
-                .collect::<Result<Vec<Value<'h>>>>()?;
-            Ok(Trampoline::TailCall { func, args })
-        }
-        Expr::Seq(exprs) => {
-            let len = exprs.len();
-            if len == 0 {
-                Ok(Trampoline::Value(Nil))
-            } else {
-                for i in 0..(len - 1) {
-                    eval_compiled(hs, env, exprs.get(i))?;
-                }
-                eval_compiled_to_tail_call(hs, env, exprs.get(len - 1))
+    let constants = code.constants();
+    let environments = code.environments();
+    let insns = code.insns();
+    let mut env = env.clone();
+    let mut pc = 0;
+    let mut operands = vec![];
+
+    loop {
+        let op = Op::from_u32(insns.get(pc));
+        pc += 1;
+        match op {
+            Op::Return => {
+                assert_eq!(operands.len(), 1);
+                return Ok(Trampoline::Value(operands.pop().unwrap()));
             }
-        }
-        Expr::If(if_parts) => {
-            let cond_value = eval_compiled(hs, env, if_parts.cond())?;
-            let selected_expr = if cond_value.to_bool() {
-                if_parts.t_expr()
-            } else {
-                if_parts.f_expr()
-            };
-            eval_compiled_to_tail_call(hs, env, selected_expr)
-        }
-        Expr::Letrec(letrec) => {
-            let senv = letrec.senv();
-            debug_assert_eq!(senv.names().len(), letrec.exprs().len());
-            let values: VecRef<'h, Value<'h>> = hs.alloc(
-                (0..senv.names().len())
-                    .map(|_| Value::Nil)
-                    .collect::<Vec<Value<'h>>>(),
-            );
-            let letrec_env = Environment::new(hs, Some(env.clone()), senv, values.clone());
-            let exprs = letrec.exprs();
-            for i in 0..exprs.len() {
-                let val = eval_compiled(hs, &letrec_env, exprs.get(i))?;
-                values.set(i, val);
+
+            Op::Pop => {
+                operands.pop().unwrap();
             }
-            eval_compiled_to_tail_call(hs, &letrec_env, letrec.body())
-        }
-        Expr::Def(def) => {
-            let val = eval_compiled(hs, env, def.value())?;
-            env.define(def.name().unwrap(), val);
-            Ok(Trampoline::Value(Value::Unspecified))
-        }
-        Expr::Set(def) => {
-            let val = eval_compiled(hs, env, def.value())?;
-            env.dynamic_set(&def.name(), val)?;
-            Ok(Trampoline::Value(Value::Unspecified))
+
+            Op::Constant => {
+                let i = insns.get(pc) as usize;
+                pc += 1;
+                operands.push(constants.get(i));
+            }
+
+            Op::GetDynamic => {
+                let i = insns.get(pc) as usize;
+                pc += 1;
+                let symbol = match constants.get(i) {
+                    Value::Symbol(id) => id,
+                    _ => panic!("internal error: bad GetDynamic insn"),
+                };
+                operands.push(env.dynamic_get(&symbol)?);
+            }
+
+            Op::GetStatic => {
+                let up_count = insns.get(pc) as usize;
+                pc += 1;
+                let i = insns.get(pc) as usize;
+                pc += 1;
+                operands.push(env.get(up_count, i));
+            }
+
+            Op::Lambda => {
+                let i = insns.get(pc) as usize;
+                pc += 1;
+                let fn_code = constants.get(i);
+                let fn_value = Value::Lambda(hs.alloc(Pair {
+                    car: fn_code,
+                    cdr: Value::Environment(env.clone()),
+                }));
+                operands.push(fn_value);
+            }
+
+            Op::Call => {
+                let argc = insns.get(pc) as usize;
+                pc += 1;
+                let top = operands.len();
+                let args = operands.split_off(top - argc);
+                let fval = operands.pop().unwrap();
+                operands.push(apply(hs, fval, args)?.eval(hs)?);
+            }
+
+            Op::TailCall => {
+                let argc = insns.get(pc) as usize;
+                // No `pc += 1;` here because pc is a dead value.
+                assert_eq!(operands.len(), argc + 1);
+                let fval = operands.remove(0);
+                return Ok(Trampoline::TailCall {
+                    func: fval,
+                    args: operands
+                });
+            }
+
+            Op::JumpIfFalse => {
+                let offset = match operands.pop().unwrap() {
+                    Value::Bool(false) => insns.get(pc) as usize,
+                    _ => 1
+                };
+                pc += offset;
+            }
+
+            Op::Jump => {
+                pc += insns.get(pc) as usize;
+            }
+
+            Op::Define => {
+                let i = insns.get(pc) as usize;
+                pc += 1;
+                let symbol = match constants.get(i) {
+                    Value::Symbol(id) => id,
+                    _ => panic!("internal error: bad Define insn"),
+                };
+                let value = operands.pop().unwrap();
+                env.define(symbol.unwrap(), value);
+            }
+
+            Op::SetStatic => {
+                let up_count = insns.get(pc) as usize;
+                pc += 1;
+                let i = insns.get(pc) as usize;
+                pc += 1;
+                env.set(up_count, i, operands.pop().unwrap());
+            }
+
+            Op::SetDynamic => {
+                let i = insns.get(pc) as usize;
+                pc += 1;
+                let symbol = match constants.get(i) {
+                    Value::Symbol(id) => id.unwrap(),
+                    _ => panic!("internal error: bad Set insn"),
+                };
+                let value = operands.pop().unwrap();
+                env.dynamic_set(&symbol, value)?;
+            }
+
+            Op::PushEnv => {
+                let i = insns.get(pc) as usize;
+                pc += 1;
+                let senv = environments.get(i);
+                let values: VecRef<'h, Value<'h>> = hs.alloc(
+                    (0..senv.names().len())
+                        .map(|_| Value::Unspecified)
+                        .collect::<Vec<Value<'h>>>(),
+                );
+                env = Environment::new(hs, Some(env), senv, values);
+            }
+
+            Op::PopEnv => {
+                env = env.parent().unwrap();
+            }
         }
     }
 }
@@ -159,9 +230,11 @@ pub fn eval_compiled_to_tail_call<'h>(
 pub fn eval_compiled<'h>(
     hs: &mut GcHeapSession<'h>,
     env: &EnvironmentRef<'h>,
-    expr: Expr<'h>,
+    code: CodeRef<'h>,
 ) -> Result<Value<'h>> {
-    eval_compiled_to_tail_call(hs, env, expr)?.eval(hs)
+    assert_eq!(code.environments().get(0), env.senv(),
+               "code can only run in the environment for which it was compiled");
+    eval_compiled_to_tail_call(hs, env, code)?.eval(hs)
 }
 
 #[cfg(test)]

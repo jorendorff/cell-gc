@@ -8,13 +8,13 @@ use vm;
 
 #[derive(IntoHeap)]
 pub struct StaticEnvironment<'h> {
-    parent: Option<StaticEnvironmentRef<'h>>,
+    pub parent: Option<StaticEnvironmentRef<'h>>,
     pub names: VecRef<'h, GcLeaf<InternedString>>,
 }
 
 #[derive(Debug, IntoHeap)]
 pub struct Environment<'h> {
-    parent: Option<EnvironmentRef<'h>>,
+    pub parent: Option<EnvironmentRef<'h>>,
     pub senv: StaticEnvironmentRef<'h>,
     values: VecRef<'h, Value<'h>>,
 }
@@ -35,6 +35,18 @@ impl<'h> StaticEnvironmentRef<'h> {
             up_count += 1;
         }
         None
+    }
+
+    pub fn up(self, up_count: usize) -> StaticEnvironmentRef<'h> {
+        let mut senv = self;
+        for _ in 0..up_count {
+            senv = senv.parent().unwrap();
+        }
+        senv
+    }
+
+    pub fn get_name(&self, up_count: usize, index: usize) -> InternedString {
+        self.clone().up(up_count).names().get(index).unwrap()
     }
 
     pub fn new_nested_environment(
@@ -183,22 +195,21 @@ impl<'h> EnvironmentRef<'h> {
 /// Create and return a procedure that takes no arguments and always returns
 /// the same value, k.
 pub fn constant_proc<'h>(hs: &mut GcHeapSession<'h>, k: Value<'h>) -> Value<'h> {
-    use compile;
+    use compile::{self, Op};
 
-    // The procedure closes over an environment `env` containing a single slot
-    // (for the constant value `k`).
+    // The procedure has an empty environment and takes no arguments.
     let env = Environment::empty(hs);
-    let name = InternedString::get("k");
-    env.push(name, k);
-
-    // The procedure itself takes no arguments.
     let params_senv = env.senv().new_nested_environment(hs, vec![]);
 
     // Its source code is pretty straightforward.
+    let insns = hs.alloc(vec![Op::Constant as u32, 0, Op::Return as u32]);
+    let environments = hs.alloc(vec![params_senv]);
+    let constants = hs.alloc(vec![k]);
     let code = hs.alloc(compile::Code {
-        senv: params_senv,
-        rest: false,
-        body: compile::Expr::FastVar { up_count: 1, index: 0 },
+        insns,
+        environments,
+        constants,
+        rest: false
     });
     Value::Lambda(hs.alloc(Pair {
         car: Value::Code(code),
