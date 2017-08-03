@@ -508,27 +508,6 @@ impl<'h> Emitter<'h> {
     }
 }
 
-// Convert the linked list of a `<body>` to a vector; also splice in the
-// contents of `(begin)` expressions nested within the `<body>`.
-//
-// Bug: Both (begin defn ...) and (begin expr ...) forms flatten, but this
-// also permits (begin defn ... expr ...) cases that should be errors.
-fn flatten_body<'h>(forms: Value<'h>, out: &mut Vec<Value<'h>>) -> Result<()> {
-    for form_res in forms {
-        let form = form_res?;
-        if let Value::Cons(ref pair) = form {
-            if let Value::Symbol(op) = pair.car() {
-                if op.as_str() == "begin" {
-                    flatten_body(pair.cdr(), out)?;
-                    continue;
-                }
-            }
-        }
-        out.push(form);
-    }
-    Ok(())
-}
-
 fn is_definition<'h>(form: &Value<'h>) -> bool {
     if let Value::Cons(ref pair) = *form {
         if let Value::Symbol(op) = pair.car() {
