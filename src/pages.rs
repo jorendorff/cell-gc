@@ -99,11 +99,13 @@ impl MarkWord {
         self.0 >> 2 != 0
     }
 
+    #[inline]
     fn pin(&mut self) {
         debug_assert!(self.is_allocated());
         self.0 += 4;
     }
 
+    #[inline]
     fn unpin(&mut self) {
         debug_assert!(self.is_allocated());
         debug_assert!(self.is_pinned());
