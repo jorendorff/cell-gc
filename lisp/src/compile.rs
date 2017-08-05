@@ -4,33 +4,26 @@ use cell_gc::{GcHeapSession, GcLeaf};
 use cell_gc::collections::VecRef;
 use env::StaticEnvironmentRef;
 use errors::Result;
-use std::mem;
 use value::{InternedString, Pair, Value};
 
-#[repr(u32)]
-pub enum Op {
-    Return, // ()
-    Pop, // ()
-    Constant, // (constant_index)
-    GetDynamic, // (symbol_index)
-    GetStatic, // (up_count, offset)
-    Lambda, // (code_index)
-    Call, // (argc)
-    TailCall, // (argc)
-    JumpIfFalse, // (offset in words)
-    Jump, // (offset in words)
-    Define, // (symbol_index)
-    SetStatic, // (up_count, offset)
-    SetDynamic, // (symbol_index)
-    PushEnv, // (static_env_index)
-    PopEnv, // ()
-}
+pub mod op {
+    pub type OpCode = u32;
 
-impl Op {
-    pub fn from_u32(n: u32) -> Op {
-        assert!(n <= Op::PopEnv as u32);
-        unsafe { mem::transmute(n) }
-    }
+    pub const RETURN: OpCode = 0; // ()
+    pub const POP: OpCode = 1; // ()
+    pub const CONSTANT: OpCode = 2; // (constant_index)
+    pub const GET_DYNAMIC: OpCode = 3; // (symbol_index)
+    pub const GET_STATIC: OpCode = 4; // (up_count, offset)
+    pub const LAMBDA: OpCode = 5; // (code_index)
+    pub const CALL: OpCode = 6; // (argc)
+    pub const TAIL_CALL: OpCode = 7; // (argc)
+    pub const JUMP_IF_FALSE: OpCode = 8; // (offset in words)
+    pub const JUMP: OpCode = 9; // (offset in words)
+    pub const DEFINE: OpCode = 10; // (symbol_index)
+    pub const SET_STATIC: OpCode = 11; // (up_count, offset)
+    pub const SET_DYNAMIC: OpCode = 12; // (symbol_index)
+    pub const PUSH_ENV: OpCode = 13; // (static_env_index)
+    pub const POP_ENV: OpCode = 14; // ()
 }
 
 #[derive(IntoHeap)]
@@ -89,8 +82,8 @@ impl<'h> Emitter<'h> {
         hs.alloc(self.code)
     }
 
-    fn emit(&mut self, op: Op) {
-        self.code.insns.push(op as u32);
+    fn emit(&mut self, op_code: op::OpCode) {
+        self.code.insns.push(op_code);
     }
 
     fn write_usize(&mut self, n: usize) -> Result<()> {
@@ -106,7 +99,7 @@ impl<'h> Emitter<'h> {
     fn emit_constant(&mut self, value: Value<'h>) -> Result<()> {
         let index = self.code.constants.len();
         self.code.constants.push(value);
-        self.emit(Op::Constant);
+        self.emit(op::CONSTANT);
         self.write_usize(index)
     }
 
@@ -115,13 +108,13 @@ impl<'h> Emitter<'h> {
     fn emit_get_dynamic(&mut self, id: InternedString) -> Result<()> {
         let index = self.code.constants.len();
         self.code.constants.push(Value::Symbol(GcLeaf::new(id)));
-        self.emit(Op::GetDynamic);
+        self.emit(op::GET_DYNAMIC);
         self.write_usize(index)
     }
 
     /// A variable-expression, but at a known location in the environment chain.
     fn emit_get_static(&mut self, up_count: usize, index: usize) -> Result<()> {
-        self.emit(Op::GetStatic);
+        self.emit(op::GET_STATIC);
         self.write_usize(up_count)?;
         self.write_usize(index)
     }
@@ -130,7 +123,7 @@ impl<'h> Emitter<'h> {
     fn emit_lambda(&mut self, code: CodeRef<'h>) -> Result<()> {
         let index = self.code.constants.len();
         self.code.constants.push(Value::Code(code));
-        self.emit(Op::Lambda);
+        self.emit(op::LAMBDA);
         self.write_usize(index)
     }
 
@@ -138,9 +131,9 @@ impl<'h> Emitter<'h> {
     /// emitting the expression for the function and its operands.
     fn emit_call(&mut self, argc: usize, k: Ctn) -> Result<()> {
         self.emit(if k == Ctn::Tail {
-            Op::TailCall
+            op::TAIL_CALL
         } else {
-            Op::Call
+            op::CALL
         });
         self.write_usize(argc)?;
         if k != Ctn::Tail {
@@ -151,7 +144,7 @@ impl<'h> Emitter<'h> {
 
     /// Emit the branching instruction for an `if` expression.
     fn emit_jump_if_false(&mut self) -> Patch {
-        self.emit(Op::JumpIfFalse);
+        self.emit(op::JUMP_IF_FALSE);
         let patch = Patch(self.code.insns.len());
         self.code.insns.push(PATCH_MARK);
         patch
@@ -160,7 +153,7 @@ impl<'h> Emitter<'h> {
     /// This instruction is used at the end of the "then" part of a `if`
     /// expression, before the "else" part.
     fn emit_jump(&mut self) -> Patch {
-        self.emit(Op::Jump);
+        self.emit(op::JUMP);
         let patch = Patch(self.code.insns.len());
         self.code.insns.push(PATCH_MARK);
         patch
@@ -185,14 +178,14 @@ impl<'h> Emitter<'h> {
     fn emit_define(&mut self, id: InternedString) -> Result<()> {
         let index = self.code.constants.len();
         self.code.constants.push(Value::Symbol(GcLeaf::new(id)));
-        self.emit(Op::Define);
+        self.emit(op::DEFINE);
         self.write_usize(index)
     }
 
     /// Assign to a static binding. `set!` expressions could emit this but we
     /// currently don't bother; we use it for `letrec*`.
     fn emit_set_static(&mut self, up_count: usize, index: usize) -> Result<()> {
-        self.emit(Op::SetStatic);
+        self.emit(op::SET_STATIC);
         self.write_usize(up_count)?;
         self.write_usize(index)
     }
@@ -201,7 +194,7 @@ impl<'h> Emitter<'h> {
     fn emit_set_dynamic(&mut self, id: InternedString) -> Result<()> {
         let index = self.code.constants.len();
         self.code.constants.push(Value::Symbol(GcLeaf::new(id)));
-        self.emit(Op::SetDynamic);
+        self.emit(op::SET_DYNAMIC);
         self.write_usize(index)
     }
 
@@ -210,7 +203,7 @@ impl<'h> Emitter<'h> {
     fn emit_push_env(&mut self, senv: StaticEnvironmentRef<'h>) -> Result<()> {
         let index = self.code.environments.len();
         self.code.environments.push(senv);
-        self.emit(Op::PushEnv);
+        self.emit(op::PUSH_ENV);
         self.write_usize(index)
     }
 
@@ -223,9 +216,9 @@ impl<'h> Emitter<'h> {
     /// don't have to do anything here.
     fn emit_ctn(&mut self, k: Ctn) {
         match k {
-            Ctn::Ignore => self.emit(Op::Pop), // discard the value
+            Ctn::Ignore => self.emit(op::POP), // discard the value
             Ctn::Single => {} // do nothing, leave the value on the operand stack
-            Ctn::Tail => self.emit(Op::Return), // non-call expression in tail position
+            Ctn::Tail => self.emit(op::RETURN), // non-call expression in tail position
         }
     }
 
@@ -273,7 +266,7 @@ impl<'h> Emitter<'h> {
         }
         self.compile_body(hs, senv, body, k)?;
         if k != Ctn::Tail {
-            self.emit(Op::PopEnv);
+            self.emit(op::POP_ENV);
         }
         Ok(())
     }
@@ -579,75 +572,75 @@ impl<'h> CodeRef<'h> {
         let mut pc = 0;
         while pc < insns.len() {
             print!("{:7} ", pc);
-            let op = Op::from_u32(insns.get(pc));
+            let op = insns.get(pc);
             pc += 1;
             match op {
-                Op::Return => {
+                op::RETURN => {
                     println!("return")
                 }
-                Op::Pop => {
+                op::POP => {
                     println!("pop")
                 }
-                Op::Constant => {
+                op::CONSTANT => {
                     let i = insns.get(pc) as usize;
                     pc += 1;
                     println!("constant {}  ;; {}", i, constants.get(i));
                 }
-                Op::GetDynamic => {
+                op::GET_DYNAMIC => {
                     let i = insns.get(pc) as usize;
                     pc += 1;
                     println!("get_dynamic {}  ;; {}", i, constants.get(i));
                 }
-                Op::GetStatic => {
+                op::GET_STATIC => {
                     let up_count = insns.get(pc) as usize;
                     pc += 1;
                     let i = insns.get(pc) as usize;
                     pc += 1;
                     println!("get_static {} {}  ;; {}", up_count, i, senv.get_name(up_count, i).as_str());
                 }
-                Op::Lambda => {
+                op::LAMBDA => {
                     let i = insns.get(pc) as usize;
                     pc += 1;
                     println!("lambda {}", i);
                 }
-                Op::Call => {
+                op::CALL => {
                     let argc = insns.get(pc) as usize;
                     pc += 1;
                     println!("call {}", argc);
                 }
-                Op::TailCall => {
+                op::TAIL_CALL => {
                     let argc = insns.get(pc) as usize;
                     pc += 1;
                     println!("tail_call {}", argc);
                 }
-                Op::JumpIfFalse => {
+                op::JUMP_IF_FALSE => {
                     let distance = insns.get(pc) as usize;
                     println!("jump_if_false +{}  ;; to {}", distance, pc + distance);
                     pc += 1;
                 }
-                Op::Jump => {
+                op::JUMP => {
                     let distance = insns.get(pc) as usize;
                     println!("jump +{}  ;; to {}", distance, pc + distance);
                     pc += 1;
                 }
-                Op::Define => {
+                op::DEFINE => {
                     let i = insns.get(pc) as usize;
                     pc += 1;
                     println!("define {}  ;; {}", i, constants.get(i));
                 }
-                Op::SetStatic => {
+                op::SET_STATIC => {
                     let up_count = insns.get(pc) as usize;
                     pc += 1;
                     let i = insns.get(pc) as usize;
                     pc += 1;
                     println!("set_static {} {}  ;; {}", up_count, i, senv.get_name(up_count, i).as_str());
                 }
-                Op::SetDynamic => {
+                op::SET_DYNAMIC => {
                     let i = insns.get(pc) as usize;
                     pc += 1;
                     println!("set_dynamic {}  ;; {}", i, constants.get(i));
                 }
-                Op::PushEnv => {
+                op::PUSH_ENV => {
                     let i = insns.get(pc) as usize;
                     pc += 1;
                     let new_senv = environments.get(i);
@@ -656,9 +649,12 @@ impl<'h> CodeRef<'h> {
                     let names = senv.names().into_iter().collect::<Vec<_>>();
                     println!("push_env {}  ;; {:?}", i, names);
                 }
-                Op::PopEnv => {
+                op::POP_ENV => {
                     senv = senv.parent().unwrap();
                     println!("pop_env");
+                }
+                _ => {
+                    println!("invalid opcode {}", op);
                 }
             }
         }

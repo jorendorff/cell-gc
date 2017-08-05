@@ -2,7 +2,7 @@
 
 use cell_gc::GcHeapSession;
 use cell_gc::collections::VecRef;
-use compile::{Op, CodeRef};
+use compile::{op, CodeRef};
 use env::{Environment, EnvironmentRef};
 use errors::Result;
 use value::{Pair, Value};
@@ -99,25 +99,25 @@ pub fn eval_compiled_to_tail_call<'h>(
     let mut operands = vec![];
 
     loop {
-        let op = Op::from_u32(insns.get(pc));
+        let op_code = insns.get(pc);
         pc += 1;
-        match op {
-            Op::Return => {
+        match op_code {
+            op::RETURN => {
                 assert_eq!(operands.len(), 1);
                 return Ok(Trampoline::Value(operands.pop().unwrap()));
             }
 
-            Op::Pop => {
+            op::POP => {
                 operands.pop().unwrap();
             }
 
-            Op::Constant => {
+            op::CONSTANT => {
                 let i = insns.get(pc) as usize;
                 pc += 1;
                 operands.push(constants.get(i));
             }
 
-            Op::GetDynamic => {
+            op::GET_DYNAMIC => {
                 let i = insns.get(pc) as usize;
                 pc += 1;
                 let symbol = match constants.get(i) {
@@ -127,7 +127,7 @@ pub fn eval_compiled_to_tail_call<'h>(
                 operands.push(env.dynamic_get(&symbol)?);
             }
 
-            Op::GetStatic => {
+            op::GET_STATIC => {
                 let up_count = insns.get(pc) as usize;
                 pc += 1;
                 let i = insns.get(pc) as usize;
@@ -135,7 +135,7 @@ pub fn eval_compiled_to_tail_call<'h>(
                 operands.push(env.get(up_count, i));
             }
 
-            Op::Lambda => {
+            op::LAMBDA => {
                 let i = insns.get(pc) as usize;
                 pc += 1;
                 let fn_code = constants.get(i);
@@ -146,7 +146,7 @@ pub fn eval_compiled_to_tail_call<'h>(
                 operands.push(fn_value);
             }
 
-            Op::Call => {
+            op::CALL => {
                 let argc = insns.get(pc) as usize;
                 pc += 1;
                 let top = operands.len();
@@ -155,7 +155,7 @@ pub fn eval_compiled_to_tail_call<'h>(
                 operands.push(apply(hs, fval, args)?.eval(hs)?);
             }
 
-            Op::TailCall => {
+            op::TAIL_CALL => {
                 let argc = insns.get(pc) as usize;
                 // No `pc += 1;` here because pc is a dead value.
                 assert_eq!(operands.len(), argc + 1);
@@ -166,7 +166,7 @@ pub fn eval_compiled_to_tail_call<'h>(
                 });
             }
 
-            Op::JumpIfFalse => {
+            op::JUMP_IF_FALSE => {
                 let offset = match operands.pop().unwrap() {
                     Value::Bool(false) => insns.get(pc) as usize,
                     _ => 1
@@ -174,11 +174,11 @@ pub fn eval_compiled_to_tail_call<'h>(
                 pc += offset;
             }
 
-            Op::Jump => {
+            op::JUMP => {
                 pc += insns.get(pc) as usize;
             }
 
-            Op::Define => {
+            op::DEFINE => {
                 let i = insns.get(pc) as usize;
                 pc += 1;
                 let symbol = match constants.get(i) {
@@ -189,7 +189,7 @@ pub fn eval_compiled_to_tail_call<'h>(
                 env.define(symbol.unwrap(), value);
             }
 
-            Op::SetStatic => {
+            op::SET_STATIC => {
                 let up_count = insns.get(pc) as usize;
                 pc += 1;
                 let i = insns.get(pc) as usize;
@@ -197,7 +197,7 @@ pub fn eval_compiled_to_tail_call<'h>(
                 env.set(up_count, i, operands.pop().unwrap());
             }
 
-            Op::SetDynamic => {
+            op::SET_DYNAMIC => {
                 let i = insns.get(pc) as usize;
                 pc += 1;
                 let symbol = match constants.get(i) {
@@ -208,7 +208,7 @@ pub fn eval_compiled_to_tail_call<'h>(
                 env.dynamic_set(&symbol, value)?;
             }
 
-            Op::PushEnv => {
+            op::PUSH_ENV => {
                 let i = insns.get(pc) as usize;
                 pc += 1;
                 let senv = environments.get(i);
@@ -220,9 +220,11 @@ pub fn eval_compiled_to_tail_call<'h>(
                 env = Environment::new(hs, Some(env), senv, values);
             }
 
-            Op::PopEnv => {
+            op::POP_ENV => {
                 env = env.parent().unwrap();
             }
+
+            _ => panic!("internal error: invalid opcode {}", op_code),
         }
     }
 }

@@ -195,14 +195,14 @@ impl<'h> EnvironmentRef<'h> {
 /// Create and return a procedure that takes no arguments and always returns
 /// the same value, k.
 pub fn constant_proc<'h>(hs: &mut GcHeapSession<'h>, k: Value<'h>) -> Value<'h> {
-    use compile::{self, Op};
+    use compile::{self, op};
 
     // The procedure has an empty environment and takes no arguments.
     let env = Environment::empty(hs);
     let params_senv = env.senv().new_nested_environment(hs, vec![]);
 
     // Its source code is pretty straightforward.
-    let insns = hs.alloc(vec![Op::Constant as u32, 0, Op::Return as u32]);
+    let insns = hs.alloc(vec![op::CONSTANT as u32, 0, op::RETURN as u32]);
     let environments = hs.alloc(vec![params_senv]);
     let constants = hs.alloc(vec![k]);
     let code = hs.alloc(compile::Code {
