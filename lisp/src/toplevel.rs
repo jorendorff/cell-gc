@@ -4,7 +4,7 @@ use builtins;
 use cell_gc::{self, GcHeapSession};
 use compile;
 use env::{Environment, EnvironmentRef};
-use errors::Result;
+use errors::*;
 use parse;
 use std::io::{self, Write};
 use value::{InternedString, Value};
@@ -70,28 +70,30 @@ pub fn eval_str<'h>(
     Ok(result)
 }
 
-pub fn repl() -> io::Result<()> {
+pub fn repl() -> Result<()> {
     cell_gc::with_heap(|hs| {
         let env = default_env(hs);
 
         loop {
             print!("lisp> ");
-            io::stdout().flush()?;
+            io::stdout().flush()
+                .chain_err(|| "error writing to stdout")?;
 
             // Read
             let mut source = String::new();
-            io::stdin().read_line(&mut source)?;
+            io::stdin().read_line(&mut source)
+                .chain_err(|| "error reading stdin")?;
             if source.is_empty() {
                 break;
             }
             let exprs = parse::parse(hs, &source)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e.description()))?;
+                .chain_err(|| "parse error")?;
 
             // Eval
             let mut result = Value::Unspecified;
             for expr in exprs {
                 let val = eval(hs, &env, expr)
-                    .map_err(|e| io::Error::new(io::ErrorKind::Other, e.description()))?;
+                    .chain_err(|| "eval error")?;
                 result = val;
             }
 

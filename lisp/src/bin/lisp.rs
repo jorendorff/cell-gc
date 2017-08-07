@@ -2,9 +2,10 @@ extern crate cell_gc;
 extern crate lisp;
 
 use lisp::toplevel;
+use lisp::errors::*;
 use std::env;
 use std::fs;
-use std::io::{self, Read};
+use std::io::Read;
 use std::process;
 
 fn main() {
@@ -14,7 +15,7 @@ fn main() {
     }
 }
 
-fn try_main() -> io::Result<()> {
+fn try_main() -> Result<()> {
     if env::args().count() == 1 {
         return toplevel::repl();
     }
@@ -23,13 +24,13 @@ fn try_main() -> io::Result<()> {
         let env = toplevel::default_env(hs);
 
         let mut source = String::new();
-        for file in env::args().skip(1) {
-            let mut file = fs::File::open(file)?;
-            file.read_to_string(&mut source)?;
+        for filename in env::args().skip(1) {
+            let mut file = fs::File::open(&filename)
+                .chain_err(|| format!("error opening file: {}", filename))?;
+            file.read_to_string(&mut source)
+                .chain_err(|| format!("error reading file: {}", filename))?;
 
-            if let Err(e) = toplevel::eval_str(hs, &env, &source) {
-                return Err(io::Error::new(io::ErrorKind::Other, e.to_string()));
-            }
+            toplevel::eval_str(hs, &env, &source)?;
             source.clear();
         }
 
