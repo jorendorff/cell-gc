@@ -1,13 +1,13 @@
 //! High-level pieces.
 
 use builtins;
-use cell_gc::{self, GcHeapSession};
+use cell_gc::{self, GcHeapSession, GcLeaf};
 use compile;
 use env::{Environment, EnvironmentRef};
 use errors::*;
 use parse;
 use std::io::{self, Write};
-use value::{InternedString, Value};
+use value::{BuiltinFnPtr, InternedString, Value};
 use vm::{self, Trampoline};
 
 
@@ -25,6 +25,10 @@ pub fn default_env<'h>(hs: &mut GcHeapSession<'h>) -> EnvironmentRef<'h> {
         "\nsc-expand\n"
     );
     let xenv = env.new_nested_environment(hs);
+    xenv.push(
+        InternedString::get("original-eval"),
+        Value::Builtin(GcLeaf::new(BuiltinFnPtr(builtins::get_eval()))),
+    );
     xenv.push(
         InternedString::get("psyntax-environment"),
         Value::Environment(xenv.clone()),

@@ -615,6 +615,10 @@ pub static BUILTINS: &[(&'static str, BuiltinFn)] = &[
     ("write-char", write_char),
 ];
 
+pub fn get_eval() -> BuiltinFn {
+    eval
+}
+
 pub fn define_builtins<'h>(hs: &mut GcHeapSession<'h>, env: &EnvironmentRef<'h>) {
     for &(name, f) in BUILTINS {
         env.push(

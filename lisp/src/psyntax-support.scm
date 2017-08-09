@@ -45,7 +45,6 @@
 ;;; by eval, and eval accepts one argument, nothing special must be done
 ;;; to support the "noexpand" flag, since it is handled by sc-expand.
 
-(define original-eval eval)
 (define (eval datum) (original-eval datum psyntax-environment))
 
 ;;; (error who format-string why what)
