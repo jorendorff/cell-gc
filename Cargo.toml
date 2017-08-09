@@ -26,4 +26,7 @@ path = "lisp"
 [features]
 default-features = [ "signpost" ]
 
+[profile.release]
+debug = true  # enable debug symbols in release builds
+
 [workspace]
