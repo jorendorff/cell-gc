@@ -105,6 +105,17 @@ pub struct GcHeap {
     /// `GcFrozenRef` uses it to prevent you from freezing a reference into
     /// one heap, then thawing it in a different heap, you monster.
     dropped_frozen_ptrs: Arc<Mutex<Vec<UntypedPointer>>>,
+
+    /// Used to trigger periodic garbage collection.
+    ///
+    /// This counter's starting value is `GC_COUNTER_START`. Roughly every
+    /// time a page becomes full (i.e. the last chunk of memory within the page
+    /// is allocated), the counter is decremented. When it hits zero, we do a
+    /// full mark and sweep and reset the counter.
+    ///
+    /// (This scheduling strategy is dumb and could be improved with a little
+    /// effort.)
+    gc_counter: usize,
 }
 
 unsafe impl Send for GcHeap {}
@@ -137,6 +148,9 @@ where
     GcHeap::new().enter(f)
 }
 
+/// See `Heap::gc_counter`.
+const GC_COUNTER_START: usize = 2048;
+
 impl GcHeap {
     /// Create a new, empty heap.
     pub fn new() -> GcHeap {
@@ -144,6 +158,7 @@ impl GcHeap {
             page_sets: HashMap::new(),
             marking_tracer: Some(MarkingTracer::default()),
             dropped_frozen_ptrs: Arc::new(Mutex::new(Vec::new())),
+            gc_counter: GC_COUNTER_START,
         }
     }
 
@@ -280,6 +295,8 @@ impl GcHeap {
                 page_set.sweep();
             }
         }
+
+        self.gc_counter = GC_COUNTER_START;
     }
 
     fn is_empty(&self) -> bool {
@@ -342,6 +359,10 @@ impl<'h> GcHeapSession<'h> {
     }
 
     fn try_slow_alloc<T: IntoHeapAllocation<'h>>(&mut self, value: T) -> Option<T::Ref> {
+        self.heap.gc_counter -= 1;
+        if self.heap.gc_counter == 0 {
+            self.heap.gc();
+        }
         unsafe {
             let allocation = match self.get_page_set::<T>().try_alloc() {
                 Some(p) => p,
