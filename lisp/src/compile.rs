@@ -665,9 +665,109 @@ impl<'h> CodeRef<'h> {
 pub fn compile_toplevel<'h>(
     hs: &mut GcHeapSession<'h>,
     senv: &StaticEnvironmentRef<'h>,
-    expr: Value<'h>
+    expr: Value<'h>,
 ) -> Result<CodeRef<'h>> {
     let mut emitter = Emitter::new(hs, senv.clone(), false);
     emitter.compile_toplevel(hs, senv, expr, Ctn::Tail)?;
     Ok(emitter.finish(hs))
+}
+
+pub fn compile_toplevel_forms<'h>(
+    hs: &mut GcHeapSession<'h>,
+    senv: &StaticEnvironmentRef<'h>,
+    mut forms: Vec<Value<'h>>,
+) -> Result<CodeRef<'h>> {
+    let mut emitter = Emitter::new(hs, senv.clone(), false);
+    let last = forms.pop();
+    for form in forms {
+        emitter.compile_toplevel(hs, senv, form, Ctn::Ignore)?;
+    }
+    if let Some(form) = last {
+        emitter.compile_toplevel(hs, senv, form, Ctn::Tail)?;
+    } else {
+        emitter.emit_unspecified(Ctn::Tail)?;
+    }
+    Ok(emitter.finish(hs))
+}
+
+fn expr_is_infallible<'h>(
+    senv: &StaticEnvironmentRef<'h>,
+    expr: &Value<'h>,
+) -> Result<bool> {
+    match expr {
+        &Value::Symbol(ref s) => {
+            // This is incorrect for certain (letrec) bindings.
+            Ok(senv.lookup(&s).is_some())
+        }
+
+        &Value::Cons(ref p) => match p.car() {
+            Value::Symbol(ref s) => {
+                let s = s.as_str();
+                if s == "lambda" || s == "quote" {
+                    Ok(true)
+                } else if s == "if" || s == "begin" {
+                    for subexpr in p.cdr() {
+                        if !expr_is_infallible(senv, &subexpr?)? {
+                            return Ok(false);
+                        }
+                    }
+                    Ok(true)
+                } else if s == "set!" {
+                    let (first, rest) = p.cdr().as_pair("")?;
+                    let name = first.as_symbol("")?;
+                    let (subexpr, rest) = rest.as_pair("")?;
+                    if !rest.is_nil() {
+                        return Err("".into());
+                    }
+
+                    // This is incorrect for certain (letrec) bindings.
+                    let infallible_binding = senv.lookup(&name).is_some();
+                    Ok(infallible_binding &&
+                       expr_is_infallible(senv, &subexpr)?)
+                } else {
+                    Ok(false)
+                }
+            }
+            _ => Ok(false),
+        }
+
+        // Self-evaluating values.
+        &Value::Bool(_) |
+        &Value::Int(_) |
+        &Value::Char(_) |
+        &Value::ImmString(_) |
+        &Value::StringObj(_) => Ok(true),
+
+        _ => Ok(false)
+    }
+}
+
+pub fn toplevel_form_is_infallible<'h>(
+    hs: &mut GcHeapSession<'h>,
+    senv: &StaticEnvironmentRef<'h>,
+    form: &Value<'h>
+) -> bool {
+    if is_definition(form) {
+        let (_, init_expr) = match parse_define(hs, form.clone()) {
+            Err(_) => return false,
+            Ok(parts) => parts,
+        };
+        expr_is_infallible(senv, &init_expr).unwrap_or(false)
+    } else {
+        expr_is_infallible(senv, form).unwrap_or(false)
+    }
+}
+
+pub fn toplevel_form_defined_name<'h>(
+    hs: &mut GcHeapSession<'h>,
+    form: &Value<'h>,
+) -> Option<InternedString> {
+    if is_definition(form) {
+        match parse_define(hs, form.clone()) {
+            Err(_) => None,
+            Ok((name, _)) => Some(name.unwrap())
+        }
+    } else {
+        None
+    }
 }

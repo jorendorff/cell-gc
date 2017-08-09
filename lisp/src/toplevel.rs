@@ -60,18 +60,57 @@ pub fn eval<'h>(
     eval_to_tail_call(hs, env, expr)?.eval(hs)
 }
 
+/// Evaluate a toplevel script, possibly including many definitions and
+/// expressions.
+pub fn eval_toplevel_forms<'h>(
+    hs: &mut GcHeapSession<'h>,
+    env: &EnvironmentRef<'h>,
+    forms: Vec<Value<'h>>,
+) -> Result<Value<'h>> {
+    // To help compilation bind as many identifiers statically as possible, we
+    // detect infallible definitions here and create the defined binding before
+    // compiling any code.
+    //
+    // As long as env is a global environment, this is a pure optimization
+    // (with one caveat, see next paragraph). The only reason we cannot simply
+    // predefine *all* bindings is that a runtime error or compilation error
+    // may occur.
+    //
+    // Caveat: We assume that macro expansion never produces code that will
+    // fail to compile. If it does, we can err by expanding code that we should
+    // have errored out before reaching; this is a problem because expanding
+    // code can have the side effect of defining macros (or I guess modules).
+
+    let senv = env.senv();
+    let mut result = Value::Unspecified;
+    let mut iter = forms.into_iter().peekable();
+    while iter.peek().is_some() {
+        let mut batch = vec![];
+        for form in &mut iter {
+            let form = env.expand(hs, form)?;
+            let infallible = compile::toplevel_form_is_infallible(hs, &senv, &form);
+            batch.push(form.clone());
+            if infallible {
+                if let Some(name) = compile::toplevel_form_defined_name(hs, &form) {
+                    env.define(name, Value::Unspecified);
+                }
+            } else {
+                break;
+            }
+        }
+        let code = compile::compile_toplevel_forms(hs, &env.senv(), batch)?;
+        result = vm::eval_compiled_to_tail_call(hs, &env, code)?.eval(hs)?;
+    }
+    Ok(result)
+}
+
 pub fn eval_str<'h>(
     hs: &mut GcHeapSession<'h>,
     env: &EnvironmentRef<'h>,
     code: &str,
 ) -> Result<Value<'h>> {
     let forms = parse::parse(hs, code)?;
-
-    let mut result = Value::Nil;
-    for form in forms {
-        result = eval(hs, env, form)?;
-    }
-    Ok(result)
+    eval_toplevel_forms(hs, env, forms)
 }
 
 pub fn repl() -> Result<()> {
@@ -90,16 +129,11 @@ pub fn repl() -> Result<()> {
             if source.is_empty() {
                 break;
             }
-            let exprs = parse::parse(hs, &source)
+            let forms = parse::parse(hs, &source)
                 .chain_err(|| "parse error")?;
 
             // Eval
-            let mut result = Value::Unspecified;
-            for expr in exprs {
-                let val = eval(hs, &env, expr)
-                    .chain_err(|| "eval error")?;
-                result = val;
-            }
+            let result = eval_toplevel_forms(hs, &env, forms)?;
 
             // Print
             if !result.is_unspecified() {
