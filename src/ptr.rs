@@ -92,6 +92,11 @@ impl<T> Pointer<T> {
         self.ptr.as_void() as *const T
     }
 
+    #[inline]
+    pub fn as_mut(&self) -> *mut T {
+        self.ptr.as_void() as *mut T
+    }
+
     /// Get the underlying raw pointer as a `*const ()`.
     #[inline]
     pub fn as_void(&self) -> *const () {

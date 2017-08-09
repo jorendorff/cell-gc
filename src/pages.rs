@@ -167,7 +167,7 @@ pub struct PageHeader {
 impl PageHeader {
     pub fn find(ptr: UntypedPointer) -> *mut PageHeader {
         let header_addr = ptr.as_usize() & !(PAGE_ALIGN - 1);
-        assert!(header_addr != 0);
+        debug_assert!(header_addr != 0);
         header_addr as *mut PageHeader
     }
 
@@ -189,6 +189,15 @@ impl PageHeader {
         } else {
             None
         }
+    }
+
+    pub fn unchecked_downcast_mut<'h, T>(&mut self) -> &mut TypedPage<T::In>
+    where
+        T: IntoHeapAllocation<'h>
+    {
+        debug_assert_eq!(heap_type_id::<T>(), self.type_id());
+        let ptr = self as *mut PageHeader as *mut TypedPage<T::In>;
+        unsafe { &mut *ptr }
     }
 
     fn begin_offset() -> usize {
@@ -376,20 +385,29 @@ impl<U> TypedPage<U> {
     /// # Safety
     ///
     /// This is safe unless GC is happening.
-    pub unsafe fn try_alloc(&mut self) -> Option<Pointer<U>> {
-        let p = self.header.freelist;
-        if p.is_null() {
+    pub unsafe fn try_alloc(&mut self) -> Option<UninitializedAllocation<U>> {
+        if self.header.freelist.is_null() {
             None
         } else {
-            let listp = p as *mut *mut ();
-            self.header.freelist = *listp;
-            let ap = Pointer::new(p as *mut U);
-            MarkWord::from_ptr(ap, |mw| {
-                assert!(!mw.is_allocated());
-                mw.set_allocated();
-            });
-            Some(ap)
+            Some(self.infallible_alloc())
         }
+    }
+
+    /// Allocate a `U`-sized-and-aligned region of uninitialized memory
+    /// from this page.
+    ///
+    /// # Safety
+    ///
+    /// This is safe if the freelist is not empty and GC is not happening.
+    unsafe fn infallible_alloc(&mut self) -> UninitializedAllocation<U> {
+        let listp = self.header.freelist as *mut *mut ();
+        self.header.freelist = *listp;
+        let ptr = Pointer::new(listp as *mut U);
+        MarkWord::from_ptr(ptr, |mw| {
+            debug_assert!(!mw.is_allocated());
+            mw.set_allocated();
+        });
+        UninitializedAllocation { ptr }
     }
 
     unsafe fn sweep(&mut self) -> bool {
@@ -612,30 +630,43 @@ impl<'a, 'h, T: IntoHeapAllocation<'h> + 'a> DerefMut for PageSetRef<'a, 'h, T> 
 }
 
 impl<'a, 'h, T: IntoHeapAllocation<'h> + 'a> PageSetRef<'a, 'h, T> {
+    pub unsafe fn try_fast_alloc(&mut self) -> Option<UninitializedAllocation<T::In>> {
+        if self.other_pages.is_null() {
+            None
+        } else {
+            Some(self.infallible_fast_alloc())
+        }
+    }
+
+    unsafe fn infallible_fast_alloc(&mut self) -> UninitializedAllocation<T::In> {
+        // We have a nonfull page. Allocation can't fail.
+        debug_assert!(!self.other_pages.is_null());
+
+        let front_page = self.other_pages;
+        let page = (*front_page).unchecked_downcast_mut::<T>();
+        let ptr = page.infallible_alloc();
+
+        // If the page is full now, move it to the other list.
+        if page.freelist.is_null() {
+            // Pop this page from the nonfull page list.
+            self.other_pages = page.next_page;
+
+            // Add it to the full-page list.
+            page.next_page = self.full_pages;
+            self.full_pages = &mut page.header;
+        }
+        ptr
+    }
+
     /// Allocate memory for a value of type `T::In`.
     ///
     /// # Safety
     ///
     /// Safe to call as long as GC is not happening.
-    pub unsafe fn try_alloc(&mut self) -> Option<Pointer<T::In>> {
+    pub unsafe fn try_alloc(&mut self) -> Option<UninitializedAllocation<T::In>> {
         // First, try to allocate from an existing page.
-        let front_page = self.other_pages;
-        if !front_page.is_null() {
-            // We have a nonfull page. Allocation can't fail.
-            assert!(!(*front_page).freelist.is_null());
-            let page = (*front_page).downcast_mut::<T>().unwrap();
-            let ptr = page.try_alloc().unwrap();
-
-            // If the page is full now, move it to the other list.
-            if page.freelist.is_null() {
-                // Pop this page from the nonfull page list.
-                self.other_pages = page.next_page;
-
-                // Add it to the full-page list.
-                page.next_page = self.full_pages;
-                self.full_pages = &mut page.header;
-            }
-            return Some(ptr);
+        if !self.other_pages.is_null() {
+            return Some(self.infallible_fast_alloc());
         }
 
         // If there is a limit and we already have at least that many pages, fail.
@@ -717,3 +748,57 @@ impl<'a, 'h, T: IntoHeapAllocation<'h> + 'a> PageSetRef<'a, 'h, T> {
         }
     }
 }
+
+
+// UninitializedAllocation /////////////////////////////////////////////////////
+
+/// Nonzero pointer to allocated-but-uninitialized memory.
+///
+/// This is the type returned by TypedPage::try_fast_alloc().  It exists to
+/// help with panic safety. Normally, the caller will dispose of this value by
+/// calling its `.commit(val)` method, which populates the allocation with a
+/// value and leaves things in a good state. If the thread forgets to do this,
+/// or panics instead, this value's destructor will put the never-initialized
+/// allocation back onto the freelist, to prevent it from being dropped during
+/// the next GC (which would be Undefined Behavior).
+///
+/// # Safety
+///
+/// **It is unsafe to GC** while one of these exists!
+///
+/// Invariant: At any given time, at most one of these objects will exist per
+/// heap. (This is a consequence of the safety rule: trying to allocate another
+/// object could trigger GC.)
+pub struct UninitializedAllocation<U> {
+    ptr: Pointer<U>
+}
+
+impl<U> UninitializedAllocation<U> {
+    pub fn as_mut(&self) -> *mut U {
+        self.ptr.as_mut()
+    }
+
+    /// # Safety
+    ///
+    /// This is safe as long as we've followed all the rules: GC has not occurred
+    /// and we have not created any other `UninitializedAllocation`s.
+    pub unsafe fn init(self, value: U) -> Pointer<U> {
+        debug_assert!(MarkWord::from_ptr(self.ptr, |mw| mw.is_allocated()));
+        let ptr = self.ptr;
+        ptr::write(ptr.as_mut(), value);
+        mem::forget(self);
+        ptr
+    }
+}
+
+impl<U> Drop for UninitializedAllocation<U> {
+    fn drop(&mut self) {
+        // Roll back the allocation.
+        unsafe {
+            MarkWord::from_ptr(self.ptr, |mw| mw.clear_allocated());
+            let page = TypedPage::<U>::find(self.ptr);
+            (*page).add_to_free_list(self.as_mut()); // XXX UB if page is aliased
+        }
+    }
+}
+

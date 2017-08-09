@@ -75,13 +75,12 @@
 
 use gc_ref::{GcFrozenRef, GcRef};
 use marking::{MarkingTracer, mark};
-use pages::{self, PageSet, PageSetRef, TypeId, TypedPage, heap_type_id};
+use pages::{self, PageSet, PageSetRef, TypeId, TypedPage, UninitializedAllocation, heap_type_id};
 use ptr::{Pointer, UntypedPointer};
 use signposts;
 use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::mem;
-use std::ptr;
 use std::sync::{Arc, Mutex, Weak};
 use traits::IntoHeapAllocation;
 
@@ -320,24 +319,34 @@ impl<'h> GcHeapSession<'h> {
     /// attempts to free some memory by doing garbage collection. If that
     /// doesn't work, `try_alloc` returns `None`.
     pub fn try_alloc<T: IntoHeapAllocation<'h>>(&mut self, value: T) -> Option<T::Ref> {
-        // For now, this is done very early, so that if it panics, the heap is
-        // left in an OK state. Better wrapping of raw pointers would make it
-        // possible to do this later, closer to the `ptr::write()` call. (And
-        // the compiler might optimize away this temporary if we do it that
-        // way.) Looking forward to placement new!
-        let mut u = value.into_heap();
         unsafe {
-            let p = match self.get_page_set::<T>().try_alloc() {
+            if let Some(allocation) = self.try_fast_alloc::<T>() {
+                let u = value.into_heap();
+                let ptr = allocation.init(u);
+                Some(T::wrap_gc_ref(GcRef::new(ptr)))
+            } else {
+                self.try_slow_alloc(value)
+            }
+        }
+    }
+
+    /// Allocate space for a `T::In` value without performing GC or doing any
+    /// system calls, if possible.
+    ///
+    /// # Safety
+    ///
+    /// Safe as long as GC isn't currently happening and no
+    /// `UninitializedAllocation`s already exist in this heap.
+    unsafe fn try_fast_alloc<T: IntoHeapAllocation<'h>>(&mut self) -> Option<UninitializedAllocation<T::In>> {
+        self.get_page_set::<T>().try_fast_alloc()
+    }
+
+    fn try_slow_alloc<T: IntoHeapAllocation<'h>>(&mut self, value: T) -> Option<T::Ref> {
+        unsafe {
+            let allocation = match self.get_page_set::<T>().try_alloc() {
                 Some(p) => p,
                 None => {
-                    // Careful: moving `value` into the heap may have unpinned
-                    // other objects it points to. Re-pin them before
-                    // attempting GC! And rebuild `u` afterward, since the GC
-                    // doesn't know it exists.
-                    let tmp_value = T::from_heap(&u);
-                    drop(u);
                     self.heap.gc();
-                    u = tmp_value.into_heap();
                     match self.get_page_set::<T>().try_alloc() {
                         Some(p) => p,
                         None => return None,
@@ -345,7 +354,8 @@ impl<'h> GcHeapSession<'h> {
                 }
             };
 
-            ptr::write(p.as_raw() as *mut _, u);
+            let u = value.into_heap();
+            let p = allocation.init(u);
             let gc_ref = T::wrap_gc_ref(GcRef::new(p));
             Some(gc_ref)
         }
