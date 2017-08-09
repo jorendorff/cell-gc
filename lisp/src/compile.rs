@@ -1,4 +1,4 @@
-//! Compile Scheme forms into an internal representation, Expr.
+//! Compile Scheme forms into an internal representation, Code.
 
 use cell_gc::{GcHeapSession, GcLeaf};
 use cell_gc::collections::VecRef;
@@ -778,8 +778,10 @@ impl<'h> CodeRef<'h> {
                     let new_senv = environments.get(i);
                     assert_eq!(new_senv.parent(), Some(senv));
                     senv = new_senv;
-                    let names = senv.names().into_iter().collect::<Vec<_>>();
-                    println!("push_env {}  ;; {:?}", i, names);
+                    let names = senv.names().into_iter()
+                        .map(|v| v.as_str().to_string())
+                        .collect::<Vec<_>>();
+                    println!("push_env {}  ;; ({})", i, names.join(" "));
                 }
                 op::POP_ENV => {
                     senv = senv.parent().unwrap();
