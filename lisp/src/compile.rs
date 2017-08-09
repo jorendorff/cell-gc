@@ -313,7 +313,8 @@ impl<'h> Emitter<'h> {
         self.compile_expr(hs, senv, current, k)
     }
 
-    fn compile_letrec(
+    /// After parsing a letrec, emit the actual code for it.
+    fn compile_parsed_letrec(
         &mut self,
         hs: &mut GcHeapSession<'h>,
         senv: &StaticEnvironmentRef<'h>,
@@ -373,7 +374,181 @@ impl<'h> Emitter<'h> {
 
         // Translate this body into a `letrec*`.
         let body_senv = senv.new_nested_environment(hs, names);
-        self.compile_letrec(hs, &body_senv, init_exprs, body, k)
+        self.compile_parsed_letrec(hs, &body_senv, init_exprs, body, k)
+    }
+
+    pub fn compile_name(
+        &mut self,
+        senv: &StaticEnvironmentRef<'h>,
+        s: InternedString,
+        k: Ctn,
+    ) -> Result<()> {
+        match senv.lookup(&s) {
+            Some((up_count, index)) => self.emit_get_static(up_count, index)?,
+            _ => self.emit_get_dynamic(s)?,
+        }
+        self.emit_ctn(k);
+        Ok(())
+    }
+
+    pub fn compile_lambda(
+        &mut self,
+        hs: &mut GcHeapSession<'h>,
+        senv: &StaticEnvironmentRef<'h>,
+        tail: Value<'h>,
+        k: Ctn,
+    ) -> Result<()> {
+        let (mut param_list, body_forms) = tail.as_pair("syntax error in lambda")?;
+
+        let mut names = vec![];
+        while let Value::Cons(pair) = param_list {
+            if let Value::Symbol(s) = pair.car() {
+                names.push(s);
+            } else {
+                return Err("syntax error in lambda arguments".into());
+            }
+            param_list = pair.cdr();
+        }
+        let rest = match param_list {
+            Value::Nil => false,
+            Value::Symbol(rest_name) => {
+                names.push(rest_name);
+                true
+            }
+            _ => return Err("syntax error in lambda arguments".into()),
+        };
+
+        let lambda_senv = senv.new_nested_environment(hs, names);
+        let mut lambda_emitter = Emitter::new(hs, lambda_senv.clone(), rest);
+        lambda_emitter.compile_body(hs, &lambda_senv, body_forms, Ctn::Tail)?;
+        self.emit_lambda(lambda_emitter.finish(hs))?;
+        self.emit_ctn(k);
+        Ok(())
+    }
+
+    fn compile_quote(
+        &mut self,
+        tail: Value<'h>,
+        k: Ctn,
+    ) -> Result<()> {
+        let (datum, rest) = tail.as_pair("(quote) with no arguments")?;
+        if !rest.is_nil() {
+            return Err("too many arguments to (quote)".into());
+        }
+        self.emit_constant(datum)?;
+        self.emit_ctn(k);
+        Ok(())
+    }
+
+    fn compile_if(
+        &mut self,
+        hs: &mut GcHeapSession<'h>,
+        senv: &StaticEnvironmentRef<'h>,
+        tail: Value<'h>,
+        k: Ctn,
+    ) -> Result<()> {
+        let (cond, rest) = tail.as_pair("(if) with no arguments")?;
+        self.compile_expr(hs, senv, cond, Ctn::Single)?;
+        let jif_patch = self.emit_jump_if_false();
+        let depth_after_branch = self.operand_depth;
+
+        let (then_expr, rest) = rest.as_pair("missing arguments after (if COND)")?;
+        self.compile_expr(hs, senv, then_expr, k)?;
+        let depth_on_join = self.operand_depth;
+        let j_patch = if k == Ctn::Tail {
+            // We already emitted a Return or TailCall. Don't
+            // bother emitting an unreachable jump.
+            None
+        } else if k == Ctn::Ignore && rest.is_nil() {
+            // There is no "else" code, so there's no need to
+            // jump over it.
+            None
+        } else {
+            Some(self.emit_jump())
+        };
+        self.patch_jump_to_here(jif_patch)?;
+
+        self.operand_depth = depth_after_branch;
+        if rest.is_nil() {
+            self.emit_unspecified(k)?;
+        } else {
+            let (else_expr, rest) = rest.as_pair("improper (if) expression")?;
+            if !rest.is_nil() {
+                return Err("too many arguments in (if) expression".into());
+            }
+            self.compile_expr(hs, senv, else_expr, k)?
+        };
+        if let Some(patch) = j_patch {
+            assert_eq!(self.operand_depth, depth_on_join);
+            self.patch_jump_to_here(patch)?;
+        }
+        Ok(())
+    }
+
+    fn compile_letrec(
+        &mut self,
+        hs: &mut GcHeapSession<'h>,
+        senv: &StaticEnvironmentRef<'h>,
+        tail: Value<'h>,
+        k: Ctn,
+    ) -> Result<()> {
+        let (bindings, body_forms) = tail.as_pair("letrec*: bindings required")?;
+        let mut names = vec![];
+        let mut init_exprs = vec![];
+        for binding_result in bindings {
+            let binding = binding_result?;
+            let (name_v, rest) = binding.as_pair("letrec*: invalid binding")?;
+            let name = name_v.as_symbol("letrec*: name required")?;
+            let (expr, rest) = rest.as_pair("letrec*: value required for binding")?;
+            if !rest.is_nil() {
+                return Err("(letrec*): too many arguments".into());
+            }
+            names.push(GcLeaf::new(name));
+            init_exprs.push(expr);
+        }
+        if names.is_empty() {
+            return self.compile_body(hs, senv, body_forms, k);
+        }
+
+        let body_senv = senv.new_nested_environment(hs, names);
+        return self.compile_parsed_letrec(hs, &body_senv, init_exprs, body_forms, k);
+    }
+
+    fn compile_set(
+        &mut self,
+        hs: &mut GcHeapSession<'h>,
+        senv: &StaticEnvironmentRef<'h>,
+        tail: Value<'h>,
+        k: Ctn,
+    ) -> Result<()> {
+        let (first, rest) = tail.as_pair("(set!) with no name")?;
+        let name = first.as_symbol("(set!) first argument must be a name")?;
+        let (expr, rest) = rest.as_pair("(set!) with no value")?;
+        if !rest.is_nil() {
+            return Err("(set!): too many arguments".into());
+        }
+
+        self.compile_expr(hs, senv, expr, Ctn::Single)?;
+        match senv.lookup(&name) {
+            Some((up_count, index)) => self.emit_set_static(up_count, index)?,
+            _ => self.emit_set_dynamic(name)?,
+        };
+        return self.emit_unspecified(k);
+    }
+
+    pub fn compile_call(
+        &mut self,
+        hs: &mut GcHeapSession<'h>,
+        senv: &StaticEnvironmentRef<'h>,
+        expr: Value<'h>,
+        k: Ctn,
+    ) -> Result<()> {
+        let mut elements = 0;
+        for v in expr {
+            self.compile_expr(hs, senv, v?, Ctn::Single)?;
+            elements += 1; // adds 1 for the callee, not just arguments
+        }
+        self.emit_call(elements - 1, k) // subtract 1 to compensate for that
     }
 
     pub fn compile_expr(
@@ -384,149 +559,42 @@ impl<'h> Emitter<'h> {
         k: Ctn,
     ) -> Result<()> {
         match expr {
-            Value::Symbol(s) => {
-                match senv.lookup(&s) {
-                    Some((up_count, index)) => self.emit_get_static(up_count, index)?,
-                    _ => self.emit_get_dynamic(s.unwrap())?,
-                }
-                self.emit_ctn(k);
-                Ok(())
-            }
+            Value::Symbol(s) => self.compile_name(senv, s.unwrap(), k),
 
             Value::Cons(p) => {
-                let f = p.car();
-                if let Value::Symbol(ref s) = f {
-                    if s.as_str() == "lambda" {
-                        let (mut param_list, body_forms) = p.cdr().as_pair("syntax error in lambda")?;
-
-                        let mut names = vec![];
-                        while let Value::Cons(pair) = param_list {
-                            if let Value::Symbol(s) = pair.car() {
-                                names.push(s);
-                            } else {
-                                return Err("syntax error in lambda arguments".into());
-                            }
-                            param_list = pair.cdr();
-                        }
-                        let rest = match param_list {
-                            Value::Nil => false,
-                            Value::Symbol(rest_name) => {
-                                names.push(rest_name);
-                                true
-                            }
-                            _ => return Err("syntax error in lambda arguments".into()),
-                        };
-
-                        let lambda_senv = senv.new_nested_environment(hs, names);
-                        let mut lambda_emitter = Emitter::new(hs, lambda_senv.clone(), rest);
-                        lambda_emitter.compile_body(hs, &lambda_senv, body_forms, Ctn::Tail)?;
-                        self.emit_lambda(lambda_emitter.finish(hs))?;
-                        self.emit_ctn(k);
-                        return Ok(());
-                    } else if s.as_str() == "quote" {
-                        let (datum, rest) = p.cdr().as_pair("(quote) with no arguments")?;
-                        if !rest.is_nil() {
-                            return Err("too many arguments to (quote)".into());
-                        }
-                        self.emit_constant(datum)?;
-                        self.emit_ctn(k);
-                        return Ok(());
-                    } else if s.as_str() == "if" {
-                        let (cond, rest) = p.cdr().as_pair("(if) with no arguments")?;
-                        self.compile_expr(hs, senv, cond, Ctn::Single)?;
-                        let jif_patch = self.emit_jump_if_false();
-                        let depth_after_branch = self.operand_depth;
-
-                        let (then_expr, rest) = rest.as_pair("missing arguments after (if COND)")?;
-                        self.compile_expr(hs, senv, then_expr, k)?;
-                        let depth_on_join = self.operand_depth;
-                        let j_patch = if k == Ctn::Tail {
-                            // We already emitted a Return or TailCall. Don't
-                            // bother emitting an unreachable jump.
-                            None
-                        } else if k == Ctn::Ignore && rest.is_nil() {
-                            // There is no "else" code, so there's no need to
-                            // jump over it.
-                            None
-                        } else {
-                            Some(self.emit_jump())
-                        };
-                        self.patch_jump_to_here(jif_patch)?;
-
-                        self.operand_depth = depth_after_branch;
-                        if rest.is_nil() {
-                            self.emit_unspecified(k)?;
-                        } else {
-                            let (else_expr, rest) = rest.as_pair("improper (if) expression")?;
-                            if !rest.is_nil() {
-                                return Err("too many arguments in (if) expression".into());
-                            }
-                            self.compile_expr(hs, senv, else_expr, k)?
-                        };
-                        if let Some(patch) = j_patch {
-                            assert_eq!(self.operand_depth, depth_on_join);
-                            self.patch_jump_to_here(patch)?;
-                        }
-                        return Ok(());
-                    } else if s.as_str() == "begin" {
-                        // In expression context, this is sequencing, not splicing.
-                        return self.compile_seq(hs, senv, p.cdr(), k);
-                    } else if s.as_str() == "letrec" || s.as_str() == "letrec*" {
-                        // Treat (letrec) forms just like (letrec*). Nonstandard in
-                        // R6RS, which requires implementations to detect invalid
-                        // references to letrec bindings before they're bound. But
-                        // R5RS does not require this, and anyway well-behaved
-                        // programs won't care.
-                        let (bindings, body_forms) = p.cdr().as_pair("letrec*: bindings required")?;
-                        let mut names = vec![];
-                        let mut init_exprs = vec![];
-                        for binding_result in bindings {
-                            let binding = binding_result?;
-                            let (name_v, rest) = binding.as_pair("letrec*: invalid binding")?;
-                            let name = name_v.as_symbol("letrec*: name required")?;
-                            let (expr, rest) = rest.as_pair("letrec*: value required for binding")?;
-                            if !rest.is_nil() {
-                                return Err("(letrec*): too many arguments".into());
-                            }
-                            names.push(GcLeaf::new(name));
-                            init_exprs.push(expr);
-                        }
-                        if names.is_empty() {
-                            return self.compile_body(hs, senv, body_forms, k);
-                        }
-
-                        let body_senv = senv.new_nested_environment(hs, names);
-                        return self.compile_letrec(hs, &body_senv, init_exprs, body_forms, k);
-                    } else if s.as_str() == "set!" {
-                        let (first, rest) = p.cdr().as_pair("(set!) with no name")?;
-                        let name = first.as_symbol("(set!) first argument must be a name")?;
-                        let (expr, rest) = rest.as_pair("(set!) with no value")?;
-                        if !rest.is_nil() {
-                            return Err("(set!): too many arguments".into());
-                        }
-
-                        self.compile_expr(hs, senv, expr, Ctn::Single)?;
-                        match senv.lookup(&name) {
-                            Some((up_count, index)) => self.emit_set_static(up_count, index)?,
-                            _ => self.emit_set_dynamic(name)?,
-                        };
-                        return self.emit_unspecified(k);
-                    } else if s.as_str() == "define" {
-                        // In expression context, definitions aren't allowed.
-                        return Err(
-                            "(define) is allowed only at toplevel or in the body \
-                             of a function or let-form"
-                                .into(),
-                        );
+                if let Value::Symbol(ref s) = p.car() {
+                    match s.as_str() {
+                        "lambda" =>
+                            self.compile_lambda(hs, senv, p.cdr(), k),
+                        "quote" =>
+                            self.compile_quote(p.cdr(), k),
+                        "if" =>
+                            self.compile_if(hs, senv, p.cdr(), k),
+                        "begin" =>
+                            // In expression context, this is sequencing, not splicing.
+                            self.compile_seq(hs, senv, p.cdr(), k),
+                        "letrec" | "letrec*" =>
+                            // Treat (letrec) forms just like (letrec*). Nonstandard in
+                            // R6RS, which requires implementations to detect invalid
+                            // references to letrec bindings before they're bound. But
+                            // R5RS does not require this, and anyway well-behaved
+                            // programs won't care.
+                            self.compile_letrec(hs, senv, p.cdr(), k),
+                        "set!" =>
+                            self.compile_set(hs, senv, p.cdr(), k),
+                        "define" =>
+                            // In expression context, definitions aren't allowed.
+                            Err(
+                                "(define) is allowed only at toplevel or in the body \
+                                 of a function or let-form"
+                                    .into(),
+                            ),
+                        _ =>
+                            self.compile_call(hs, senv, Value::Cons(p), k),
                     }
+                } else {
+                    self.compile_call(hs, senv, Value::Cons(p), k)
                 }
-
-                let mut argc = 0;
-                for v in Value::Cons(p) {
-                    self.compile_expr(hs, senv, v?, Ctn::Single)?;
-                    argc += 1; // erroneously adds 1 for the callee, not just arguments
-                }
-                self.emit_call(argc - 1, k) // subtract 1 to compensate for that
             }
 
             // Self-evaluating values.
