@@ -96,7 +96,7 @@ pub fn eval_compiled_to_tail_call<'h>(
     let insns = code.insns();
     let mut env = env.clone();
     let mut pc = 0;
-    let mut operands = vec![];
+    let mut operands = Vec::with_capacity(code.operands_max());
 
     loop {
         let op_code = insns.get(pc);

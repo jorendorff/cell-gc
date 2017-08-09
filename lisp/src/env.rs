@@ -209,7 +209,8 @@ pub fn constant_proc<'h>(hs: &mut GcHeapSession<'h>, k: Value<'h>) -> Value<'h> 
         insns,
         environments,
         constants,
-        rest: false
+        rest: false,
+        operands_max: 1,
     });
     Value::Lambda(hs.alloc(Pair {
         car: Value::Code(code),

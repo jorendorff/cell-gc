@@ -32,10 +32,17 @@ pub struct Code<'h> {
     pub environments: VecRef<'h, StaticEnvironmentRef<'h>>,
     pub constants: VecRef<'h, Value<'h>>,
     pub rest: bool,
+
+    /// Maximum number of values on the operand stack while running this code.
+    pub operands_max: usize,
 }
 
 struct Emitter<'h> {
-    code: Code<'h>
+    code: Code<'h>,
+
+    /// Number of operands that will be on the stack after executing the
+    /// most-recently-emitted instruction.
+    operand_depth: usize,
 }
 
 /// During compilation, this type tells what sort of continuation the current
@@ -74,7 +81,9 @@ impl<'h> Emitter<'h> {
                 environments,
                 constants,
                 rest,
-            }
+                operands_max: 0,
+            },
+            operand_depth: 0,
         }
     }
 
@@ -94,13 +103,49 @@ impl<'h> Emitter<'h> {
         Ok(())
     }
 
+    /// Bookkeeping, for determing how much stack we need to reserve for
+    /// operands before running this code.
+    ///
+    /// Whenever we emit an instruction that pushes an operand to the stack, we
+    /// have to call this method.
+    fn push_operands(&mut self, amount: usize) {
+        self.operand_depth += amount as usize;
+        if self.operand_depth > self.code.operands_max {
+            self.code.operands_max = self.operand_depth;
+        }
+    }
+
+    /// Bookkeeping. Whenever we emit an instruction that pops operands from
+    /// the stack, we call this method.
+    fn pop_operands(&mut self, amount: usize) {
+        assert!(self.operand_depth >= amount);
+        self.operand_depth -= amount as usize;
+    }
+
+    // One method per opcode ///////////////////////////////////////////////////
+
+    /// Emit an instruction to return the top value of the operand stack.
+    fn emit_return(&mut self) {
+        self.emit(op::RETURN);
+        self.pop_operands(1);
+    }
+
+    /// Emit an instruction to discard the top value of the operand stack (used
+    /// after each expression in a `(begin)`-expression except the last one).
+    fn emit_pop(&mut self) {
+        self.emit(op::POP);
+        self.pop_operands(1);
+    }
+
     /// A constant (`quote` expressions produce this, but also numbers and
     /// other self-evaluating values).
     fn emit_constant(&mut self, value: Value<'h>) -> Result<()> {
         let index = self.code.constants.len();
         self.code.constants.push(value);
         self.emit(op::CONSTANT);
-        self.write_usize(index)
+        self.write_usize(index)?;
+        self.push_operands(1);
+        Ok(())
     }
 
     /// Fully general code for a variable-expression (evaluates to the
@@ -109,14 +154,18 @@ impl<'h> Emitter<'h> {
         let index = self.code.constants.len();
         self.code.constants.push(Value::Symbol(GcLeaf::new(id)));
         self.emit(op::GET_DYNAMIC);
-        self.write_usize(index)
+        self.write_usize(index)?;
+        self.push_operands(1);
+        Ok(())
     }
 
     /// A variable-expression, but at a known location in the environment chain.
     fn emit_get_static(&mut self, up_count: usize, index: usize) -> Result<()> {
         self.emit(op::GET_STATIC);
         self.write_usize(up_count)?;
-        self.write_usize(index)
+        self.write_usize(index)?;
+        self.push_operands(1);
+        Ok(())
     }
 
     /// A lambda expression.
@@ -124,7 +173,9 @@ impl<'h> Emitter<'h> {
         let index = self.code.constants.len();
         self.code.constants.push(Value::Code(code));
         self.emit(op::LAMBDA);
-        self.write_usize(index)
+        self.write_usize(index)?;
+        self.push_operands(1);
+        Ok(())
     }
 
     /// Emit the instruction to call a function.  This should come after
@@ -136,7 +187,9 @@ impl<'h> Emitter<'h> {
             op::CALL
         });
         self.write_usize(argc)?;
+        self.pop_operands(1 + argc);
         if k != Ctn::Tail {
+            self.push_operands(1);
             self.emit_ctn(k);
         }
         Ok(())
@@ -147,6 +200,7 @@ impl<'h> Emitter<'h> {
         self.emit(op::JUMP_IF_FALSE);
         let patch = Patch(self.code.insns.len());
         self.code.insns.push(PATCH_MARK);
+        self.pop_operands(1);
         patch
     }
 
@@ -179,7 +233,9 @@ impl<'h> Emitter<'h> {
         let index = self.code.constants.len();
         self.code.constants.push(Value::Symbol(GcLeaf::new(id)));
         self.emit(op::DEFINE);
-        self.write_usize(index)
+        self.write_usize(index)?;
+        self.pop_operands(1);
+        Ok(())
     }
 
     /// Assign to a static binding. `set!` expressions could emit this but we
@@ -187,7 +243,9 @@ impl<'h> Emitter<'h> {
     fn emit_set_static(&mut self, up_count: usize, index: usize) -> Result<()> {
         self.emit(op::SET_STATIC);
         self.write_usize(up_count)?;
-        self.write_usize(index)
+        self.write_usize(index)?;
+        self.pop_operands(1);
+        Ok(())
     }
 
     /// An assignment expression (`set!`).
@@ -195,7 +253,9 @@ impl<'h> Emitter<'h> {
         let index = self.code.constants.len();
         self.code.constants.push(Value::Symbol(GcLeaf::new(id)));
         self.emit(op::SET_DYNAMIC);
-        self.write_usize(index)
+        self.write_usize(index)?;
+        self.pop_operands(1);
+        Ok(())
     }
 
     /// Emit code to create and push a new environment.
@@ -207,6 +267,10 @@ impl<'h> Emitter<'h> {
         self.write_usize(index)
     }
 
+    fn emit_pop_env(&mut self) {
+        self.emit(op::POP_ENV);
+    }
+
     /// This is called immediately after emitting some code to compute a value.
     /// It's used to dispose of that value properly.
     ///
@@ -216,12 +280,13 @@ impl<'h> Emitter<'h> {
     /// don't have to do anything here.
     fn emit_ctn(&mut self, k: Ctn) {
         match k {
-            Ctn::Ignore => self.emit(op::POP), // discard the value
+            Ctn::Ignore => self.emit_pop(), // discard the value
             Ctn::Single => {} // do nothing, leave the value on the operand stack
-            Ctn::Tail => self.emit(op::RETURN), // non-call expression in tail position
+            Ctn::Tail => self.emit_return(), // non-call expression in tail position
         }
     }
 
+    /// Convenience method for producing the unspecified value.
     fn emit_unspecified(&mut self, k: Ctn) -> Result<()> {
         if k != Ctn::Ignore {
             self.emit_constant(Value::Unspecified)?;
@@ -266,7 +331,7 @@ impl<'h> Emitter<'h> {
         }
         self.compile_body(hs, senv, body, k)?;
         if k != Ctn::Tail {
-            self.emit(op::POP_ENV);
+            self.emit_pop_env();
         }
         Ok(())
     }
@@ -370,9 +435,11 @@ impl<'h> Emitter<'h> {
                         let (cond, rest) = p.cdr().as_pair("(if) with no arguments")?;
                         self.compile_expr(hs, senv, cond, Ctn::Single)?;
                         let jif_patch = self.emit_jump_if_false();
+                        let depth_after_branch = self.operand_depth;
 
                         let (then_expr, rest) = rest.as_pair("missing arguments after (if COND)")?;
                         self.compile_expr(hs, senv, then_expr, k)?;
+                        let depth_on_join = self.operand_depth;
                         let j_patch = if k == Ctn::Tail {
                             // We already emitted a Return or TailCall. Don't
                             // bother emitting an unreachable jump.
@@ -386,6 +453,7 @@ impl<'h> Emitter<'h> {
                         };
                         self.patch_jump_to_here(jif_patch)?;
 
+                        self.operand_depth = depth_after_branch;
                         if rest.is_nil() {
                             self.emit_unspecified(k)?;
                         } else {
@@ -396,6 +464,7 @@ impl<'h> Emitter<'h> {
                             self.compile_expr(hs, senv, else_expr, k)?
                         };
                         if let Some(patch) = j_patch {
+                            assert_eq!(self.operand_depth, depth_on_join);
                             self.patch_jump_to_here(patch)?;
                         }
                         return Ok(());
