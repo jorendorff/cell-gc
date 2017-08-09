@@ -307,6 +307,7 @@ impl<U> DerefMut for TypedPage<U> {
 /// Returns the smallest multiple of `k` that is at least `n`.
 ///
 /// Panics if the answer is too big to fit in a `usize`.
+#[inline(always)]
 fn round_up(n: usize, k: usize) -> usize {
     let a = n / k * k;
     if a == n {
