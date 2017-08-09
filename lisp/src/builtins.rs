@@ -547,6 +547,20 @@ builtins! {
     fn eval "eval" <'h>(hs, expr: Value<'h>, env: EnvironmentRef<'h>) -> Result<Trampoline<'h>> {
         toplevel::eval_to_tail_call(hs, &env, expr)
     }
+
+    fn dis "dis" <'h>(_hs, expr: Value<'h>) -> Result<()> {
+        if let Lambda(pair) = expr {
+            if let Code(code) = pair.car() {
+                code.dump();
+                Ok(())
+            } else {
+                Err("bad lambda".into())
+            }
+        } else {
+            Err("not a lambda".into())
+        }
+    }
+
 }
 
 // Builtin function list ///////////////////////////////////////////////////////
@@ -579,6 +593,7 @@ pub static BUILTINS: &[(&'static str, BuiltinFn)] = &[
     ("char>?", char_gt),
     ("char>=?", char_ge),
     ("cons", cons),
+    ("dis", dis),
     ("display", display),
     ("eq?", eq_question),
     ("eqv?", eqv_question),
