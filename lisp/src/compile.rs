@@ -37,7 +37,8 @@ pub struct Code<'h> {
     pub operands_max: usize,
 }
 
-struct Emitter<'h> {
+struct Emitter<'e, 'h: 'e> {
+    hs: &'e mut GcHeapSession<'h>,
     code: Code<'h>,
 
     /// Number of operands that will be on the stack after executing the
@@ -63,7 +64,7 @@ const PATCH_MARK: u32 = 0x_ffff_ffff;
 
 struct Patch(usize);
 
-impl<'h> Emitter<'h> {
+impl<'e, 'h> Emitter<'e, 'h> {
     /// When emitting toplevel code, `senv` is the environment in which the
     /// code will run (where new definitions are added). When emitting function
     /// code, it's the environment that contains the arguments.
@@ -71,11 +72,12 @@ impl<'h> Emitter<'h> {
     /// Either way, element 0 of every Code object is the static environment of
     /// that code. `vm::eval_compiled()` makes a nice sanity assertion out of
     /// this. `CodeRef::dump()` makes use of it too.
-    fn new(hs: &mut GcHeapSession<'h>, senv: StaticEnvironmentRef<'h>, rest: bool) -> Emitter<'h> {
+    fn new(hs: &'e mut GcHeapSession<'h>, senv: StaticEnvironmentRef<'h>, rest: bool) -> Emitter<'e, 'h> {
         let insns = hs.alloc(vec![]);
         let environments = hs.alloc(vec![senv]);
         let constants = hs.alloc(vec![]);
         Emitter {
+            hs: hs,
             code: Code {
                 insns,
                 environments,
@@ -87,8 +89,8 @@ impl<'h> Emitter<'h> {
         }
     }
 
-    fn finish(self, hs: &mut GcHeapSession<'h>) -> CodeRef<'h> {
-        hs.alloc(self.code)
+    fn finish(self) -> CodeRef<'h> {
+        self.hs.alloc(self.code)
     }
 
     fn emit(&mut self, op_code: op::OpCode) {
@@ -297,7 +299,6 @@ impl<'h> Emitter<'h> {
 
     fn compile_seq(
         &mut self,
-        hs: &mut GcHeapSession<'h>,
         senv: &StaticEnvironmentRef<'h>,
         mut expr_list: Value<'h>,
         k: Ctn,
@@ -307,16 +308,15 @@ impl<'h> Emitter<'h> {
             Some(first) => first?,
         };
         for next in expr_list {
-            self.compile_expr(hs, senv, current, Ctn::Ignore)?;
+            self.compile_expr(senv, current, Ctn::Ignore)?;
             current = next?;
         }
-        self.compile_expr(hs, senv, current, k)
+        self.compile_expr(senv, current, k)
     }
 
     /// After parsing a letrec, emit the actual code for it.
     fn compile_parsed_letrec(
         &mut self,
-        hs: &mut GcHeapSession<'h>,
         senv: &StaticEnvironmentRef<'h>,
         exprs: Vec<Value<'h>>,
         body: Value<'h>,
@@ -327,10 +327,10 @@ impl<'h> Emitter<'h> {
 
         self.emit_push_env(senv.clone())?;
         for (i, expr) in exprs.into_iter().enumerate() {
-            self.compile_expr(hs, senv, expr, Ctn::Single)?;
+            self.compile_expr(senv, expr, Ctn::Single)?;
             self.emit_set_static(0, i)?;
         }
-        self.compile_body(hs, senv, body, k)?;
+        self.compile_body(senv, body, k)?;
         if k != Ctn::Tail {
             self.emit_pop_env();
         }
@@ -340,7 +340,6 @@ impl<'h> Emitter<'h> {
     // Compile the body of a lambda or letrec*.
     fn compile_body(
         &mut self,
-        hs: &mut GcHeapSession<'h>,
         senv: &StaticEnvironmentRef<'h>,
         mut body: Value<'h>,
         k: Ctn,
@@ -353,7 +352,7 @@ impl<'h> Emitter<'h> {
                 Value::Cons(pair) => {
                     let form = pair.car();
                     if is_definition(&form) {
-                        let (name, expr) = parse_define(hs, form)?;
+                        let (name, expr) = parse_define(self.hs, form)?;
                         names.push(name);
                         init_exprs.push(expr);
                         body = pair.cdr();
@@ -369,12 +368,12 @@ impl<'h> Emitter<'h> {
 
         // If there are no definitions, this is easy.
         if names.is_empty() {
-            return self.compile_seq(hs, senv, body, k);
+            return self.compile_seq(senv, body, k);
         }
 
         // Translate this body into a `letrec*`.
-        let body_senv = senv.new_nested_environment(hs, names);
-        self.compile_parsed_letrec(hs, &body_senv, init_exprs, body, k)
+        let body_senv = senv.new_nested_environment(self.hs, names);
+        self.compile_parsed_letrec(&body_senv, init_exprs, body, k)
     }
 
     pub fn compile_name(
@@ -393,7 +392,6 @@ impl<'h> Emitter<'h> {
 
     pub fn compile_lambda(
         &mut self,
-        hs: &mut GcHeapSession<'h>,
         senv: &StaticEnvironmentRef<'h>,
         tail: Value<'h>,
         k: Ctn,
@@ -418,10 +416,13 @@ impl<'h> Emitter<'h> {
             _ => return Err("syntax error in lambda arguments".into()),
         };
 
-        let lambda_senv = senv.new_nested_environment(hs, names);
-        let mut lambda_emitter = Emitter::new(hs, lambda_senv.clone(), rest);
-        lambda_emitter.compile_body(hs, &lambda_senv, body_forms, Ctn::Tail)?;
-        self.emit_lambda(lambda_emitter.finish(hs))?;
+        let lambda_senv = senv.new_nested_environment(self.hs, names);
+        let code = {
+            let mut lambda_emitter = Emitter::new(self.hs, lambda_senv.clone(), rest);
+            lambda_emitter.compile_body(&lambda_senv, body_forms, Ctn::Tail)?;
+            lambda_emitter.finish()
+        };
+        self.emit_lambda(code)?;
         self.emit_ctn(k);
         Ok(())
     }
@@ -442,18 +443,17 @@ impl<'h> Emitter<'h> {
 
     fn compile_if(
         &mut self,
-        hs: &mut GcHeapSession<'h>,
         senv: &StaticEnvironmentRef<'h>,
         tail: Value<'h>,
         k: Ctn,
     ) -> Result<()> {
         let (cond, rest) = tail.as_pair("(if) with no arguments")?;
-        self.compile_expr(hs, senv, cond, Ctn::Single)?;
+        self.compile_expr(senv, cond, Ctn::Single)?;
         let jif_patch = self.emit_jump_if_false();
         let depth_after_branch = self.operand_depth;
 
         let (then_expr, rest) = rest.as_pair("missing arguments after (if COND)")?;
-        self.compile_expr(hs, senv, then_expr, k)?;
+        self.compile_expr(senv, then_expr, k)?;
         let depth_on_join = self.operand_depth;
         let j_patch = if k == Ctn::Tail {
             // We already emitted a Return or TailCall. Don't
@@ -476,7 +476,7 @@ impl<'h> Emitter<'h> {
             if !rest.is_nil() {
                 return Err("too many arguments in (if) expression".into());
             }
-            self.compile_expr(hs, senv, else_expr, k)?
+            self.compile_expr(senv, else_expr, k)?
         };
         if let Some(patch) = j_patch {
             assert_eq!(self.operand_depth, depth_on_join);
@@ -487,7 +487,6 @@ impl<'h> Emitter<'h> {
 
     fn compile_letrec(
         &mut self,
-        hs: &mut GcHeapSession<'h>,
         senv: &StaticEnvironmentRef<'h>,
         tail: Value<'h>,
         k: Ctn,
@@ -507,16 +506,15 @@ impl<'h> Emitter<'h> {
             init_exprs.push(expr);
         }
         if names.is_empty() {
-            return self.compile_body(hs, senv, body_forms, k);
+            return self.compile_body(senv, body_forms, k);
         }
 
-        let body_senv = senv.new_nested_environment(hs, names);
-        return self.compile_parsed_letrec(hs, &body_senv, init_exprs, body_forms, k);
+        let body_senv = senv.new_nested_environment(self.hs, names);
+        return self.compile_parsed_letrec(&body_senv, init_exprs, body_forms, k);
     }
 
     fn compile_set(
         &mut self,
-        hs: &mut GcHeapSession<'h>,
         senv: &StaticEnvironmentRef<'h>,
         tail: Value<'h>,
         k: Ctn,
@@ -528,7 +526,7 @@ impl<'h> Emitter<'h> {
             return Err("(set!): too many arguments".into());
         }
 
-        self.compile_expr(hs, senv, expr, Ctn::Single)?;
+        self.compile_expr(senv, expr, Ctn::Single)?;
         match senv.lookup(&name) {
             Some((up_count, index)) => self.emit_set_static(up_count, index)?,
             _ => self.emit_set_dynamic(name)?,
@@ -538,14 +536,13 @@ impl<'h> Emitter<'h> {
 
     pub fn compile_call(
         &mut self,
-        hs: &mut GcHeapSession<'h>,
         senv: &StaticEnvironmentRef<'h>,
         expr: Value<'h>,
         k: Ctn,
     ) -> Result<()> {
         let mut elements = 0;
         for v in expr {
-            self.compile_expr(hs, senv, v?, Ctn::Single)?;
+            self.compile_expr(senv, v?, Ctn::Single)?;
             elements += 1; // adds 1 for the callee, not just arguments
         }
         self.emit_call(elements - 1, k) // subtract 1 to compensate for that
@@ -553,7 +550,6 @@ impl<'h> Emitter<'h> {
 
     pub fn compile_expr(
         &mut self,
-        hs: &mut GcHeapSession<'h>,
         senv: &StaticEnvironmentRef<'h>,
         expr: Value<'h>,
         k: Ctn,
@@ -565,23 +561,23 @@ impl<'h> Emitter<'h> {
                 if let Value::Symbol(ref s) = p.car() {
                     match s.as_str() {
                         "lambda" =>
-                            self.compile_lambda(hs, senv, p.cdr(), k),
+                            self.compile_lambda(senv, p.cdr(), k),
                         "quote" =>
                             self.compile_quote(p.cdr(), k),
                         "if" =>
-                            self.compile_if(hs, senv, p.cdr(), k),
+                            self.compile_if(senv, p.cdr(), k),
                         "begin" =>
                             // In expression context, this is sequencing, not splicing.
-                            self.compile_seq(hs, senv, p.cdr(), k),
+                            self.compile_seq(senv, p.cdr(), k),
                         "letrec" | "letrec*" =>
                             // Treat (letrec) forms just like (letrec*). Nonstandard in
                             // R6RS, which requires implementations to detect invalid
                             // references to letrec bindings before they're bound. But
                             // R5RS does not require this, and anyway well-behaved
                             // programs won't care.
-                            self.compile_letrec(hs, senv, p.cdr(), k),
+                            self.compile_letrec(senv, p.cdr(), k),
                         "set!" =>
-                            self.compile_set(hs, senv, p.cdr(), k),
+                            self.compile_set(senv, p.cdr(), k),
                         "define" =>
                             // In expression context, definitions aren't allowed.
                             Err(
@@ -590,10 +586,10 @@ impl<'h> Emitter<'h> {
                                     .into(),
                             ),
                         _ =>
-                            self.compile_call(hs, senv, Value::Cons(p), k),
+                            self.compile_call(senv, Value::Cons(p), k),
                     }
                 } else {
-                    self.compile_call(hs, senv, Value::Cons(p), k)
+                    self.compile_call(senv, Value::Cons(p), k)
                 }
             }
 
@@ -621,19 +617,18 @@ impl<'h> Emitter<'h> {
 
     fn compile_toplevel(
         &mut self,
-        hs: &mut GcHeapSession<'h>,
         senv: &StaticEnvironmentRef<'h>,
         expr: Value<'h>,
         k: Ctn,
     ) -> Result<()> {
         // TODO: support (begin) here
         if is_definition(&expr) {
-            let (name, init_expr) = parse_define(hs, expr)?;
-            self.compile_expr(hs, senv, init_expr, Ctn::Single)?;
+            let (name, init_expr) = parse_define(self.hs, expr)?;
+            self.compile_expr(senv, init_expr, Ctn::Single)?;
             self.emit_define(name.unwrap())?;
             self.emit_unspecified(k)
         } else {
-            self.compile_expr(hs, senv, expr, k)
+            self.compile_expr(senv, expr, k)
         }
     }
 }
@@ -805,8 +800,8 @@ pub fn compile_toplevel<'h>(
     expr: Value<'h>,
 ) -> Result<CodeRef<'h>> {
     let mut emitter = Emitter::new(hs, senv.clone(), false);
-    emitter.compile_toplevel(hs, senv, expr, Ctn::Tail)?;
-    Ok(emitter.finish(hs))
+    emitter.compile_toplevel(senv, expr, Ctn::Tail)?;
+    Ok(emitter.finish())
 }
 
 pub fn compile_toplevel_forms<'h>(
@@ -817,14 +812,14 @@ pub fn compile_toplevel_forms<'h>(
     let mut emitter = Emitter::new(hs, senv.clone(), false);
     let last = forms.pop();
     for form in forms {
-        emitter.compile_toplevel(hs, senv, form, Ctn::Ignore)?;
+        emitter.compile_toplevel(senv, form, Ctn::Ignore)?;
     }
     if let Some(form) = last {
-        emitter.compile_toplevel(hs, senv, form, Ctn::Tail)?;
+        emitter.compile_toplevel(senv, form, Ctn::Tail)?;
     } else {
         emitter.emit_unspecified(Ctn::Tail)?;
     }
-    Ok(emitter.finish(hs))
+    Ok(emitter.finish())
 }
 
 fn expr_is_infallible<'h>(
