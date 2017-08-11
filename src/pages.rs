@@ -159,7 +159,7 @@ pub fn heap_type_id<'h, T: IntoHeapAllocation<'h>>() -> TypeId {
 /// practice because we use the same hash for every instantiation of a generic
 /// type in the `gc_generic_trivial_impl!` macro, eg `Vec<T>` and `Vec<U>` end
 /// up with the same pre-computed hash.
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Eq, PartialOrd, Ord)]
 pub(crate) struct PageTypeKey {
     hash: PreComputedTypeHash,
     id: TypeId,
@@ -173,6 +173,12 @@ impl PageTypeKey {
             hash: T::type_hash(),
             id: heap_type_id::<T>(),
         }
+    }
+}
+
+impl cmp::PartialEq for PageTypeKey {
+    fn eq(&self, rhs: &PageTypeKey) -> bool {
+        self.id == rhs.id
     }
 }
 
