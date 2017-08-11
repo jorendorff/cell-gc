@@ -75,7 +75,7 @@
 
 use gc_ref::{GcFrozenRef, GcRef};
 use marking::{MarkingTracer, mark};
-use pages::{self, PageSet, PageSetRef, TypeId, TypedPage, UninitializedAllocation, heap_type_id};
+use pages::{self, PageSet, PageSetRef, PageTypeKey, TypedPage, UninitializedAllocation};
 use ptr::{Pointer, UntypedPointer};
 use signposts;
 use std::cmp;
@@ -93,7 +93,7 @@ pub struct GcHeap {
     ///
     /// This owns the page sets, which own the pages. The cleanup when you drop
     /// a `GcHeap` is done by `PageSet::drop`.
-    page_sets: HashMap<TypeId, PageSet>,
+    page_sets: HashMap<PageTypeKey, PageSet>,
 
     /// Tracer for the mark phase of GC.
     marking_tracer: Option<MarkingTracer>,
@@ -337,7 +337,7 @@ impl GcHeap {
 
 impl<'h> GcHeapSession<'h> {
     fn get_page_set<'a, T: IntoHeapAllocation<'h> + 'a>(&'a mut self) -> PageSetRef<'a, 'h, T> {
-        let key = heap_type_id::<T>();
+        let key = PageTypeKey::new::<T>();
         let heap: *mut GcHeap = self.heap;
         self.heap
             .page_sets

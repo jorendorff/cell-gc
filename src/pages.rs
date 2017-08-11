@@ -4,11 +4,11 @@
 use heap::{GcHeap, HeapSessionId};
 use marking::MarkingTracer;
 use ptr::{Pointer, UntypedPointer};
-use std::{cmp, mem, ptr};
+use std::{cmp, hash, mem, ptr};
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 use traits::{IntoHeapAllocation, Tracer};
-
+use type_hash::PreComputedTypeHash;
 
 /// Stores mark bits, pin counts, and an "am I in use?" bit for heap allocations.
 struct MarkWord(usize);
@@ -139,11 +139,53 @@ where
 ///
 /// Implementation note: function types don't support Eq, so we cast to a
 /// meaningless pointer type.
-#[derive(Debug, Hash, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct TypeId(*const ());
 
 pub fn heap_type_id<'h, T: IntoHeapAllocation<'h>>() -> TypeId {
     TypeId(mark_entry_point::<T> as *const ())
+}
+
+/// A key type for the map from some `IntoHeapAllocation` type to its `PageSet`.
+///
+/// Uses the type's static, pre-computed hash for fast hashing. However, in the
+/// rare[*] case of pre-computed hash collisions, we also carry along the precise
+/// TypeId to disambiguate entries. Why not just use the `TypeId` as the key?
+/// Pointers don't have as many bits of entropy as the pre-computed hashes do
+/// (which are just random u64s generated at compile time) and would also
+/// require some runtime xor'ing or whatever to go from a pointer to a hash.
+///
+/// [*] The catch is that hash collisions *aren't* actually super rare in
+/// practice because we use the same hash for every instantiation of a generic
+/// type in the `gc_generic_trivial_impl!` macro, eg `Vec<T>` and `Vec<U>` end
+/// up with the same pre-computed hash.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct PageTypeKey {
+    hash: PreComputedTypeHash,
+    id: TypeId,
+}
+
+impl PageTypeKey {
+    /// Get the `PageTypeKey` for the given type.
+    #[inline]
+    pub fn new<'h, T: IntoHeapAllocation<'h>>() -> PageTypeKey {
+        PageTypeKey {
+            hash: T::type_hash(),
+            id: heap_type_id::<T>(),
+        }
+    }
+}
+
+impl hash::Hash for PageTypeKey {
+    #[inline]
+    fn hash<H>(&self, state: &mut H)
+    where
+        H: hash::Hasher
+    {
+        // Just use the pre-computed hash, not the type id (which is just used
+        // for disambiguating collisions).
+        self.hash.hash(state);
+    }
 }
 
 pub(crate) const PAGE_SIZE: usize = 0x1000;

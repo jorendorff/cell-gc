@@ -8,6 +8,7 @@ use gc_ref::GcRef;
 use ptr::Pointer;
 use std::hash::Hash;
 use std::marker::PhantomData;
+use type_hash::PreComputedTypeHash;
 
 /// Base trait for values that can be moved into a GC heap.
 pub trait IntoHeapBase: Sized {
@@ -134,8 +135,18 @@ pub trait IntoHeapBase: Sized {
 ///
 pub unsafe trait IntoHeap<'h>: IntoHeapBase {}
 
+/// A pre-computed hash for the `Self` type.
+pub trait TypeHash {
+    /// Get the hash.
+    ///
+    /// All implementors should mark this `#[inline]` so that the optimizer can
+    /// see that it is in fact a constant (you did make it a constant,
+    /// right?!?!??!).
+    fn type_hash() -> PreComputedTypeHash;
+}
+
 /// Types that can be allocated in the heap.
-pub trait IntoHeapAllocation<'h>: IntoHeap<'h> {
+pub trait IntoHeapAllocation<'h>: IntoHeap<'h> + TypeHash {
     /// The safe reference type that's returned when a value of this type is
     /// moved into the heap (i.e. when it's allocated).
     type Ref: Hash + IntoHeap<'h>;
@@ -166,7 +177,7 @@ pub trait Tracer {
 // === Provided implmentations for primitive types
 
 macro_rules! gc_trivial_impl {
-    ($t:ty) => {
+    ($t:ty, $h:expr) => {
         impl IntoHeapBase for $t {
             type In = $t;
             #[inline] fn into_heap(self) -> $t { self }
@@ -174,6 +185,12 @@ macro_rules! gc_trivial_impl {
             #[inline] unsafe fn trace<R>(_storage: &$t, _tracer: &mut R) where R: Tracer {}
         }
         unsafe impl<'h> IntoHeap<'h> for $t {}
+        impl TypeHash for $t {
+            #[inline]
+            fn type_hash() -> PreComputedTypeHash {
+                PreComputedTypeHash::new($h)
+            }
+        }
         impl<'h> IntoHeapAllocation<'h> for $t {
             type Ref = GcRef<'h, Self>;
             #[inline] fn wrap_gc_ref(gc_ref: GcRef<'h, Self>) -> Self::Ref { gc_ref }
@@ -182,26 +199,26 @@ macro_rules! gc_trivial_impl {
     }
 }
 
-gc_trivial_impl!(bool);
-gc_trivial_impl!(char);
-gc_trivial_impl!(i8);
-gc_trivial_impl!(u8);
-gc_trivial_impl!(i16);
-gc_trivial_impl!(u16);
-gc_trivial_impl!(i32);
-gc_trivial_impl!(u32);
-gc_trivial_impl!(i64);
-gc_trivial_impl!(u64);
-gc_trivial_impl!(isize);
-gc_trivial_impl!(usize);
-gc_trivial_impl!(f32);
-gc_trivial_impl!(f64);
+gc_trivial_impl!(bool, 0xa1200afc6a46e9b);
+gc_trivial_impl!(char, 0xbd439e198d8c84ec);
+gc_trivial_impl!(i8, 0x2b057772479916bd);
+gc_trivial_impl!(u8, 0xef7d2bcff18c9c1f);
+gc_trivial_impl!(i16, 0xabcb6c243dfe6d88);
+gc_trivial_impl!(u16, 0x2eb8e1dca4d9b8f3);
+gc_trivial_impl!(i32, 0xf9df7e1ee1249e8d);
+gc_trivial_impl!(u32, 0xfdd13ffbed3f8c6f);
+gc_trivial_impl!(i64, 0x4d81963faaf90a33);
+gc_trivial_impl!(u64, 0xf301072ea4b22a88);
+gc_trivial_impl!(isize, 0x17a31e16220b9ec8);
+gc_trivial_impl!(usize, 0xbc3d03b0a285f9a7);
+gc_trivial_impl!(f32, 0xd08d8d94baf44a74);
+gc_trivial_impl!(f64, 0x80bff0f49d51f22);
 
-gc_trivial_impl!(String);
+gc_trivial_impl!(String, 0x1c66d28939b11111);
 
 macro_rules! gc_generic_trivial_impl {
     (@as_item $it:item) => { $it };
-    ([$($x:tt)*] $t:ty) => {
+    ([$($x:tt)*] $t:ty, $h:expr) => {
         gc_generic_trivial_impl! {
             @as_item
             impl<$($x)*> IntoHeapBase for $t {
@@ -217,6 +234,18 @@ macro_rules! gc_generic_trivial_impl {
         }
         gc_generic_trivial_impl! {
             @as_item
+            impl<$($x)*> TypeHash for $t {
+                #[inline]
+                fn type_hash() -> PreComputedTypeHash {
+                    // It is unfortunate that Arc<usize> and Arc<f64> (more
+                    // generally, all instantiations of a particular generic
+                    // type) will have the same hash.
+                    PreComputedTypeHash::new($h)
+                }
+            }
+        }
+        gc_generic_trivial_impl! {
+            @as_item
             impl<'h, $($x)*> IntoHeapAllocation<'h> for $t {
                 type Ref = GcRef<'h, Self>;
                 fn wrap_gc_ref(gc_ref: GcRef<'h, Self>) -> Self::Ref { gc_ref }
@@ -226,10 +255,10 @@ macro_rules! gc_generic_trivial_impl {
     }
 }
 
-gc_generic_trivial_impl!([T: ?Sized + Sync] &'static T);
-gc_generic_trivial_impl!([T: Clone + Send + 'static] GcLeaf<T>);
-gc_generic_trivial_impl!([T: Clone + Send + 'static] Box<T>);
-gc_generic_trivial_impl!([T: Clone + Sync + 'static] ::std::sync::Arc<T>);
+gc_generic_trivial_impl!([T: ?Sized + Sync] &'static T, 0x2c90082b4b071552);
+gc_generic_trivial_impl!([T: Clone + Send + 'static] GcLeaf<T>, 0x3f2cff0110e82982);
+gc_generic_trivial_impl!([T: Clone + Send + 'static] Box<T>, 0x5d55e2e560c89ec2);
+gc_generic_trivial_impl!([T: Clone + Sync + 'static] ::std::sync::Arc<T>, 0x4d920888eb74e08);
 
 /// Currently, `#[derive(IntoHeap)]` only works for types that have a lifetime
 /// parameter.  This poses a problem because sometimes you want to store stuff

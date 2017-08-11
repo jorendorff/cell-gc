@@ -240,10 +240,12 @@ pub mod collections;
 pub mod ptr;
 mod marking;
 mod signposts;
+mod type_hash;
 
 pub use gc_leaf::GcLeaf;
 pub use gc_ref::{GcFrozenRef, GcRef};
 pub use heap::{GcHeap, GcHeapSession, with_heap};
+pub use type_hash::PreComputedTypeHash;
 
 /// Return the number of allocations of a given type that fit in a "page".
 /// (Unstable. This is a temporary hack for testing.)
