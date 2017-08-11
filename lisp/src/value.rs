@@ -9,8 +9,10 @@ use std::borrow::Borrow;
 use std::collections::HashSet;
 use std::fmt;
 use std::hash::{Hash, Hasher};
+use std::mem;
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{ATOMIC_USIZE_INIT, AtomicUsize, Ordering};
+use std::vec;
 use vm::Trampoline;
 
 #[derive(Debug, IntoHeap)]
@@ -130,6 +132,13 @@ impl<'h> Value<'h> {
     pattern_predicate!(is_unspecified, Unspecified);
     pattern_predicate!(is_nil, Nil);
     pattern_predicate!(is_boolean, Bool(_));
+
+    pub fn as_boolean(self, error_msg: &str) -> Result<bool> {
+        match self {
+            Bool(b) => Ok(b),
+            _ => Err(format!("{}: boolean required", error_msg).into()),
+        }
+    }
 
     /// True unless this value is `#f`. Conditional expressions (`if`, `cond`,
     /// etc.) should use this to check whether a value is a "true value".
@@ -431,11 +440,62 @@ impl Borrow<str> for InternedString {
 
 pub trait ArgType<'h>: Sized {
     fn try_unpack(proc_name: &str, value: Value<'h>) -> Result<Self>;
+
+    fn unpack_argument(proc_name: &str, iter: &mut vec::IntoIter<Value<'h>>) -> Result<Self> {
+        match iter.next() {
+            Some(val) => Self::try_unpack(proc_name, val),
+            None => Err(format!("{}: not enough arguments", proc_name).into()),
+        }
+    }
+}
+
+/// Option<T> means an optional argument of type T. Should appear only at the
+/// end of the argument list.
+impl<'h, T: ArgType<'h>> ArgType<'h> for Option<T> {
+    fn try_unpack(proc_name: &str, value: Value<'h>) -> Result<Self> {
+        Ok(Some(T::try_unpack(proc_name, value)?))
+    }
+
+    fn unpack_argument(proc_name: &str, iter: &mut vec::IntoIter<Value<'h>>) -> Result<Self> {
+        match iter.next() {
+            None => Ok(None),
+            Some(v) => Self::try_unpack(proc_name, v)
+        }
+    }
+}
+
+/// Used with the `builtins!` macro to handle variadic functions. The `Rest`
+/// value is an iterator over "the rest" of the arguments passed.
+pub struct Rest<'h>(pub vec::IntoIter<Value<'h>>);
+
+impl<'h> Iterator for Rest<'h> {
+    type Item = Value<'h>;
+    fn next(&mut self) -> Option<Value<'h>> {
+        self.0.next()
+    }
+}
+
+impl<'h> ArgType<'h> for Rest<'h> {
+    fn try_unpack(proc_name: &str, _value: Value<'h>) -> Result<Self> {
+        Err(format!("{}: &rest is not a scheme type", proc_name).into())
+    }
+
+    fn unpack_argument(_proc_name: &str, iter: &mut vec::IntoIter<Value<'h>>) -> Result<Self> {
+        let mut out = vec![].into_iter();
+        mem::swap(&mut out, iter);
+        Ok(Rest(out))
+    }
 }
 
 impl<'h> ArgType<'h> for Value<'h> {
     fn try_unpack(_: &str, value: Value<'h>) -> Result<Value<'h>> {
         Ok(value)
+    }
+}
+
+impl<'h> ArgType<'h> for bool {
+    fn try_unpack(proc_name: &str, value: Value<'h>) -> Result<bool> {
+        value.as_boolean(proc_name)
     }
 }
 
@@ -507,6 +567,12 @@ impl<'h> RetType<'h> for bool {
 impl<'h> RetType<'h> for char {
     fn pack(self, _hs: &mut GcHeapSession<'h>) -> Result<Trampoline<'h>> {
         Ok(Trampoline::Value(Value::Char(self)))
+    }
+}
+
+impl<'h> RetType<'h> for i32 {
+    fn pack(self, _hs: &mut GcHeapSession<'h>) -> Result<Trampoline<'h>> {
+        Ok(Trampoline::Value(Value::Int(self)))
     }
 }
 

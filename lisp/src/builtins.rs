@@ -8,23 +8,13 @@ use std::io::{self, Write};
 use std::sync::Arc;
 use std::vec;
 use toplevel;
-use value::{self, BuiltinFn, BuiltinFnPtr, InternedString, NonInternedStringObject, Pair, Value};
-use value::{ArgType, RetType};
+use value::{self, BuiltinFn, BuiltinFnPtr, InternedString, Pair, Value};
+use value::{ArgType, Rest, RetType};
 use value::Value::*;
 use vm::Trampoline;
 
 
 // The builtins! macro /////////////////////////////////////////////////////////
-
-fn unpack_argument<'h, T: ArgType<'h>>(
-    proc_name: &str,
-    iter: &mut vec::IntoIter<Value<'h>>,
-) -> Result<T> {
-    match iter.next() {
-        Some(val) => <T as ArgType<'h>>::try_unpack(proc_name, val),
-        None => Err(format!("{}: not enough arguments", proc_name).into()),
-    }
-}
 
 fn check_done<'h>(proc_name: &str, iter: &mut vec::IntoIter<Value<'h>>) -> Result<()> {
     match iter.next() {
@@ -49,7 +39,7 @@ macro_rules! builtins {
                 args: Vec<Value<$h>>,
             ) -> Result<Trampoline<$h>> {
                 let mut args_iter = args.into_iter();
-                $( let $arg = unpack_argument::<$argty>($namestr, &mut args_iter)?; )*
+                $( let $arg = <$argty as ArgType<$h>>::unpack_argument($namestr, &mut args_iter)?; )*
                 check_done($namestr, &mut args_iter)?;
                 <$retty as RetType<$h>>::pack($body, $hs)
             }
@@ -68,14 +58,15 @@ builtins! {
 }
 
 // 6.2 Equivalence predicates
-fn eq_question<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Trampoline<'h>> {
-    let first = args.get(0);
-    Ok(Trampoline::Value(
-        Bool(args.iter().all(|arg| Some(arg) == first)),
-    ))
-}
-
 builtins! {
+    fn eq_question "eq?" <'h>(_hs, args: Rest<'h>) -> bool {
+        let mut args = args;
+        match args.next() {
+            None => true,
+            Some(v) => args.all(|arg| arg == v),
+        }
+    }
+
     fn eqv_question "eqv?" <'h>(_hs, a: Value<'h>, b: Value<'h>) -> bool {
         a == b
     }
@@ -178,57 +169,49 @@ fn numeric_ge<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<T
     numeric_compare(">=", args, |a, b| a >= b)
 }
 
-fn add<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Trampoline<'h>> {
-    let mut total = 0;
-    for v in args {
-        if let Int(n) = v {
-            total += n;
-        } else {
-            return Err("add: non-numeric argument".into());
-        }
-    }
-    Ok(Trampoline::Value(Int(total)))
-}
-
-fn mul<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Trampoline<'h>> {
-    let mut total = 1;
-    for v in args {
-        if let Int(n) = v {
-            total *= n;
-        } else {
-            return Err("mul: non-numeric argument".into());
-        }
-    }
-    Ok(Trampoline::Value(Int(total)))
-}
-
-fn sub<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Trampoline<'h>> {
-    if args.len() == 0 {
-        Err("sub: need at least one argument".into())
-    } else if args.len() == 1 {
-        if let Int(n) = args[0] {
-            Ok(Trampoline::Value(Int(-n)))
-        } else {
-            Err("sub: non-numeric argument".into())
-        }
-    } else {
-        let mut total = if let Int(n) = args[0] {
-            n
-        } else {
-            return Err("sub: non-numeric argument".into());
-        };
-        for v in &args[1..] {
-            if let Int(n) = *v {
-                total -= n;
+builtins! {
+    fn add "+" <'h>(_hs, args: Rest<'h>) -> Result<i32> {
+        let mut total = 0;
+        for v in args {
+            if let Int(n) = v {
+                total += n;
             } else {
-                return Err("add: non-numeric argument".into());
+                return Err("+: number required".into());
             }
         }
-        Ok(Trampoline::Value(Int(total)))
+        Ok(total)
     }
-}
 
-builtins! {
+    fn mul "*" <'h>(_hs, args: Rest<'h>) -> Result<i32> {
+        let mut total = 1;
+        for v in args {
+            if let Int(n) = v {
+                total *= n;
+            } else {
+                return Err("*: number required".into());
+            }
+        }
+        Ok(total)
+    }
+
+    fn sub "-" <'h>(_hs, minuend: i32, args: Rest<'h>) -> Result<i32> {
+        let mut total = minuend;
+        let mut any = false;
+        for v in args {
+            any = true;
+            if let Int(subtrahend) = v {
+                total -= subtrahend;
+            } else {
+                return Err("-: number required".into());
+            }
+        }
+        if !any {
+            Ok(-total)
+        } else {
+            Ok(total)
+        }
+    }
+
     fn number_to_string "number->string" <'h>(_hs, n: i32) -> String {
         format!("{}", n)
     }
@@ -327,19 +310,15 @@ builtins! {
     fn string_question "string?" <'h>(_hs, v: Value<'h>) -> bool {
         v.is_string()
     }
-}
 
-fn string<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Trampoline<'h>> {
-    let mut s = String::new();
-    for arg in args {
-        s.push(arg.as_char("string")?);
+    fn string "string" <'h>(_hs, args: Rest<'h>) -> String {
+        let mut s = String::new();
+        for arg in args {
+            s.push(arg.as_char("string")?);
+        }
+        s
     }
-    Ok(Trampoline::Value(
-        StringObj(GcLeaf::new(NonInternedStringObject(Arc::new(s)))),
-    ))
-}
 
-builtins! {
     fn string_length "string-length" <'h>(_hs, s: Arc<String>) -> usize {
         s.chars().count() // bleurgh! O(n)
     }
@@ -354,21 +333,17 @@ builtins! {
     fn string_eq_question "string=?" <'h>(_hs, a: Arc<String>, b: Arc<String>) -> bool {
         a.as_str() == b.as_str()
     }
-}
 
-fn string_append<'h>(hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Trampoline<'h>> {
-    let s = args.into_iter()
-        .map(|v| v.as_string("string-append"))
-        .collect::<Result<Vec<Arc<String>>>>()?
-        .iter()
-        .map(|arc_str| arc_str as &str)
-        .collect::<Vec<&str>>()
-        .concat();
+    fn string_append "string-append" <'h>(_hs, args: Rest<'h>) -> String {
+        args
+            .map(|v| v.as_string("string-append"))
+            .collect::<Result<Vec<Arc<String>>>>()?
+            .iter()
+            .map(|arc_str| arc_str as &str)
+            .collect::<Vec<&str>>()
+            .concat()
+    }
 
-    s.pack(hs)
-}
-
-builtins! {
     fn string_to_list "string->list" <'h>(hs, s: Arc<String>) -> Value<'h> {
         let mut list = Value::Nil;
         for c in s.chars().rev() {
@@ -393,18 +368,11 @@ builtins! {
     fn vector_question "vector?" <'h>(_hs, v: Value<'h>) -> bool {
         v.is_vector()
     }
-}
 
-fn make_vector<'h>(hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Trampoline<'h>> {
-    let value = if args.len() == 1 {
-        Value::Unspecified
-    } else if args.len() == 2 {
-        args[1].clone()
-    } else {
-        return Err("make-vector: 1 or 2 arguments required".into());
-    };
-    let n = args[0].clone().as_index("make-vector")?;
-    Ok(Trampoline::Value(Vector(hs.alloc(vec![value; n]))))
+    fn make_vector "make-vector" <'h>(hs, n: usize, v: Option<Value<'h>>) -> Vec<Value<'h>> {
+        let value = v.unwrap_or(Value::Unspecified);
+        vec![value; n]
+    }
 }
 
 fn vector<'h>(hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Trampoline<'h>> {
@@ -505,32 +473,17 @@ builtins! {
 }
 
 // Extensions
-fn assert<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Trampoline<'h>> {
-    if args.len() < 1 || args.len() > 2 {
-        return Err(
-            format!(
-                "assert: wrong number of args, expected 1 or 2, found {}",
-                args.len()
-            ).into(),
-        );
-    }
-
-    let v = &args[0];
-
-    if let Bool(true) = *v {
-        Ok(Trampoline::Value(Unspecified))
-    } else if let Bool(false) = *v {
-        if let Some(msg) = args.get(1) {
+builtins! {
+    fn assert "assert" <'h>(_hs, ok: bool, msg: Option<Value<'h>>) -> Result<()> {
+        if ok {
+            Ok(())
+        } else if let Some(msg) = msg {
             Err(format!("assert: assertion failed: {:?}", msg).into())
         } else {
             Err("assert: assertion failed".into())
         }
-    } else {
-        Err("assert: non-boolean argument".into())
     }
-}
 
-builtins! {
     fn gensym "gensym" <'h>(_hs) -> Value<'h> {
         let sym = InternedString::gensym();
         assert!(sym.is_gensym());
