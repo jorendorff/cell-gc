@@ -284,6 +284,7 @@ impl<'s, B: Builder> Parser<'s, B> {
 
 // === Tokens
 
+#[derive(PartialEq, Debug)]
 enum Token {
     Identifier,
     Boolean(bool),
@@ -387,6 +388,14 @@ fn ordinary_identifier(s: &str) -> IResult<&str, Token> {
             }
         }
     }
+}
+
+#[test]
+fn test_identifier() {
+    assert_eq!(
+        token("call/cc\n"),
+        IResult::Done("\n", Token::Identifier)
+    );
 }
 
 named!(
@@ -519,6 +528,11 @@ fn test_parse() {
         let p = Parser::new(s, TestBuilder { top: vec![] });
         Ok(p.parse()?.top)
     }
+
+    assert_eq!(
+        parse("(call/cc   call/cc)\n").unwrap(),
+        vec!["(call/cc call/cc)"]
+    );
 
     assert_eq!(
         parse("376    ").unwrap(),
