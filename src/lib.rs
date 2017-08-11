@@ -227,6 +227,8 @@
 //!
 //! It's as though every field were a [Cell](http://doc.rust-lang.org/std/cell/struct.Cell.html).
 
+#![deny(missing_docs)]
+
 extern crate bit_vec;
 
 pub mod traits;

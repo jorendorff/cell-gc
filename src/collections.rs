@@ -179,34 +179,45 @@ impl<'h, T: IntoHeap<'h>> VecRef<'h, T> {
         }
     }
 
+    /// The capacity of this vector.
     pub fn capacity(&self) -> usize {
         unsafe { self.with_storage(|v| v.capacity()) }
     }
 
+    /// Reserve at least enough space for `additional` more elements in this
+    /// vector.
     pub fn reserve(&self, additional: usize) {
         unsafe {
             self.with_storage_mut(|v| v.reserve(additional));
         }
     }
 
+    /// Reserve space for exactly `additional` more elements in this vector.
     pub fn reserve_exact(&self, additional: usize) {
         unsafe {
             self.with_storage_mut(|v| v.reserve_exact(additional));
         }
     }
 
+    /// Reclaim any excess storage that has been reserved.
     pub fn shrink_to_fit(&self) {
         unsafe {
             self.with_storage_mut(|v| v.shrink_to_fit());
         }
     }
 
+    /// Truncate this vector to only `len` elements, dropping any others.
     pub fn truncate(&self, len: usize) {
         unsafe {
             self.with_storage_mut(|v| v.truncate(len));
         }
     }
 
+    /// Removes an element from the vector and returns it.
+    ///
+    /// The removed element is replaced by the last element of the vector.
+    ///
+    /// This does not preserve ordering, but is O(1).
     pub fn swap_remove(&self, index: usize) -> T {
         unsafe {
             let u = self.with_storage_mut(|v| v.swap_remove(index));
@@ -214,6 +225,11 @@ impl<'h, T: IntoHeap<'h>> VecRef<'h, T> {
         }
     }
 
+    /// Inserts an element at position index within the vector, shifting all elements after it to the right.
+    ///
+    /// ### Panics
+    ///
+    /// Panics if `index` is out of bounds.
     pub fn insert(&self, index: usize, element: T) {
         let u = element.into_heap();
         unsafe {
@@ -221,6 +237,12 @@ impl<'h, T: IntoHeap<'h>> VecRef<'h, T> {
         }
     }
 
+    /// Removes and returns the element at position index within the vector,
+    /// shifting all elements after it to the left.
+    ///
+    /// ### Panics
+    ///
+    /// Panics if `index` is out of bounds.
     pub fn remove(&self, index: usize) -> T {
         unsafe {
             let u = self.with_storage_mut(|v| v.remove(index));
@@ -228,6 +250,11 @@ impl<'h, T: IntoHeap<'h>> VecRef<'h, T> {
         }
     }
 
+    /// Appends an element to the back of a collection.
+    ///
+    /// ### Panics
+    ///
+    /// Panics if the number of elements in the vector overflows a `usize`.
     pub fn push(&self, value: T) {
         let u = value.into_heap();
         unsafe {
@@ -235,10 +262,17 @@ impl<'h, T: IntoHeap<'h>> VecRef<'h, T> {
         }
     }
 
+    /// Removes the last element from a vector and returns it, or `None` if it
+    /// is empty.
     pub fn pop(&self) -> Option<T> {
         unsafe { self.with_storage_mut(|v| v.pop().map(|u| T::from_heap(&u))) }
     }
 
+    /// Moves all the elements of other into Self, leaving other empty.
+    ///
+    /// ### Panics
+    ///
+    /// Panics if the number of elements in the vector overflows a `usize`.
     pub fn append(&self, other: &VecRef<'h, T>) {
         let mut tmp: Vec<T::In> = vec![];
         unsafe {
@@ -247,16 +281,23 @@ impl<'h, T: IntoHeap<'h>> VecRef<'h, T> {
         }
     }
 
+    /// Clears the vector, removing all values.
+    ///
+    /// Note that this method has no effect on the allocated capacity of the
+    /// vector.
     pub fn clear(&self) {
         unsafe {
             self.with_storage_mut(|v| v.clear());
         }
     }
 
+    /// Returns the number of elements in the vector, also referred to as its
+    /// 'length'.
     pub fn len(&self) -> usize {
         unsafe { self.with_storage(|v| v.len()) }
     }
 
+    /// Returns `true` if the vector contains no elements.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
@@ -285,6 +326,10 @@ impl<'h, T: IntoHeap<'h>> VecRef<'h, T> {
         self.sort_by(Ord::cmp);
     }
 
+    /// Sorts the slice with a comparator function.
+    ///
+    /// This sort is stable (i.e. does not reorder equal elements) and O(n log
+    /// n) worst-case.
     pub fn sort_by<F>(&self, mut compare: F)
     where
         F: FnMut(&T, &T) -> Ordering,
@@ -307,6 +352,7 @@ impl<'h, T: IntoHeap<'h>> VecRef<'h, T> {
     }
 }
 
+/// An iterator over a GC-heap-allocated vector.
 pub struct VecRefIter<'h, T: IntoHeap<'h>> {
     indexes: Range<usize>,
     data: VecRef<'h, T>,

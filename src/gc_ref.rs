@@ -8,6 +8,8 @@ use std::marker::PhantomData;
 use std::mem;
 use traits::{IntoHeapAllocation, IntoHeapBase};
 
+/// A reference to something inside the GC heap, that is valid for the current
+/// GC heap session.
 pub struct GcRef<'h, T: IntoHeapAllocation<'h>> {
     heap_id: HeapSessionId<'h>,
     ptr: Pointer<T::In>, // never null
@@ -26,18 +28,24 @@ impl<'h, T: IntoHeapAllocation<'h>> GcRef<'h, T> {
         }
     }
 
+    /// Get an untyped GC pointer to the referent.
     pub fn ptr(&self) -> Pointer<T::In> {
         self.ptr
     }
 
+    /// Get a raw, untyped const pointer to the referent.
     pub fn as_ptr(&self) -> *const T::In {
         self.ptr.as_raw()
     }
 
+    /// Get a raw, untyped mut pointer to the referent.
     pub fn as_mut_ptr(&self) -> *mut T::In {
         self.ptr.as_raw() as *mut T::In
     }
 
+    /// Consume this reference and return it as an untyped GC pointer without
+    /// unpinning its referent. The referent will be considered a GC root until
+    /// manually unpinned.
     pub fn into_pinned_ptr(self) -> Pointer<T::In> {
         let ptr = self.ptr;
         mem::forget(self); // skip unpinning destructor
@@ -53,6 +61,7 @@ impl<'h, T: IntoHeapAllocation<'h>> Hash for GcRef<'h, T> {
 }
 
 impl<'h, T: Clone + Send + 'static> GcRef<'h, GcLeaf<T>> {
+    /// Get this reference's referent.
     pub fn get(&self) -> T {
         // XXX TODO I think this `unsafe` block is sound, I'm not totally
         // sure. It's OK as long as we can't trigger GC in the middle of

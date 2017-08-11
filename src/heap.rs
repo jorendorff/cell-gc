@@ -132,9 +132,10 @@ unsafe impl Send for GcHeap {}
 #[derive(Clone)]
 pub struct HeapId(Weak<Mutex<Vec<UntypedPointer>>>);
 
-// What does this do? You'll never guess!
+/// What does this do? You'll never guess!
 pub type HeapSessionId<'h> = PhantomData<::std::cell::Cell<&'h mut ()>>;
 
+/// Exclusive access to a GC heap.
 pub struct GcHeapSession<'h> {
     id: HeapSessionId<'h>,
 
@@ -190,6 +191,7 @@ impl GcHeap {
         );
     }
 
+    /// Drop a frozen pointer.
     pub(crate) fn drop_frozen_ptr(heap_id: HeapId, ptr: UntypedPointer) {
         // If the heap still exists, add ptr to its internal list of dropped
         // pointers. If not, do nothing; the value was already unpinned and
@@ -236,6 +238,12 @@ impl GcHeap {
         f(&mut self.open())
     }
 
+    /// Get the GC heap that this pointer was allocated in.
+    ///
+    /// ### Safety
+    ///
+    /// The give pointer must point to a valid allocation inside a live GC page,
+    /// otherwise random memory will be dereferenced.
     pub unsafe fn from_allocation<'h, T: IntoHeapAllocation<'h>>(
         ptr: Pointer<T::In>,
     ) -> *const GcHeap {
@@ -425,18 +433,24 @@ impl<'h> GcHeapSession<'h> {
         self.heap.gc();
     }
 
+    /// Freeze a reference to a GC thing so that it can outlive the current GC
+    /// heap session, and be thawed at another time.
     pub fn freeze<T: IntoHeapAllocation<'h>>(&self, t: T::Ref) -> GcFrozenRef<T> {
         GcFrozenRef::new(&self, t)
     }
 
+    /// Thaw a frozen GC reference back into the current GC heap session, so
+    /// that its referent can be accessed again.
     pub fn thaw<T: IntoHeapAllocation<'h>>(&self, t: GcFrozenRef<T>) -> T::Ref {
         T::wrap_gc_ref(t.thaw(&self))
     }
 
+    /// Get this session's GC heap's ID.
     pub(crate) fn heap_id(&self) -> HeapId {
         self.heap.id()
     }
 
+    /// Assert that this session's GC heap matches the given ID's heap.
     pub(crate) fn check_heap_id(&self, heap_id: HeapId) {
         self.heap.check_id(heap_id);
     }

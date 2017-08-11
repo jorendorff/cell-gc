@@ -14,6 +14,7 @@ impl<T: Clone + 'static> GcLeaf<T> {
         GcLeaf { value_: value }
     }
 
+    /// Unwrap this `GcLeaf` and return its underlying value.
     pub fn unwrap(self) -> T {
         self.value_
     }

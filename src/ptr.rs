@@ -92,6 +92,7 @@ impl<T> Pointer<T> {
         self.ptr.as_void() as *const T
     }
 
+    /// Get the underlying raw, mutable pointer.
     #[inline]
     pub fn as_mut(&self) -> *mut T {
         self.ptr.as_void() as *mut T
@@ -158,6 +159,12 @@ impl<T> From<Pointer<T>> for usize {
 pub struct UntypedPointer(*const ());
 
 impl UntypedPointer {
+    /// Construct a new untyped pointer into the GC heap.
+    ///
+    /// # Safety
+    ///
+    /// See the type's documentation, as well as the documentation for
+    /// `Pointer<T>`.
     #[inline]
     pub unsafe fn new(ptr: *const ()) -> UntypedPointer {
         assert!(!ptr.is_null(), "GC heap pointers can't be null.");

@@ -140,12 +140,24 @@ pub trait IntoHeapAllocation<'h>: IntoHeap<'h> {
     /// moved into the heap (i.e. when it's allocated).
     type Ref: Hash + IntoHeap<'h>;
 
+    /// Wrap a `GcRef` into the associated `Self::Ref` type.
     fn wrap_gc_ref(gc_ref: GcRef<'h, Self>) -> Self::Ref;
 
+    /// Unwrap an associated `Self::Ref` type into a `GcRef`.
     fn into_gc_ref(r: Self::Ref) -> GcRef<'h, Self>;
 }
 
+/// A `Tracer` visits each of an object's outgoing edges pointing to other GC
+/// things.
+///
+/// The primary `Tracer` is the marking tracer, which walks the heap starting
+/// from the roots and sets the mark bits of every live object it finds. While
+/// this is currently the only `Tracer` impl that exists, one could imagine a
+/// `HeapSnapshotTracer` that serializes the heap graph to disk for offline
+/// processing and analysis in some devtool, for example.
 pub trait Tracer {
+    /// Tell the `Tracer` about an outgoing edge of the object currently being
+    /// traced.
     fn visit<'h, T>(&mut self, Pointer<T::In>)
     where
         T: IntoHeapAllocation<'h>;
