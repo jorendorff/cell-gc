@@ -3,121 +3,129 @@
 use cell_gc::GcHeapSession;
 use cell_gc::collections::VecRef;
 use compile::{op, CodeRef};
-use env::{Environment, EnvironmentRef};
+use env::{Environment, EnvironmentRef, StaticEnvironmentRef};
 use errors::Result;
 use value::{Lambda, Pair, Value};
 
-/// A potentially partially evaluated value.
-pub enum Trampoline<'h> {
-    /// A completely evaluated value.
-    Value(Value<'h>),
-    /// The continuation of a partial evaluation in tail position. The stack
-    /// should be unwound before resumption of its evaluation.
-    TailCall {
-        func: Value<'h>,
-        args: Vec<Value<'h>>,
-    },
+#[derive(IntoHeap)]
+pub struct Frame<'h> {
+    pub parent: Option<FrameRef<'h>>,
+    pub code: CodeRef<'h>,
+    pub pc: usize,
+    pub env: EnvironmentRef<'h>,
+    pub operands: Value<'h>,
 }
 
-impl<'h> Trampoline<'h> {
-    /// Complete the evaluation of this value. Avoids recursion to implement
-    /// proper tail calls and keep from blowing the stack.
-    pub fn eval(mut self, hs: &mut GcHeapSession<'h>) -> Result<Value<'h>> {
-        loop {
-            match self {
-                Trampoline::Value(v) => {
-                    return Ok(v);
-                }
-                Trampoline::TailCall { func, args } => {
-                    self = apply(hs, func, args)?;
-                }
+
+fn get_single_argument<'h>(arg_list: Value<'h>) -> Result<Value<'h>> {
+    match arg_list {
+        Value::Cons(pair) => {
+            if pair.cdr().is_nil() {
+                Ok(pair.car())
+            } else {
+                Err("continuation: too many arguments".into())
             }
         }
+        _ => Err("continuation: argument required".into())
     }
 }
 
-pub fn apply<'h>(
+pub fn partial_apply<'h>(
     hs: &mut GcHeapSession<'h>,
     fval: Value<'h>,
-    mut args: Vec<Value<'h>>,
-) -> Result<Trampoline<'h>> {
+    arg_list: Value<'h>,
+    ctn: Option<FrameRef<'h>>
+) -> Result<(Value<'h>, Option<FrameRef<'h>>)> {
     match fval {
-        Value::Builtin(f) => (f.0)(hs, args),
+        Value::Builtin(f) => (f.0)(hs, arg_list, ctn),
         Value::Lambda(lambda) => {
             let code = lambda.code();
-            let parent = lambda.env();
             let senv = code.environments().get(0);
-            let names = senv.names();
-            let n_names = names.len();
-            let has_rest = code.rest();
-
-            let n_required_params = n_names - has_rest as usize;
-            if args.len() < n_required_params {
-                return Err("apply: not enough arguments".into());
-            }
-            if has_rest {
-                let mut rest_list = Value::Nil;
-                for v in args.drain(n_required_params..).rev() {
-                    rest_list = Value::Cons(hs.alloc(Pair {
-                        car: v,
-                        cdr: rest_list,
-                    }));
-                }
-                args.push(rest_list);
-            } else if args.len() > n_required_params {
-                return Err("apply: too many arguments".into());
-            }
-
-            let values = hs.alloc(args);
-            let env = Environment::new(hs, Some(parent), senv, values);
-            eval_compiled_to_tail_call(hs, &env, code)
+            let env = new_call_env(hs, lambda.env(), senv, code.rest(), arg_list)?;
+            let frame = hs.alloc(Frame {
+                parent: ctn,
+                code,
+                pc: 0,
+                env,
+                operands: Value::Nil,
+            });
+            Ok((Value::Unspecified, Some(frame)))
+        }
+        Value::Continuation(stack) => {
+            let value = get_single_argument(arg_list)?;
+            Ok((value, stack))
         }
         _ => Err("apply: not a function".into()),
     }
 }
 
-/// Evaluate `expr` until we reach a tail call, at which point it is packaged up
-/// as a `Trampoline::TailCall` and returned so we can unwind the stack before
-/// continuing evaluation.
-pub fn eval_compiled_to_tail_call<'h>(
+fn new_call_env<'h>(
     hs: &mut GcHeapSession<'h>,
-    env: &EnvironmentRef<'h>,
-    code: CodeRef<'h>,
-) -> Result<Trampoline<'h>> {
-    let constants = code.constants();
-    let environments = code.environments();
-    let insns = code.insns();
-    let mut env = env.clone();
-    let mut pc = 0;
-    let mut operands = Vec::with_capacity(code.operands_max());
+    parent: EnvironmentRef<'h>,
+    senv: StaticEnvironmentRef<'h>,
+    has_rest: bool,
+    mut arg_list: Value<'h>
+) -> Result<EnvironmentRef<'h>> {
+    let names = senv.names();
+    let n_names = names.len();
+    let n_required_params = n_names - has_rest as usize;
+    let argv = hs.alloc(Vec::<Value<'h>>::new());
+    argv.reserve(n_names);
+
+    for _ in 0..n_required_params {
+        let (arg, tail) = arg_list.as_pair("not enough arguments")?;
+        argv.push(arg);
+        arg_list = tail;
+    }
+
+    if has_rest {
+        argv.push(arg_list);
+    } else if !arg_list.is_nil() {
+        return Err("too many arguments".into());
+    }
+
+    Ok(Environment::new(hs, Some(parent), senv, argv))
+}
+
+pub fn interpret<'h>(
+    hs: &mut GcHeapSession<'h>,
+    mut stack: Option<FrameRef<'h>>,
+    mut acc: Value<'h>,
+) -> Result<Value<'h>> {
+    let mut code: CodeRef<'h>;
+    let mut insns: VecRef<'h, u32>;
+    let mut pc: usize;
+    let mut env: EnvironmentRef<'h>;
+    let mut operands: Value<'h>;
+
+    macro_rules! return_acc {
+        () => {
+            match stack {
+                None => {
+                    return Ok(acc);
+                }
+                Some(frame) => {
+                    stack = frame.parent();
+                    code = frame.code();
+                    insns = code.insns();
+                    pc = frame.pc();
+                    env = frame.env();
+                    operands = frame.operands();
+                }
+            }
+        }
+    }
+
+    return_acc!();
 
     loop {
         let op_code = insns.get(pc);
         pc += 1;
         match op_code {
-            op::RETURN => {
-                assert_eq!(operands.len(), 1);
-                return Ok(Trampoline::Value(operands.pop().unwrap()));
-            }
-
-            op::POP => {
-                operands.pop().unwrap();
-            }
-
             op::CONSTANT => {
-                let i = insns.get(pc) as usize;
+                let offset = insns.get(pc) as usize;
                 pc += 1;
-                operands.push(constants.get(i));
-            }
-
-            op::GET_DYNAMIC => {
-                let i = insns.get(pc) as usize;
-                pc += 1;
-                let symbol = match constants.get(i) {
-                    Value::Symbol(id) => id,
-                    _ => panic!("internal error: bad GetDynamic insn"),
-                };
-                operands.push(env.dynamic_get(&symbol)?);
+                acc = code.constants().get(offset);
             }
 
             op::GET_STATIC => {
@@ -125,64 +133,17 @@ pub fn eval_compiled_to_tail_call<'h>(
                 pc += 1;
                 let i = insns.get(pc) as usize;
                 pc += 1;
-                operands.push(env.get(up_count, i));
+                acc = env.get(up_count, i);
             }
 
-            op::LAMBDA => {
+            op::GET_DYNAMIC => {
                 let i = insns.get(pc) as usize;
                 pc += 1;
-                let fn_code = match constants.get(i) {
-                    Value::Code(code) => code,
-                    _ => panic!("internal error: bad Lambda insn"),
-                };
-                let fn_value = Value::Lambda(hs.alloc(Lambda {
-                    code: fn_code,
-                    env: env.clone(),
-                }));
-                operands.push(fn_value);
-            }
-
-            op::CALL => {
-                let argc = insns.get(pc) as usize;
-                pc += 1;
-                let top = operands.len();
-                let args = operands.split_off(top - argc);
-                let fval = operands.pop().unwrap();
-                operands.push(apply(hs, fval, args)?.eval(hs)?);
-            }
-
-            op::TAIL_CALL => {
-                let argc = insns.get(pc) as usize;
-                // No `pc += 1;` here because pc is a dead value.
-                assert_eq!(operands.len(), argc + 1);
-                let fval = operands.remove(0);
-                return Ok(Trampoline::TailCall {
-                    func: fval,
-                    args: operands
-                });
-            }
-
-            op::JUMP_IF_FALSE => {
-                let offset = match operands.pop().unwrap() {
-                    Value::Bool(false) => insns.get(pc) as usize,
-                    _ => 1
-                };
-                pc += offset;
-            }
-
-            op::JUMP => {
-                pc += insns.get(pc) as usize;
-            }
-
-            op::DEFINE => {
-                let i = insns.get(pc) as usize;
-                pc += 1;
-                let symbol = match constants.get(i) {
+                let symbol = match code.constants().get(i) {
                     Value::Symbol(id) => id,
-                    _ => panic!("internal error: bad Define insn"),
+                    _ => panic!("internal error: bad GetDynamic insn"),
                 };
-                let value = operands.pop().unwrap();
-                env.define(symbol.unwrap(), value);
+                acc = env.dynamic_get(&symbol)?;
             }
 
             op::SET_STATIC => {
@@ -190,24 +151,89 @@ pub fn eval_compiled_to_tail_call<'h>(
                 pc += 1;
                 let i = insns.get(pc) as usize;
                 pc += 1;
-                env.set(up_count, i, operands.pop().unwrap());
+                env.set(up_count, i, acc.steal());
             }
 
             op::SET_DYNAMIC => {
                 let i = insns.get(pc) as usize;
                 pc += 1;
-                let symbol = match constants.get(i) {
+                let symbol = match code.constants().get(i) {
                     Value::Symbol(id) => id.unwrap(),
                     _ => panic!("internal error: bad Set insn"),
                 };
-                let value = operands.pop().unwrap();
-                env.dynamic_set(&symbol, value)?;
+                env.dynamic_set(&symbol, acc.steal())?;
+            }
+
+            op::LAMBDA => {
+                let i = insns.get(pc) as usize;
+                pc += 1;
+                let fn_code = match code.constants().get(i) {
+                    Value::Code(code) => code,
+                    _ => panic!("internal error: bad Lambda insn"),
+                };
+                acc = Value::Lambda(hs.alloc(Lambda {
+                    code: fn_code,
+                    env: env.clone(),
+                }));
+            }
+
+            op::FRAME => {
+                // Push a stack frame, for an upcoming non-tail call.
+                // After this, the stack reflects that call's continuation.
+                let target_pc = pc + insns.get(pc) as usize;
+                pc += 1;
+                stack = Some(hs.alloc(Frame {
+                    parent: stack,
+                    code: code.clone(),
+                    pc: target_pc,
+                    env: env.clone(),
+                    operands,
+                }));
+                operands = Value::Nil;
+            }
+
+            op::ARGUMENT => {
+                operands = Value::Cons(hs.alloc(Pair {
+                    car: acc.steal(),
+                    cdr: operands
+                }));
+            }
+
+            op::APPLY => {
+                match acc.steal() {
+                    Value::Builtin(f) => {
+                        let pair = f.0(hs, operands, stack)?;
+                        acc = pair.0;
+                        stack = pair.1;
+                        return_acc!();
+                    }
+                    Value::Lambda(lambda) => {
+                        code = lambda.code();
+                        insns = code.insns();
+                        env = new_call_env(hs, lambda.env(), code.environments().get(0),
+                                           code.rest(), operands)?;
+                        operands = Value::Nil;
+                        pc = 0;
+                    }
+                    Value::Continuation(ctn_stack) => {
+                        acc = get_single_argument(operands)?;
+                        stack = ctn_stack;
+                        return_acc!();
+                    }
+                    _ => {
+                        return Err("not a procedure".into());
+                    }
+                }
+            }
+
+            op::RETURN => {
+                return_acc!();
             }
 
             op::PUSH_ENV => {
                 let i = insns.get(pc) as usize;
                 pc += 1;
-                let senv = environments.get(i);
+                let senv = code.environments().get(i);
                 let values: VecRef<'h, Value<'h>> = hs.alloc(
                     (0..senv.names().len())
                         .map(|_| Value::Unspecified)
@@ -220,20 +246,56 @@ pub fn eval_compiled_to_tail_call<'h>(
                 env = env.parent().unwrap();
             }
 
-            _ => panic!("internal error: invalid opcode {}", op_code),
+            op::JUMP => {
+                pc += insns.get(pc) as usize;
+            }
+
+            op::JUMP_IF_FALSE => {
+                if acc.to_bool() {
+                    pc += 1;
+                } else {
+                    pc += insns.get(pc) as usize;
+                }
+            }
+
+            op::DEFINE => {
+                let i = insns.get(pc) as usize;
+                pc += 1;
+                let symbol = match code.constants().get(i) {
+                    Value::Symbol(id) => id,
+                    _ => panic!("internal error: bad Define insn"),
+                };
+                env.define(symbol.unwrap(), acc.steal());
+            }
+
+            _ => {
+                panic!("internal error: invalid opcode {}", op_code);
+            }
         }
     }
 }
 
-pub fn eval_compiled<'h>(
+pub fn apply<'h>(
     hs: &mut GcHeapSession<'h>,
-    env: &EnvironmentRef<'h>,
-    code: CodeRef<'h>,
+    fval: Value<'h>,
+    arg_list: Value<'h>,
 ) -> Result<Value<'h>> {
-    assert_eq!(code.environments().get(0), env.senv(),
-               "code can only run in the environment for which it was compiled");
-    eval_compiled_to_tail_call(hs, env, code)?.eval(hs)
+    let (v, ctn) = partial_apply(hs, fval, arg_list, None)?;
+    interpret(hs, ctn, v)
 }
 
-#[cfg(test)]
-include!("tests.rs");
+pub fn eval_compiled<'h>(
+    hs: &mut GcHeapSession<'h>,
+    env: EnvironmentRef<'h>,
+    code: CodeRef<'h>,
+) -> Result<Value<'h>> {
+    let stack = Some(hs.alloc(Frame {
+        parent: None,
+        code,
+        pc: 0,
+        env,
+        operands: Value::Nil
+    }));
+    interpret(hs, stack, Value::Unspecified)
+}
+

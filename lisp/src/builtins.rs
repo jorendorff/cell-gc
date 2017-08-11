@@ -2,24 +2,23 @@
 
 use cell_gc::{GcHeapSession, GcLeaf};
 use cell_gc::collections::VecRef;
+use compile;
 use env::{self, EnvironmentRef};
 use errors::*;
 use std::io::{self, Write};
 use std::sync::Arc;
-use std::vec;
-use toplevel;
 use value::{self, BuiltinFn, BuiltinFnPtr, InternedString, Pair, Value};
 use value::{ArgType, Rest, RetType};
 use value::Value::*;
-use vm::Trampoline;
+use vm::{self, Frame, FrameRef};
 
 
 // The builtins! macro /////////////////////////////////////////////////////////
 
-fn check_done<'h>(proc_name: &str, iter: &mut vec::IntoIter<Value<'h>>) -> Result<()> {
-    match iter.next() {
-        Some(_) => Err(format!("{}: too many arguments", proc_name).into()),
-        None => Ok(())
+fn check_done<'h>(proc_name: &str, iter: &mut Value<'h>) -> Result<()> {
+    match *iter {
+        Value::Nil => Ok(()),
+        _ => Err(format!("{}: too many arguments", proc_name).into()),
     }
 }
 
@@ -30,18 +29,17 @@ macro_rules! builtins {
             -> $retty:ty
             $body:block
         )*
-    }
-    =>
-    {
+    } => {
         $(
             fn $name<$h>(
                 $hs: &mut GcHeapSession<$h>,
-                args: Vec<Value<$h>>,
-            ) -> Result<Trampoline<$h>> {
-                let mut args_iter = args.into_iter();
-                $( let $arg = <$argty as ArgType<$h>>::unpack_argument($namestr, &mut args_iter)?; )*
-                check_done($namestr, &mut args_iter)?;
-                <$retty as RetType<$h>>::pack($body, $hs)
+                mut args: Value<$h>,
+                ctn: Option<FrameRef<$h>>,
+            ) -> Result<(Value<$h>, Option<FrameRef<$h>>)> {
+                $( let $arg = <$argty as ArgType<$h>>::unpack_argument($namestr, &mut args)?; )*
+                check_done($namestr, &mut args)?;
+                let return_value = <$retty as RetType<$h>>::pack($body, $hs)?;
+                Ok((return_value, ctn))
             }
         )*
     }
@@ -59,12 +57,19 @@ builtins! {
 
 // 6.2 Equivalence predicates
 builtins! {
-    fn eq_question "eq?" <'h>(_hs, args: Rest<'h>) -> bool {
+    fn eq_question "eq?" <'h>(_hs, args: Rest<'h>) -> Result<bool> {
         let mut args = args;
-        match args.next() {
-            None => true,
-            Some(v) => args.all(|arg| arg == v),
+        let mut all_equal = true;
+        if let Some(item) = args.next() {
+            let first = item?;
+            for item in args {
+                if first != item? {
+                    all_equal = false;
+                    break;
+                }
+            }
         }
+        Ok(all_equal)
     }
 
     fn eqv_question "eqv?" <'h>(_hs, a: Value<'h>, b: Value<'h>) -> bool {
@@ -129,51 +134,49 @@ builtins! {
 
 fn numeric_compare<'h, F>(
     name: &'static str,
-    args: Vec<Value<'h>>,
+    mut args: Value<'h>,
     cmp: F,
-) -> Result<Trampoline<'h>>
+    ctn: Option<FrameRef<'h>>
+) -> Result<(Value<'h>, Option<FrameRef<'h>>)>
 where
     F: Fn(i32, i32) -> bool,
 {
-    let mut it = args.into_iter();
-    if let Some(arg0) = it.next() {
-        let mut prev = arg0.as_int(name)?;
-        for arg in it {
-            let x = arg.as_int(name)?;
+    if let Some(arg0) = args.next() {
+        let mut prev = arg0?.as_int(name)?;
+        for arg in args {
+            let x = arg?.as_int(name)?;
             if !cmp(prev, x) {
-                return Ok(Trampoline::Value(Bool(false)));
+                return Ok((Bool(false), ctn));
             }
             prev = x;
         }
     }
-    Ok(Trampoline::Value(Bool(true)))
+    Ok((Bool(true), ctn))
 }
 
-fn numeric_eq<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Trampoline<'h>> {
-    numeric_compare("=", args, |a, b| a == b)
+macro_rules! numeric_compare {
+    ($fnname:ident, $name:expr, $op:tt) => {
+        fn $fnname<'h>(
+            _hs: &mut GcHeapSession<'h>,
+            args: Value<'h>,
+            ctn: Option<FrameRef<'h>>
+        ) -> Result<(Value<'h>, Option<FrameRef<'h>>)> {
+            numeric_compare($name, args, |a, b| a $op b, ctn)
+        }
+    }
 }
 
-fn numeric_lt<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Trampoline<'h>> {
-    numeric_compare("<", args, |a, b| a < b)
-}
-
-fn numeric_gt<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Trampoline<'h>> {
-    numeric_compare(">", args, |a, b| a > b)
-}
-
-fn numeric_le<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Trampoline<'h>> {
-    numeric_compare("<=", args, |a, b| a <= b)
-}
-
-fn numeric_ge<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Trampoline<'h>> {
-    numeric_compare(">=", args, |a, b| a >= b)
-}
+numeric_compare!(numeric_eq, "=", ==);
+numeric_compare!(numeric_lt, "<", <);
+numeric_compare!(numeric_gt, ">", >);
+numeric_compare!(numeric_le, "<=", <=);
+numeric_compare!(numeric_ge, ">=", >=);
 
 builtins! {
     fn add "+" <'h>(_hs, args: Rest<'h>) -> Result<i32> {
         let mut total = 0;
         for v in args {
-            if let Int(n) = v {
+            if let Int(n) = v? {
                 total += n;
             } else {
                 return Err("+: number required".into());
@@ -185,7 +188,7 @@ builtins! {
     fn mul "*" <'h>(_hs, args: Rest<'h>) -> Result<i32> {
         let mut total = 1;
         for v in args {
-            if let Int(n) = v {
+            if let Int(n) = v? {
                 total *= n;
             } else {
                 return Err("*: number required".into());
@@ -199,7 +202,7 @@ builtins! {
         let mut any = false;
         for v in args {
             any = true;
-            if let Int(subtrahend) = v {
+            if let Int(subtrahend) = v? {
                 total -= subtrahend;
             } else {
                 return Err("-: number required".into());
@@ -225,44 +228,45 @@ builtins! {
     }
 }
 
-fn char_compare<'h, F>(name: &'static str, args: Vec<Value<'h>>, cmp: F) -> Result<Trampoline<'h>>
+fn char_compare<'h, F>(
+    name: &'static str,
+    mut arg_list: Value<'h>,
+    cmp: F,
+    ctn: Option<FrameRef<'h>>,
+) -> Result<(Value<'h>, Option<FrameRef<'h>>)>
 where
     F: Fn(char, char) -> bool,
 {
-    let mut it = args.into_iter();
-    if let Some(arg0) = it.next() {
-        let mut prev = arg0.as_char(name)?;
-        for arg in it {
-            let x = arg.as_char(name)?;
+    if let Some(arg0) = arg_list.next() {
+        let mut prev = arg0?.as_char(name)?;
+        for arg in arg_list {
+            let x = arg?.as_char(name)?;
             if !cmp(prev, x) {
-                return Ok(Trampoline::Value(Bool(false)));
+                return Ok((Bool(false), ctn));
             }
             prev = x;
         }
     }
-    Ok(Trampoline::Value(Bool(true)))
+    Ok((Bool(true), ctn))
 }
 
-fn char_eq<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Trampoline<'h>> {
-    char_compare("char=?", args, |a, b| a == b)
+macro_rules! char_compare_builtin {
+    ($fnname:ident, $name:expr, $op:tt) => {
+        fn $fnname<'h>(
+            _hs: &mut GcHeapSession<'h>,
+            arg_list: Value<'h>,
+            ctn: Option<FrameRef<'h>>
+        ) -> Result<(Value<'h>, Option<FrameRef<'h>>)> {
+            char_compare($name, arg_list, |a, b| a $op b, ctn)
+        }
+    }
 }
 
-fn char_lt<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Trampoline<'h>> {
-    char_compare("char<?", args, |a, b| a < b)
-}
-
-fn char_gt<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Trampoline<'h>> {
-    char_compare("char>?", args, |a, b| a > b)
-}
-
-fn char_le<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Trampoline<'h>> {
-    char_compare("char<=?", args, |a, b| a <= b)
-}
-
-// CHAAAAARGE!
-fn char_ge<'h>(_hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Trampoline<'h>> {
-    char_compare("char>=?", args, |a, b| a >= b)
-}
+char_compare_builtin!(char_eq, "char=?", ==);
+char_compare_builtin!(char_lt, "char<?", <);
+char_compare_builtin!(char_gt, "char>?", >);
+char_compare_builtin!(char_le, "char<=?", <=);
+char_compare_builtin!(char_ge, "char>=?", >=); // CHAAAAARGE!
 
 builtins! {
     fn char_alphabetic_question "char-alphabetic?" <'h>(_hs, c: char) -> bool {
@@ -314,7 +318,7 @@ builtins! {
     fn string "string" <'h>(_hs, args: Rest<'h>) -> String {
         let mut s = String::new();
         for arg in args {
-            s.push(arg.as_char("string")?);
+            s.push(arg?.as_char("string")?);
         }
         s
     }
@@ -336,7 +340,7 @@ builtins! {
 
     fn string_append "string-append" <'h>(_hs, args: Rest<'h>) -> String {
         args
-            .map(|v| v.as_string("string-append"))
+            .map(|v| -> Result<Arc<String>> { v?.as_string("string-append") })
             .collect::<Result<Vec<Arc<String>>>>()?
             .iter()
             .map(|arc_str| arc_str as &str)
@@ -373,13 +377,11 @@ builtins! {
         let value = v.unwrap_or(Value::Unspecified);
         vec![value; n]
     }
-}
 
-fn vector<'h>(hs: &mut GcHeapSession<'h>, args: Vec<Value<'h>>) -> Result<Trampoline<'h>> {
-    Ok(Trampoline::Value(Vector(hs.alloc(args))))
-}
+    fn vector "vector" <'h>(hs, args: Rest<'h>) -> Result<Vec<Value<'h>>> {
+        args.collect()
+    }
 
-builtins! {
     fn vector_length "vector-length" <'h>(_hs, v: VecRef<'h, Value<'h>>) -> usize {
         v.len()
     }
@@ -426,22 +428,47 @@ builtins! {
     }
 }
 
-fn apply<'h>(_hs: &mut GcHeapSession<'h>, mut args: Vec<Value<'h>>) -> Result<Trampoline<'h>> {
-    if args.len() < 2 {
-        return Err("apply: at least 2 arguments required".into());
+fn apply<'h>(
+    hs: &mut GcHeapSession<'h>,
+    args: Value<'h>,
+    ctn: Option<FrameRef<'h>>
+) -> Result<(Value<'h>, Option<FrameRef<'h>>)> {
+    // Parse arguments, which are super annoying for this one
+    let (func, args) = args.as_pair("apply")?;
+    let (first, mut args) = args.as_pair("apply")?;
+    let actual;
+    if args.is_nil() {
+        actual = first;
+    } else {
+        let mut last_link = hs.alloc(Pair { car: first, cdr: Value::Nil });
+        actual = Value::Cons(last_link.clone());
+        while let Some(element) = args.next() {
+            if args.is_nil() { // last element
+                last_link.set_cdr(element?);
+            } else {
+                let new_link = hs.alloc(Pair {car: element?, cdr: Value::Nil });
+                last_link.set_cdr(Value::Cons(new_link.clone()));
+                last_link = new_link;
+            }
+        }
     }
-    let trailing = args.pop().unwrap();
-    let mut arg_vec = args.split_off(1);
-    for arg in trailing {
-        arg_vec.push(arg?);
-    }
-    assert_eq!(args.len(), 1);
-    let func = args.pop().unwrap();
 
-    Ok(Trampoline::TailCall {
-        func,
-        args: arg_vec,
-    })
+    vm::partial_apply(hs, func, actual, ctn)
+}
+
+fn call_cc<'h>(
+    hs: &mut GcHeapSession<'h>,
+    args: Value<'h>,
+    ctn: Option<FrameRef<'h>>
+) -> Result<(Value<'h>, Option<FrameRef<'h>>)> {
+    let (func, rest) = args.as_pair("call/cc")?;
+    if !rest.is_nil() {
+        return Err("call/cc: too many arguments".into());
+    }
+
+    let ctn_func = Value::Continuation(ctn.clone());
+    let arg_list = Value::Cons(hs.alloc(Pair { car: ctn_func, cdr: Value::Nil }));
+    vm::partial_apply(hs, func, arg_list, ctn)
 }
 
 // 6.10 Input and output
@@ -473,6 +500,35 @@ builtins! {
 }
 
 // Extensions
+
+fn eval<'h>(
+    hs: &mut GcHeapSession<'h>,
+    operands: Value<'h>,
+    stack: Option<FrameRef<'h>>,
+) -> Result<(Value<'h>, Option<FrameRef<'h>>)> {
+    // Parse arguments.
+    let (expr, rest) = operands.as_pair("eval")?;
+    let (env_value, rest) = rest.as_pair("eval")?;
+    let env = env_value.as_environment("eval")?;
+    if !rest.is_nil() {
+        return Err("eval: too many arguments".into());
+    }
+
+    // Compile the expression.
+    let expr = env.expand(hs, expr)?;
+    let code = compile::compile_toplevel(hs, &env.senv(), expr)?;
+
+    // Create and return the appropriate command continuation.
+    let frame = hs.alloc(Frame {
+        parent: stack,
+        code,
+        pc: 0,
+        env,
+        operands: Value::Nil,
+    });
+    Ok((Value::Unspecified, Some(frame)))
+}
+
 builtins! {
     fn assert "assert" <'h>(_hs, ok: bool, msg: Option<Value<'h>>) -> Result<()> {
         if ok {
@@ -495,10 +551,6 @@ builtins! {
             Symbol(s) => s.is_gensym(),
             _ => false,
         }
-    }
-
-    fn eval "eval" <'h>(hs, expr: Value<'h>, env: EnvironmentRef<'h>) -> Result<Trampoline<'h>> {
-        toplevel::eval_to_tail_call(hs, &env, expr)
     }
 
     fn dis "dis" <'h>(_hs, expr: Value<'h>) -> Result<()> {
@@ -526,6 +578,8 @@ pub static BUILTINS: &[(&'static str, BuiltinFn)] = &[
     ("apply", apply),
     ("assert", assert),
     ("boolean?", boolean_question),
+    ("call/cc", call_cc),
+    ("call-with-current-continuation", call_cc),
     ("car", car),
     ("cdr", cdr),
     ("char?", char_question),

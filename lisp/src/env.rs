@@ -165,9 +165,8 @@ impl<'h> EnvironmentRef<'h> {
         match self.dynamic_get(&EXPANDER_SYMBOL) {
             Err(_) => Ok(expr),
             Ok(expander) => {
-                let args = vec![expr];
-                let tail = vm::apply(hs, expander, args)?;
-                tail.eval(hs)
+                let args = Value::cons(hs, expr, Value::Nil);
+                vm::apply(hs, expander, args)
             }
         }
     }
@@ -210,7 +209,6 @@ pub fn constant_proc<'h>(hs: &mut GcHeapSession<'h>, k: Value<'h>) -> Value<'h> 
         environments,
         constants,
         rest: false,
-        operands_max: 1,
     });
     Value::Lambda(hs.alloc(Lambda { code, env }))
 }

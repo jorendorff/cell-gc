@@ -38,6 +38,7 @@ test!(booleans);
 test!(characters);
 test!(closure);
 test!(cons);
+test!(continuations);
 test!(double);
 test!(equivalence);
 test!(extensions);

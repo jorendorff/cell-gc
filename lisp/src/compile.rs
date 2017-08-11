@@ -9,21 +9,21 @@ use value::{InternedString, Pair, Value};
 pub mod op {
     pub type OpCode = u32;
 
-    pub const RETURN: OpCode = 0; // ()
-    pub const POP: OpCode = 1; // ()
-    pub const CONSTANT: OpCode = 2; // (constant_index)
-    pub const GET_DYNAMIC: OpCode = 3; // (symbol_index)
-    pub const GET_STATIC: OpCode = 4; // (up_count, offset)
+    pub const CONSTANT: OpCode = 0; // (constant_index)
+    pub const GET_STATIC: OpCode = 1; // (up_count, offset)
+    pub const GET_DYNAMIC: OpCode = 2; // (symbol_index)
+    pub const SET_STATIC: OpCode = 3; // (up_count, offset)
+    pub const SET_DYNAMIC: OpCode = 4; // (symbol_index)
     pub const LAMBDA: OpCode = 5; // (code_index)
-    pub const CALL: OpCode = 6; // (argc)
-    pub const TAIL_CALL: OpCode = 7; // (argc)
-    pub const JUMP_IF_FALSE: OpCode = 8; // (offset in words)
-    pub const JUMP: OpCode = 9; // (offset in words)
-    pub const DEFINE: OpCode = 10; // (symbol_index)
-    pub const SET_STATIC: OpCode = 11; // (up_count, offset)
-    pub const SET_DYNAMIC: OpCode = 12; // (symbol_index)
-    pub const PUSH_ENV: OpCode = 13; // (static_env_index)
-    pub const POP_ENV: OpCode = 14; // ()
+    pub const FRAME: OpCode = 6; // (offset in words)
+    pub const ARGUMENT: OpCode = 7; // ()
+    pub const APPLY: OpCode = 8; // ()
+    pub const RETURN: OpCode = 9; // ()
+    pub const JUMP_IF_FALSE: OpCode = 10; // (offset in words)
+    pub const JUMP: OpCode = 11; // (offset in words)
+    pub const PUSH_ENV: OpCode = 12; // (static_env_index)
+    pub const POP_ENV: OpCode = 13; // ()
+    pub const DEFINE: OpCode = 14; // (symbol_index)
 }
 
 #[derive(IntoHeap)]
@@ -32,18 +32,11 @@ pub struct Code<'h> {
     pub environments: VecRef<'h, StaticEnvironmentRef<'h>>,
     pub constants: VecRef<'h, Value<'h>>,
     pub rest: bool,
-
-    /// Maximum number of values on the operand stack while running this code.
-    pub operands_max: usize,
 }
 
 struct Emitter<'e, 'h: 'e> {
     hs: &'e mut GcHeapSession<'h>,
     code: Code<'h>,
-
-    /// Number of operands that will be on the stack after executing the
-    /// most-recently-emitted instruction.
-    operand_depth: usize,
 }
 
 /// During compilation, this type tells what sort of continuation the current
@@ -83,9 +76,7 @@ impl<'e, 'h> Emitter<'e, 'h> {
                 environments,
                 constants,
                 rest,
-                operands_max: 0,
             },
-            operand_depth: 0,
         }
     }
 
@@ -105,38 +96,11 @@ impl<'e, 'h> Emitter<'e, 'h> {
         Ok(())
     }
 
-    /// Bookkeeping, for determing how much stack we need to reserve for
-    /// operands before running this code.
-    ///
-    /// Whenever we emit an instruction that pushes an operand to the stack, we
-    /// have to call this method.
-    fn push_operands(&mut self, amount: usize) {
-        self.operand_depth += amount as usize;
-        if self.operand_depth > self.code.operands_max {
-            self.code.operands_max = self.operand_depth;
-        }
-    }
-
-    /// Bookkeeping. Whenever we emit an instruction that pops operands from
-    /// the stack, we call this method.
-    fn pop_operands(&mut self, amount: usize) {
-        assert!(self.operand_depth >= amount);
-        self.operand_depth -= amount as usize;
-    }
-
     // One method per opcode ///////////////////////////////////////////////////
 
-    /// Emit an instruction to return the top value of the operand stack.
+    /// Emit an instruction to return the last computed value.
     fn emit_return(&mut self) {
         self.emit(op::RETURN);
-        self.pop_operands(1);
-    }
-
-    /// Emit an instruction to discard the top value of the operand stack (used
-    /// after each expression in a `(begin)`-expression except the last one).
-    fn emit_pop(&mut self) {
-        self.emit(op::POP);
-        self.pop_operands(1);
     }
 
     /// A constant (`quote` expressions produce this, but also numbers and
@@ -146,7 +110,14 @@ impl<'e, 'h> Emitter<'e, 'h> {
         self.code.constants.push(value);
         self.emit(op::CONSTANT);
         self.write_usize(index)?;
-        self.push_operands(1);
+        Ok(())
+    }
+
+    /// A variable-expression, but at a known location in the environment chain.
+    fn emit_get_static(&mut self, up_count: usize, index: usize) -> Result<()> {
+        self.emit(op::GET_STATIC);
+        self.write_usize(up_count)?;
+        self.write_usize(index)?;
         Ok(())
     }
 
@@ -157,16 +128,6 @@ impl<'e, 'h> Emitter<'e, 'h> {
         self.code.constants.push(Value::Symbol(GcLeaf::new(id)));
         self.emit(op::GET_DYNAMIC);
         self.write_usize(index)?;
-        self.push_operands(1);
-        Ok(())
-    }
-
-    /// A variable-expression, but at a known location in the environment chain.
-    fn emit_get_static(&mut self, up_count: usize, index: usize) -> Result<()> {
-        self.emit(op::GET_STATIC);
-        self.write_usize(up_count)?;
-        self.write_usize(index)?;
-        self.push_operands(1);
         Ok(())
     }
 
@@ -176,25 +137,28 @@ impl<'e, 'h> Emitter<'e, 'h> {
         self.code.constants.push(Value::Code(code));
         self.emit(op::LAMBDA);
         self.write_usize(index)?;
-        self.push_operands(1);
         Ok(())
     }
 
+    /// Emit the instruction to save the continuation of an upcoming non-tail call.
+    fn emit_frame(&mut self) -> Patch {
+        self.emit(op::FRAME);
+        let patch = Patch(self.code.insns.len());
+        self.code.insns.push(PATCH_MARK);
+        patch
+    }
+
+    /// Store the most recently computed value as an argument to an upcoming
+    /// application.
+    fn emit_argument(&mut self) {
+        self.emit(op::ARGUMENT);
+    }
+
     /// Emit the instruction to call a function.  This should come after
-    /// emitting the expression for the function and its operands.
-    fn emit_call(&mut self, argc: usize, k: Ctn) -> Result<()> {
-        self.emit(if k == Ctn::Tail {
-            op::TAIL_CALL
-        } else {
-            op::CALL
-        });
-        self.write_usize(argc)?;
-        self.pop_operands(1 + argc);
-        if k != Ctn::Tail {
-            self.push_operands(1);
-            self.emit_ctn(k);
-        }
-        Ok(())
+    /// emitting the expression for the arguments, in reverse order, and
+    /// finally the function itself.
+    fn emit_apply(&mut self) {
+        self.emit(op::APPLY);
     }
 
     /// Emit the branching instruction for an `if` expression.
@@ -202,7 +166,6 @@ impl<'e, 'h> Emitter<'e, 'h> {
         self.emit(op::JUMP_IF_FALSE);
         let patch = Patch(self.code.insns.len());
         self.code.insns.push(PATCH_MARK);
-        self.pop_operands(1);
         patch
     }
 
@@ -215,11 +178,16 @@ impl<'e, 'h> Emitter<'e, 'h> {
         patch
     }
 
-    /// Patch a previous jump instruction so that it jumps to the present point
-    /// in the code.
+    /// Patch a previous JUMP, JUMP_IF_FALSE, or FRAME instruction so that it
+    /// refers to the present point in the code.
     fn patch_jump_to_here(&mut self, patch: Patch) -> Result<()> {
         let there = patch.0;
         assert_eq!(self.code.insns.get(there), PATCH_MARK);
+        assert!(match self.code.insns.get(there - 1) {
+            op::JUMP | op::JUMP_IF_FALSE | op::FRAME => true,
+            _ => false,
+        });
+
         let here = self.code.insns.len();
         let jump = here - there;
         if jump >= PATCH_MARK as usize {
@@ -236,7 +204,6 @@ impl<'e, 'h> Emitter<'e, 'h> {
         self.code.constants.push(Value::Symbol(GcLeaf::new(id)));
         self.emit(op::DEFINE);
         self.write_usize(index)?;
-        self.pop_operands(1);
         Ok(())
     }
 
@@ -246,7 +213,6 @@ impl<'e, 'h> Emitter<'e, 'h> {
         self.emit(op::SET_STATIC);
         self.write_usize(up_count)?;
         self.write_usize(index)?;
-        self.pop_operands(1);
         Ok(())
     }
 
@@ -256,7 +222,6 @@ impl<'e, 'h> Emitter<'e, 'h> {
         self.code.constants.push(Value::Symbol(GcLeaf::new(id)));
         self.emit(op::SET_DYNAMIC);
         self.write_usize(index)?;
-        self.pop_operands(1);
         Ok(())
     }
 
@@ -275,16 +240,9 @@ impl<'e, 'h> Emitter<'e, 'h> {
 
     /// This is called immediately after emitting some code to compute a value.
     /// It's used to dispose of that value properly.
-    ///
-    /// Most of the time, the continuation is Single: subsequent instructions
-    /// expect a single value, and they'll look for it on the operand stack,
-    /// which is exactly where previous instructions put it. So in that case we
-    /// don't have to do anything here.
     fn emit_ctn(&mut self, k: Ctn) {
-        match k {
-            Ctn::Ignore => self.emit_pop(), // discard the value
-            Ctn::Single => {} // do nothing, leave the value on the operand stack
-            Ctn::Tail => self.emit_return(), // non-call expression in tail position
+        if k == Ctn::Tail {
+            self.emit_return();
         }
     }
 
@@ -450,11 +408,9 @@ impl<'e, 'h> Emitter<'e, 'h> {
         let (cond, rest) = tail.as_pair("(if) with no arguments")?;
         self.compile_expr(senv, cond, Ctn::Single)?;
         let jif_patch = self.emit_jump_if_false();
-        let depth_after_branch = self.operand_depth;
 
         let (then_expr, rest) = rest.as_pair("missing arguments after (if COND)")?;
         self.compile_expr(senv, then_expr, k)?;
-        let depth_on_join = self.operand_depth;
         let j_patch = if k == Ctn::Tail {
             // We already emitted a Return or TailCall. Don't
             // bother emitting an unreachable jump.
@@ -468,7 +424,6 @@ impl<'e, 'h> Emitter<'e, 'h> {
         };
         self.patch_jump_to_here(jif_patch)?;
 
-        self.operand_depth = depth_after_branch;
         if rest.is_nil() {
             self.emit_unspecified(k)?;
         } else {
@@ -479,7 +434,6 @@ impl<'e, 'h> Emitter<'e, 'h> {
             self.compile_expr(senv, else_expr, k)?
         };
         if let Some(patch) = j_patch {
-            assert_eq!(self.operand_depth, depth_on_join);
             self.patch_jump_to_here(patch)?;
         }
         Ok(())
@@ -540,12 +494,27 @@ impl<'e, 'h> Emitter<'e, 'h> {
         expr: Value<'h>,
         k: Ctn,
     ) -> Result<()> {
-        let mut elements = 0;
-        for v in expr {
-            self.compile_expr(senv, v?, Ctn::Single)?;
-            elements += 1; // adds 1 for the callee, not just arguments
+        let elements = expr.collect::<Result<Vec<Value<'h>>>>()?;
+
+        // Emit instruction to reify the current continuation.
+        let frame_insn = match k {
+            Ctn::Tail => None,
+            _ => Some(self.emit_frame())
+        };
+
+        // Compute the arguments, in reverse order, then the callee.
+        for i in (1..elements.len()).rev() {
+            self.compile_expr(senv, elements[i].clone(), Ctn::Single)?;
+            self.emit_argument();
         }
-        self.emit_call(elements - 1, k) // subtract 1 to compensate for that
+        self.compile_expr(senv, elements[0].clone(), Ctn::Single)?;
+
+        // Emit the call. Backpatch the previous FRAME instruction, if any.
+        self.emit_apply();
+        if let Some(patch) = frame_insn {
+            self.patch_jump_to_here(patch)?;
+        }
+        Ok(())
     }
 
     pub fn compile_expr(
@@ -707,21 +676,10 @@ impl<'h> CodeRef<'h> {
             let op = insns.get(pc);
             pc += 1;
             match op {
-                op::RETURN => {
-                    println!("return")
-                }
-                op::POP => {
-                    println!("pop")
-                }
                 op::CONSTANT => {
                     let i = insns.get(pc) as usize;
                     pc += 1;
                     println!("constant {}  ;; {}", i, constants.get(i));
-                }
-                op::GET_DYNAMIC => {
-                    let i = insns.get(pc) as usize;
-                    pc += 1;
-                    println!("get_dynamic {}  ;; {}", i, constants.get(i));
                 }
                 op::GET_STATIC => {
                     let up_count = insns.get(pc) as usize;
@@ -730,35 +688,10 @@ impl<'h> CodeRef<'h> {
                     pc += 1;
                     println!("get_static {} {}  ;; {}", up_count, i, senv.get_name(up_count, i).as_str());
                 }
-                op::LAMBDA => {
+                op::GET_DYNAMIC => {
                     let i = insns.get(pc) as usize;
                     pc += 1;
-                    println!("lambda {}", i);
-                }
-                op::CALL => {
-                    let argc = insns.get(pc) as usize;
-                    pc += 1;
-                    println!("call {}", argc);
-                }
-                op::TAIL_CALL => {
-                    let argc = insns.get(pc) as usize;
-                    pc += 1;
-                    println!("tail_call {}", argc);
-                }
-                op::JUMP_IF_FALSE => {
-                    let distance = insns.get(pc) as usize;
-                    println!("jump_if_false +{}  ;; to {}", distance, pc + distance);
-                    pc += 1;
-                }
-                op::JUMP => {
-                    let distance = insns.get(pc) as usize;
-                    println!("jump +{}  ;; to {}", distance, pc + distance);
-                    pc += 1;
-                }
-                op::DEFINE => {
-                    let i = insns.get(pc) as usize;
-                    pc += 1;
-                    println!("define {}  ;; {}", i, constants.get(i));
+                    println!("get_dynamic {}  ;; {}", i, constants.get(i));
                 }
                 op::SET_STATIC => {
                     let up_count = insns.get(pc) as usize;
@@ -771,6 +704,35 @@ impl<'h> CodeRef<'h> {
                     let i = insns.get(pc) as usize;
                     pc += 1;
                     println!("set_dynamic {}  ;; {}", i, constants.get(i));
+                }
+                op::LAMBDA => {
+                    let i = insns.get(pc) as usize;
+                    pc += 1;
+                    println!("lambda {}", i);
+                }
+                op::FRAME => {
+                    let distance = insns.get(pc) as usize;
+                    println!("frame +{}  ;; to {}", distance, pc + distance);
+                    pc += 1;
+                }
+                op::ARGUMENT => {
+                    println!("argument");
+                }
+                op::APPLY => {
+                    println!("apply");
+                }
+                op::RETURN => {
+                    println!("return");
+                }
+                op::JUMP_IF_FALSE => {
+                    let distance = insns.get(pc) as usize;
+                    println!("jump_if_false +{}  ;; to {}", distance, pc + distance);
+                    pc += 1;
+                }
+                op::JUMP => {
+                    let distance = insns.get(pc) as usize;
+                    println!("jump +{}  ;; to {}", distance, pc + distance);
+                    pc += 1;
                 }
                 op::PUSH_ENV => {
                     let i = insns.get(pc) as usize;
@@ -786,6 +748,11 @@ impl<'h> CodeRef<'h> {
                 op::POP_ENV => {
                     senv = senv.parent().unwrap();
                     println!("pop_env");
+                }
+                op::DEFINE => {
+                    let i = insns.get(pc) as usize;
+                    pc += 1;
+                    println!("define {}  ;; {}", i, constants.get(i));
                 }
                 _ => {
                     println!("invalid opcode {}", op);

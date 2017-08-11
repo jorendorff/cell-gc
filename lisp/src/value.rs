@@ -12,8 +12,7 @@ use std::hash::{Hash, Hasher};
 use std::mem;
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{ATOMIC_USIZE_INIT, AtomicUsize, Ordering};
-use std::vec;
-use vm::Trampoline;
+use vm::FrameRef;
 
 #[derive(Debug, IntoHeap)]
 pub struct Pair<'h> {
@@ -43,12 +42,13 @@ pub enum Value<'h> {
     Cons(PairRef<'h>),
     Vector(VecRef<'h, Value<'h>>),
     Environment(EnvironmentRef<'h>),
+    Continuation(Option<FrameRef<'h>>),
 }
 
 use self::Value::*;
 
-pub type BuiltinFn = for<'b> fn(&mut GcHeapSession<'b>, Vec<Value<'b>>)
-    -> Result<Trampoline<'b>>;
+pub type BuiltinFn = for<'b> fn(&mut GcHeapSession<'b>, Value<'b>, Option<FrameRef<'b>>)
+    -> Result<(Value<'b>, Option<FrameRef<'b>>)>;
 
 #[derive(Copy)]
 pub struct BuiltinFnPtr(pub BuiltinFn);
@@ -203,6 +203,10 @@ impl<'h> Value<'h> {
     pattern_getter!(as_pair, "pair", (Value<'h>, Value<'h>),
                     Cons(r) => (r.car(), r.cdr()));
 
+    pub fn cons(hs: &mut GcHeapSession<'h>, car: Value<'h>, cdr: Value<'h>) -> Value<'h> {
+        Value::Cons(hs.alloc(Pair { car, cdr }))
+    }
+
     pattern_predicate!(is_vector, Vector(_));
     pattern_getter!(as_vector, "vector", VecRef<'h, Value<'h>>,
                     Vector(v) => v);
@@ -216,9 +220,15 @@ impl<'h> Value<'h> {
                     ImmString(s) => s.unwrap().0,
                     StringObj(s) => s.unwrap().0);
 
-    pattern_predicate!(is_procedure, Lambda(_) | Builtin(_));
+    pattern_predicate!(is_procedure, Lambda(_) | Builtin(_) | Continuation(_));
     pattern_getter!(as_environment, "environment", EnvironmentRef<'h>,
                     Environment(env) => env);
+
+    pub fn steal(&mut self) -> Value<'h> {
+        let mut v = Value::Unspecified;
+        mem::swap(&mut v, self);
+        v
+    }
 
     fn print(&self, f: &mut fmt::Formatter, display: bool, seen: &mut HashSet<Value<'h>>)
         -> fmt::Result
@@ -261,6 +271,7 @@ impl<'h> Value<'h> {
                     write!(f, "{:?}", s.as_str())
                 },
             Lambda(_) => write!(f, "#lambda"),
+            Continuation(_) => write!(f, "#lambda"),
             Code(_) => write!(f, "#code"),
             Builtin(_) => write!(f, "#builtin"),
             Cons(ref p) => {
@@ -417,9 +428,9 @@ impl Borrow<str> for InternedString {
 pub trait ArgType<'h>: Sized {
     fn try_unpack(proc_name: &str, value: Value<'h>) -> Result<Self>;
 
-    fn unpack_argument(proc_name: &str, iter: &mut vec::IntoIter<Value<'h>>) -> Result<Self> {
+    fn unpack_argument(proc_name: &str, iter: &mut Value<'h>) -> Result<Self> {
         match iter.next() {
-            Some(val) => Self::try_unpack(proc_name, val),
+            Some(val) => Self::try_unpack(proc_name, val?),
             None => Err(format!("{}: not enough arguments", proc_name).into()),
         }
     }
@@ -432,21 +443,21 @@ impl<'h, T: ArgType<'h>> ArgType<'h> for Option<T> {
         Ok(Some(T::try_unpack(proc_name, value)?))
     }
 
-    fn unpack_argument(proc_name: &str, iter: &mut vec::IntoIter<Value<'h>>) -> Result<Self> {
+    fn unpack_argument(proc_name: &str, iter: &mut Value<'h>) -> Result<Self> {
         match iter.next() {
             None => Ok(None),
-            Some(v) => Self::try_unpack(proc_name, v)
+            Some(v) => Self::try_unpack(proc_name, v?)
         }
     }
 }
 
 /// Used with the `builtins!` macro to handle variadic functions. The `Rest`
 /// value is an iterator over "the rest" of the arguments passed.
-pub struct Rest<'h>(pub vec::IntoIter<Value<'h>>);
+pub struct Rest<'h>(Value<'h>);
 
 impl<'h> Iterator for Rest<'h> {
-    type Item = Value<'h>;
-    fn next(&mut self) -> Option<Value<'h>> {
+    type Item = Result<Value<'h>>;
+    fn next(&mut self) -> Option<Result<Value<'h>>> {
         self.0.next()
     }
 }
@@ -456,10 +467,10 @@ impl<'h> ArgType<'h> for Rest<'h> {
         Err(format!("{}: &rest is not a scheme type", proc_name).into())
     }
 
-    fn unpack_argument(_proc_name: &str, iter: &mut vec::IntoIter<Value<'h>>) -> Result<Self> {
-        let mut out = vec![].into_iter();
-        mem::swap(&mut out, iter);
-        Ok(Rest(out))
+    fn unpack_argument(_proc_name: &str, iter: &mut Value<'h>) -> Result<Self> {
+        let mut rest = Value::Nil;
+        mem::swap(iter, &mut rest);
+        Ok(Rest(rest))
     }
 }
 
@@ -519,77 +530,69 @@ impl<'h> ArgType<'h> for EnvironmentRef<'h> {
 
 
 pub trait RetType<'h> {
-    fn pack(self, hs: &mut GcHeapSession<'h>) -> Result<Trampoline<'h>>;
+    fn pack(self, hs: &mut GcHeapSession<'h>) -> Result<Value<'h>>;
 }
 
 impl<'h> RetType<'h> for Value<'h> {
-    fn pack(self, _hs: &mut GcHeapSession<'h>) -> Result<Trampoline<'h>> {
-        Ok(Trampoline::Value(self))
+    fn pack(self, _hs: &mut GcHeapSession<'h>) -> Result<Value<'h>> {
+        Ok(self)
     }
 }
 
 impl<'h, T: RetType<'h>> RetType<'h> for Result<T> {
-    fn pack(self, hs: &mut GcHeapSession<'h>) -> Result<Trampoline<'h>> {
+    fn pack(self, hs: &mut GcHeapSession<'h>) -> Result<Value<'h>> {
         self.and_then(|x| <T as RetType<'h>>::pack(x, hs))
     }
 }
 
 impl<'h> RetType<'h> for bool {
-    fn pack(self, _hs: &mut GcHeapSession<'h>) -> Result<Trampoline<'h>> {
-        Ok(Trampoline::Value(Value::Bool(self)))
+    fn pack(self, _hs: &mut GcHeapSession<'h>) -> Result<Value<'h>> {
+        Ok(Value::Bool(self))
     }
 }
 
 impl<'h> RetType<'h> for char {
-    fn pack(self, _hs: &mut GcHeapSession<'h>) -> Result<Trampoline<'h>> {
-        Ok(Trampoline::Value(Value::Char(self)))
+    fn pack(self, _hs: &mut GcHeapSession<'h>) -> Result<Value<'h>> {
+        Ok(Value::Char(self))
     }
 }
 
 impl<'h> RetType<'h> for i32 {
-    fn pack(self, _hs: &mut GcHeapSession<'h>) -> Result<Trampoline<'h>> {
-        Ok(Trampoline::Value(Value::Int(self)))
+    fn pack(self, _hs: &mut GcHeapSession<'h>) -> Result<Value<'h>> {
+        Ok(Value::Int(self))
     }
 }
 
 impl<'h> RetType<'h> for usize {
-    fn pack(self, _hs: &mut GcHeapSession<'h>) -> Result<Trampoline<'h>> {
+    fn pack(self, _hs: &mut GcHeapSession<'h>) -> Result<Value<'h>> {
         if self > i32::max_value() as usize {
             return Err("string-length: integer overflow".into());
         }
-        Ok(Trampoline::Value(Value::Int(self as i32)))
+        Ok(Value::Int(self as i32))
     }
 }
 
 impl<'h> RetType<'h> for String {
-    fn pack(self, _hs: &mut GcHeapSession<'h>) -> Result<Trampoline<'h>> {
-        Ok(Trampoline::Value(
-            StringObj(GcLeaf::new(NonInternedStringObject(Arc::new(self)))),
-        ))
+    fn pack(self, _hs: &mut GcHeapSession<'h>) -> Result<Value<'h>> {
+        Ok(Value::StringObj(GcLeaf::new(NonInternedStringObject(Arc::new(self)))))
     }
 }
 
 impl<'h> RetType<'h> for PairRef<'h> {
-    fn pack(self, _hs: &mut GcHeapSession<'h>) -> Result<Trampoline<'h>> {
-        Ok(Trampoline::Value(Value::Cons(self)))
+    fn pack(self, _hs: &mut GcHeapSession<'h>) -> Result<Value<'h>> {
+        Ok(Value::Cons(self))
     }
 }
 
 impl<'h> RetType<'h> for Vec<Value<'h>> {
-    fn pack(self, hs: &mut GcHeapSession<'h>) -> Result<Trampoline<'h>> {
-        Ok(Trampoline::Value(Value::Vector(hs.alloc(self))))
+    fn pack(self, hs: &mut GcHeapSession<'h>) -> Result<Value<'h>> {
+        Ok(Value::Vector(hs.alloc(self)))
     }
 }
 
 impl<'h> RetType<'h> for () {
-    fn pack(self, _hs: &mut GcHeapSession<'h>) -> Result<Trampoline<'h>> {
-        Ok(Trampoline::Value(Value::Unspecified))
-    }
-}
-
-impl<'h> RetType<'h> for Trampoline<'h> {
-    fn pack(self, _hs: &mut GcHeapSession<'h>) -> Result<Trampoline<'h>> {
-        Ok(self)
+    fn pack(self, _hs: &mut GcHeapSession<'h>) -> Result<Value<'h>> {
+        Ok(Value::Unspecified)
     }
 }
 
