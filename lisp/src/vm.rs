@@ -6,7 +6,6 @@ use compile::{op, CodeRef};
 use env::{Environment, EnvironmentRef};
 use errors::Result;
 use value::{Pair, Value};
-use value::Value::*;
 
 /// A potentially partially evaluated value.
 pub enum Trampoline<'h> {
@@ -43,14 +42,14 @@ pub fn apply<'h>(
     mut args: Vec<Value<'h>>,
 ) -> Result<Trampoline<'h>> {
     match fval {
-        Builtin(f) => (f.0)(hs, args),
-        Lambda(pair) => {
+        Value::Builtin(f) => (f.0)(hs, args),
+        Value::Lambda(pair) => {
             let code = match pair.car() {
-                Code(code) => code,
+                Value::Code(code) => code,
                 _ => panic!("internal error: bad lambda"),
             };
             let parent = Some(match pair.cdr() {
-                Environment(pe) => pe,
+                Value::Environment(pe) => pe,
                 _ => panic!("internal error: bad lambda"),
             });
             let senv = code.environments().get(0);
@@ -63,9 +62,9 @@ pub fn apply<'h>(
                 return Err("apply: not enough arguments".into());
             }
             if has_rest {
-                let mut rest_list = Nil;
+                let mut rest_list = Value::Nil;
                 for v in args.drain(n_required_params..).rev() {
-                    rest_list = Cons(hs.alloc(Pair {
+                    rest_list = Value::Cons(hs.alloc(Pair {
                         car: v,
                         cdr: rest_list,
                     }));
