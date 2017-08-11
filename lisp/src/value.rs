@@ -37,7 +37,7 @@ pub enum Value<'h> {
     Environment(EnvironmentRef<'h>),
 }
 
-pub use self::Value::*;
+use self::Value::*;
 
 pub type BuiltinFn = for<'b> fn(&mut GcHeapSession<'b>, Vec<Value<'b>>)
     -> Result<Trampoline<'b>>;
