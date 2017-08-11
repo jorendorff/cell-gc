@@ -118,11 +118,39 @@ fn write_pair<'h>(
 }
 
 macro_rules! pattern_predicate {
-    { $method:ident, $pat:pat } => {
+    { $method:ident, $pat0:pat $( | $pat1:pat )* } => {
         pub fn $method(&self) -> bool {
             match *self {
-                $pat => true,
+                $pat0 $( | $pat1 )* => true,
                 _ => false
+            }
+        }
+    }
+}
+
+macro_rules! pattern_getter_by_ref {
+    {
+        $method:ident, $type_name:expr, $type:ty,
+        $pattern:pat => $value:expr
+    } => {
+        pub fn $method(&self, error_msg: &str) -> Result<$type> {
+            match *self {
+                $pattern => Ok($value),
+                _ => Err(format!("{}: {} required", error_msg, $type_name).into()),
+            }
+        }
+    }
+}
+
+macro_rules! pattern_getter {
+    {
+        $method:ident, $type_name:expr, $type:ty,
+        $( $pattern:pat => $value:expr ),*
+    } => {
+        pub fn $method(self, error_msg: &str) -> Result<$type> {
+            match self {
+                $( $pattern => Ok($value), )*
+                _ => Err(format!("{}: {} required", error_msg, $type_name).into()),
             }
         }
     }
@@ -131,14 +159,9 @@ macro_rules! pattern_predicate {
 impl<'h> Value<'h> {
     pattern_predicate!(is_unspecified, Unspecified);
     pattern_predicate!(is_nil, Nil);
-    pattern_predicate!(is_boolean, Bool(_));
 
-    pub fn as_boolean(self, error_msg: &str) -> Result<bool> {
-        match self {
-            Bool(b) => Ok(b),
-            _ => Err(format!("{}: boolean required", error_msg).into()),
-        }
-    }
+    pattern_predicate!(is_boolean, Bool(_));
+    pattern_getter_by_ref!(as_boolean, "boolean", bool, Bool(b) => b);
 
     /// True unless this value is `#f`. Conditional expressions (`if`, `cond`,
     /// etc.) should use this to check whether a value is a "true value".
@@ -150,99 +173,46 @@ impl<'h> Value<'h> {
     }
 
     pattern_predicate!(is_char, Char(_));
-
-    pub fn as_char(self, error_msg: &str) -> Result<char> {
-        match self {
-            Char(c) => Ok(c),
-            _ => Err(format!("{}: character required", error_msg).into()),
-        }
-    }
+    pattern_getter_by_ref!(as_char, "character", char, Char(c) => c);
 
     pattern_predicate!(is_number, Int(_));
+    pattern_getter_by_ref!(as_int, "integer", i32, Int(i) => i);
 
-    pub fn as_int(self, error_msg: &str) -> Result<i32> {
-        match self {
-            Int(i) => Ok(i),
-            _ => Err(format!("{}: number required", error_msg).into()),
-        }
-    }
-
-    pub fn as_index(self, error_msg: &str) -> Result<usize> {
-        match self {
+    pub fn as_index(&self, error_msg: &str) -> Result<usize> {
+        match *self {
             Int(i) => {
                 if i >= 0 {
                     Ok(i as usize)
                 } else {
-                    Err(format!("{}: negative vector index", error_msg).into())
+                    Err(format!("{}: index can't be negative", error_msg).into())
                 }
             }
-            _ => Err(format!("{}: vector index required", error_msg).into()),
+            _ => Err(format!("{}: index required", error_msg).into()),
         }
     }
 
     pattern_predicate!(is_pair, Cons(_));
-
-    pub fn as_pair_ref(self, error_msg: &str) -> Result<PairRef<'h>> {
-        match self {
-            Cons(r) => Ok(r),
-            _ => Err(format!("{}: pair required", error_msg).into()),
-        }
-    }
-
-    pub fn as_pair(self, error_msg: &str) -> Result<(Value<'h>, Value<'h>)> {
-        match self {
-            Cons(r) => Ok((r.car(), r.cdr())),
-            _ => Err(format!("{}: pair required", error_msg).into()),
-        }
-    }
+    pattern_getter!(as_pair_ref, "pair", PairRef<'h>,
+                    Cons(r) => r);
+    pattern_getter!(as_pair, "pair", (Value<'h>, Value<'h>),
+                    Cons(r) => (r.car(), r.cdr()));
 
     pattern_predicate!(is_vector, Vector(_));
-
-    pub fn as_vector(self, error_msg: &str) -> Result<VecRef<'h, Value<'h>>> {
-        match self {
-            Vector(v) => Ok(v),
-            _ => Err(format!("{}: vector expected", error_msg).into()),
-        }
-    }
+    pattern_getter!(as_vector, "vector", VecRef<'h, Value<'h>>,
+                    Vector(v) => v);
 
     pattern_predicate!(is_symbol, Symbol(_));
+    pattern_getter!(as_symbol, "symbol", InternedString,
+                    Symbol(s) => s.unwrap());
 
-    pub fn as_symbol(self, error_msg: &str) -> Result<InternedString> {
-        match self {
-            Symbol(s) => Ok(s.unwrap()),
-            _ => Err(format!("{}: symbol required", error_msg).into()),
-        }
-    }
+    pattern_predicate!(is_string, ImmString(_) | StringObj(_));
+    pattern_getter!(as_string, "string", Arc<String>,
+                    ImmString(s) => s.unwrap().0,
+                    StringObj(s) => s.unwrap().0);
 
-    pub fn is_string(&self) -> bool {
-        match *self {
-            ImmString(_) | StringObj(_) => true,
-            _ => false,
-        }
-    }
-
-    pub fn as_string(self, error_msg: &str) -> Result<Arc<String>> {
-        match self {
-            ImmString(s) => Ok(s.unwrap().0),
-            StringObj(s) => Ok(s.unwrap().0),
-            _ => Err(format!("{}: string required", error_msg).into()),
-        }
-    }
-
-    pub fn is_procedure(&self) -> bool {
-        match *self {
-            Lambda(_) => true,
-            Builtin(_) => true,
-            _ => false,
-        }
-    }
-
-    pub fn as_environment(self, error_msg: &str) -> Result<EnvironmentRef<'h>> {
-        match self {
-            Environment(env) => Ok(env),
-            _ => Err(format!("{}: environment required", error_msg).into()),
-        }
-    }
+    pattern_predicate!(is_procedure, Lambda(_) | Builtin(_));
+    pattern_getter!(as_environment, "environment", EnvironmentRef<'h>,
+                    Environment(env) => env);
 
     fn print(&self, f: &mut fmt::Formatter, display: bool, seen: &mut HashSet<Value<'h>>)
         -> fmt::Result
