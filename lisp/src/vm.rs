@@ -5,7 +5,7 @@ use cell_gc::collections::VecRef;
 use compile::{op, CodeRef};
 use env::{Environment, EnvironmentRef};
 use errors::Result;
-use value::{Pair, Value};
+use value::{Lambda, Pair, Value};
 
 /// A potentially partially evaluated value.
 pub enum Trampoline<'h> {
@@ -43,15 +43,9 @@ pub fn apply<'h>(
 ) -> Result<Trampoline<'h>> {
     match fval {
         Value::Builtin(f) => (f.0)(hs, args),
-        Value::Lambda(pair) => {
-            let code = match pair.car() {
-                Value::Code(code) => code,
-                _ => panic!("internal error: bad lambda"),
-            };
-            let parent = Some(match pair.cdr() {
-                Value::Environment(pe) => pe,
-                _ => panic!("internal error: bad lambda"),
-            });
+        Value::Lambda(lambda) => {
+            let code = lambda.code();
+            let parent = lambda.env();
             let senv = code.environments().get(0);
             let names = senv.names();
             let n_names = names.len();
@@ -75,7 +69,7 @@ pub fn apply<'h>(
             }
 
             let values = hs.alloc(args);
-            let env = Environment::new(hs, parent, senv, values);
+            let env = Environment::new(hs, Some(parent), senv, values);
             eval_compiled_to_tail_call(hs, &env, code)
         }
         _ => Err("apply: not a function".into()),
@@ -137,10 +131,13 @@ pub fn eval_compiled_to_tail_call<'h>(
             op::LAMBDA => {
                 let i = insns.get(pc) as usize;
                 pc += 1;
-                let fn_code = constants.get(i);
-                let fn_value = Value::Lambda(hs.alloc(Pair {
-                    car: fn_code,
-                    cdr: Value::Environment(env.clone()),
+                let fn_code = match constants.get(i) {
+                    Value::Code(code) => code,
+                    _ => panic!("internal error: bad Lambda insn"),
+                };
+                let fn_value = Value::Lambda(hs.alloc(Lambda {
+                    code: fn_code,
+                    env: env.clone(),
                 }));
                 operands.push(fn_value);
             }

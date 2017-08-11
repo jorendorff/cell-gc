@@ -502,13 +502,9 @@ builtins! {
     }
 
     fn dis "dis" <'h>(_hs, expr: Value<'h>) -> Result<()> {
-        if let Lambda(pair) = expr {
-            if let Code(code) = pair.car() {
-                code.dump();
-                Ok(())
-            } else {
-                Err("bad lambda".into())
-            }
+        if let Lambda(lambda) = expr {
+            lambda.code().dump();
+            Ok(())
         } else {
             Err("not a lambda".into())
         }

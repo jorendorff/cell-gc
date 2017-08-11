@@ -21,6 +21,12 @@ pub struct Pair<'h> {
     pub cdr: Value<'h>,
 }
 
+#[derive(Debug, IntoHeap)]
+pub struct Lambda<'h> {
+    pub code: compile::CodeRef<'h>,
+    pub env: EnvironmentRef<'h>,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash, IntoHeap)]
 pub enum Value<'h> {
     Unspecified,
@@ -31,7 +37,7 @@ pub enum Value<'h> {
     Symbol(GcLeaf<InternedString>),
     StringObj(GcLeaf<NonInternedStringObject>),
     ImmString(GcLeaf<InternedString>),
-    Lambda(PairRef<'h>),
+    Lambda(LambdaRef<'h>),
     Code(compile::CodeRef<'h>),
     Builtin(GcLeaf<BuiltinFnPtr>),
     Cons(PairRef<'h>),

@@ -3,7 +3,7 @@
 use cell_gc::{GcHeapSession, GcLeaf};
 use cell_gc::collections::VecRef;
 use errors::Result;
-use value::{InternedString, Pair, Value};
+use value::{InternedString, Lambda, Value};
 use vm;
 
 #[derive(IntoHeap)]
@@ -212,8 +212,5 @@ pub fn constant_proc<'h>(hs: &mut GcHeapSession<'h>, k: Value<'h>) -> Value<'h> 
         rest: false,
         operands_max: 1,
     });
-    Value::Lambda(hs.alloc(Pair {
-        car: Value::Code(code),
-        cdr: Value::Environment(env),
-    }))
+    Value::Lambda(hs.alloc(Lambda { code, env }))
 }
