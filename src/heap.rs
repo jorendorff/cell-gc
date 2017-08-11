@@ -78,6 +78,7 @@ use marking::{MarkingTracer, mark};
 use pages::{self, PageSet, PageSetRef, TypeId, TypedPage, UninitializedAllocation, heap_type_id};
 use ptr::{Pointer, UntypedPointer};
 use signposts;
+use std::cmp;
 use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::mem;
@@ -108,14 +109,21 @@ pub struct GcHeap {
 
     /// Used to trigger periodic garbage collection.
     ///
-    /// This counter's starting value is `GC_COUNTER_START`. Roughly every
-    /// time a page becomes full (i.e. the last chunk of memory within the page
-    /// is allocated), the counter is decremented. When it hits zero, we do a
-    /// full mark and sweep and reset the counter.
-    ///
-    /// (This scheduling strategy is dumb and could be improved with a little
-    /// effort.)
+    /// This counter's starting value is `GC_COUNTER_START`. On each allocation,
+    /// the counter is decremented. When it hits zero, we do a full mark and
+    /// sweep and reset the counter to some new value based on the heap's
+    /// current size, `self.alloc_counter`.
     gc_counter: usize,
+
+    /// The number of objects allocated in the heap.
+    ///
+    /// This counter is incremented by one on every allocation, and decremented
+    /// after sweeping by the reported number of objects swept.
+    ///
+    /// This counter and the `self.gc_counter` are used together to schedule GCs
+    /// when the heap grows beyond a certain factor in size. Currently this
+    /// factor is about 1.5x, see `Heap::gc`.
+    alloc_counter: usize,
 }
 
 unsafe impl Send for GcHeap {}
@@ -148,8 +156,9 @@ where
     GcHeap::new().enter(f)
 }
 
-/// See `Heap::gc_counter`.
+/// See `Heap::gc_counter` and `Heap::alloc_counter`.
 const GC_COUNTER_START: usize = 2048;
+const MIN_ALLOCS_BEFORE_GC: usize = GC_COUNTER_START;
 
 impl GcHeap {
     /// Create a new, empty heap.
@@ -159,6 +168,7 @@ impl GcHeap {
             marking_tracer: Some(MarkingTracer::default()),
             dropped_frozen_ptrs: Arc::new(Mutex::new(Vec::new())),
             gc_counter: GC_COUNTER_START,
+            alloc_counter: 0,
         }
     }
 
@@ -290,13 +300,24 @@ impl GcHeap {
         mark(self);
 
         let _sp = signposts::Sweeping::new();
+
+        let mut num_swept = 0;
         for page_set in self.page_sets.values_mut() {
             unsafe {
-                page_set.sweep();
+                num_swept += page_set.sweep();
             }
         }
 
-        self.gc_counter = GC_COUNTER_START;
+        assert!(
+            num_swept <= self.alloc_counter,
+            "Should never have sweep more objects than are currently allocated"
+        );
+        self.alloc_counter -= num_swept;
+
+        // Schedule a GC for when the heap reaches 1.5x its current size. Unless
+        // the heap is really small, in which case we don't want to set the gc
+        // counter get to some ridiculously low number.
+        self.gc_counter = cmp::max(self.alloc_counter / 2, MIN_ALLOCS_BEFORE_GC);
     }
 
     fn is_empty(&self) -> bool {
@@ -355,11 +376,16 @@ impl<'h> GcHeapSession<'h> {
     /// Safe as long as GC isn't currently happening and no
     /// `UninitializedAllocation`s already exist in this heap.
     unsafe fn try_fast_alloc<T: IntoHeapAllocation<'h>>(&mut self) -> Option<UninitializedAllocation<T::In>> {
+        self.heap.gc_counter.saturating_sub(1);
         self.get_page_set::<T>().try_fast_alloc()
+            .map(|p| {
+                self.heap.alloc_counter += 1;
+                p
+            })
     }
 
     fn try_slow_alloc<T: IntoHeapAllocation<'h>>(&mut self, value: T) -> Option<T::Ref> {
-        self.heap.gc_counter -= 1;
+        self.heap.gc_counter.saturating_sub(1);
         if self.heap.gc_counter == 0 {
             self.heap.gc();
         }
@@ -375,6 +401,7 @@ impl<'h> GcHeapSession<'h> {
                 }
             };
 
+            self.heap.alloc_counter += 1;
             let u = value.into_heap();
             let p = allocation.init(u);
             let gc_ref = T::wrap_gc_ref(GcRef::new(p));

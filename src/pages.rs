@@ -411,10 +411,12 @@ impl<U> TypedPage<U> {
         UninitializedAllocation { ptr }
     }
 
-    unsafe fn sweep(&mut self) -> bool {
+    /// Sweep this page and return the number of objects swept.
+    unsafe fn sweep(&mut self) -> usize {
+        let mut num_swept = 0;
+
         let mut addr = self.begin();
         let end = self.end();
-        let mut swept_any = false;
         while addr < end {
             let mw = &mut *(addr as *mut MarkWord);
             if mw.is_allocated() && !mw.is_marked() {
@@ -427,22 +429,22 @@ impl<U> TypedPage<U> {
                 }
                 mw.clear_allocated();
                 self.add_to_free_list(object_ptr);
-                swept_any = true;
+                num_swept += 1;
             }
             addr += Self::allocation_size();
         }
 
-        swept_any
+        num_swept
     }
 }
 
-/// Sweep a page.
+/// Sweep a page and return the number of objects swept.
 ///
 /// # Safety
 ///
 /// This must be called only after a full mark phase, to avoid sweeping objects
 /// that are still reachable.
-unsafe fn sweep_entry_point<'h, T: IntoHeapAllocation<'h>>(header: &mut PageHeader) -> bool {
+unsafe fn sweep_entry_point<'h, T: IntoHeapAllocation<'h>>(header: &mut PageHeader) -> usize {
     header.downcast_mut::<T>().expect("page header corrupted").sweep()
 }
 
@@ -452,7 +454,7 @@ unsafe fn sweep_entry_point<'h, T: IntoHeapAllocation<'h>>(header: &mut PageHead
 pub struct PageSet {
     heap: *mut GcHeap,
 
-    sweep_fn: unsafe fn(&mut PageHeader) -> bool,
+    sweep_fn: unsafe fn(&mut PageHeader) -> usize,
 
     /// Total number of pages in the following lists.
     page_count: usize,
@@ -568,15 +570,18 @@ impl PageSet {
         self.each_page_mut(|page| page.clear_mark_bits(roots));
     }
 
-    /// Sweep all unmarked objects from all pages.
+    /// Sweep all unmarked objects from all pages and return the number of
+    /// objects swept.
     ///
     /// # Safety
     ///
     /// Safe to call only as the final part of GC.
-    pub unsafe fn sweep(&mut self) {
+    pub unsafe fn sweep(&mut self) -> usize {
+        let mut num_swept = 0;
+
         // Sweep nonfull pages.
         each_page_mut(self.other_pages, |page| {
-            (self.sweep_fn)(page);
+            num_swept += (self.sweep_fn)(page);
         });
 
         // Sweep full pages. Much more complicated because we have to move
@@ -584,7 +589,9 @@ impl PageSet {
         let mut prev_page = &mut self.full_pages;
         let mut page = *prev_page;
         while !page.is_null() {
-            if (self.sweep_fn)(&mut *page) {
+            let num_swept_this_page = (self.sweep_fn)(&mut *page);
+            num_swept += num_swept_this_page;
+            if num_swept_this_page > 0 {
                 let next_page = (*page).next_page;
 
                 // remove from full list
@@ -600,6 +607,8 @@ impl PageSet {
                 page = *prev_page;
             }
         }
+
+        num_swept
     }
 
     /// True if nothing is allocated in this set of pages.
@@ -802,4 +811,3 @@ impl<U> Drop for UninitializedAllocation<U> {
         }
     }
 }
-
