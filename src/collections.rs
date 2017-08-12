@@ -6,8 +6,7 @@ use std::cmp::Ordering;
 use std::hash::{Hash, Hasher};
 use std::mem;
 use std::ops::Range;
-use traits::{IntoHeap, IntoHeapAllocation, IntoHeapBase, Tracer, TypeHash};
-use type_hash::PreComputedTypeHash;
+use traits::{IntoHeap, IntoHeapAllocation, IntoHeapBase, Tracer};
 
 impl<T: IntoHeapBase> IntoHeapBase for Vec<T> {
     type In = Vec<T::In>;
@@ -31,13 +30,6 @@ impl<T: IntoHeapBase> IntoHeapBase for Vec<T> {
 }
 
 unsafe impl<'h, T: IntoHeap<'h>> IntoHeap<'h> for Vec<T> {}
-
-impl<'h, T: IntoHeap<'h>> TypeHash for Vec<T> {
-    #[inline]
-    fn type_hash() -> PreComputedTypeHash {
-        PreComputedTypeHash::new(0x1bda898b137adb47)
-    }
-}
 
 impl<'h, T: IntoHeap<'h>> IntoHeapAllocation<'h> for Vec<T> {
     type Ref = VecRef<'h, T>;

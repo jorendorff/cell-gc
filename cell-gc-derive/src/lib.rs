@@ -4,12 +4,10 @@ extern crate proc_macro;
 extern crate syn;
 #[macro_use]
 extern crate quote;
-extern crate rand;
 
 use proc_macro::TokenStream;
 use syn::Ident;
 use quote::Tokens;
-use rand::Rng;
 
 #[proc_macro_derive(IntoHeap)]
 pub fn derive_into_heap(input: TokenStream) -> TokenStream {
@@ -228,20 +226,7 @@ fn impl_into_heap_for_struct(ast: &syn::DeriveInput, data: &syn::VariantData) ->
                 {}
             };
 
-            // 3. TypeHash implementation.
-            let hash = rand::thread_rng().gen::<u64>();
-            let type_hash_impl = quote! {
-                impl #impl_generics ::cell_gc::traits::TypeHash for #name #ty_generics
-                    #where_clause
-                {
-                    #[inline]
-                    fn type_hash() -> ::cell_gc::PreComputedTypeHash {
-                        ::cell_gc::PreComputedTypeHash::new(#hash)
-                    }
-                }
-            };
-
-            // 4. IntoHeapAllocation implementation.
+            // 3. IntoHeapAllocation implementation.
             let ref_type_name: Ident = Ident::from(name_str.to_string() + "Ref");
             let into_heap_allocation = quote! {
                 impl #impl_generics ::cell_gc::traits::IntoHeapAllocation<#heap_lifetime>
@@ -264,7 +249,7 @@ fn impl_into_heap_for_struct(ast: &syn::DeriveInput, data: &syn::VariantData) ->
                 }
             };
 
-            // 5. #ref_type_name: A safe reference to the struct
+            // 4. #ref_type_name: A safe reference to the struct
             let ref_type = quote! {
                 #[derive(Clone, Debug, PartialEq, Eq)]
                 #vis struct #ref_type_name #impl_generics
@@ -272,7 +257,7 @@ fn impl_into_heap_for_struct(ast: &syn::DeriveInput, data: &syn::VariantData) ->
                     #where_clause;
             };
 
-            // 6. The ref type also gets an IntoHeap impl...
+            // 5. The ref type also gets an IntoHeap impl...
             let ref_type_into_heap = quote! {
                 impl #impl_generics ::cell_gc::traits::IntoHeapBase
                     for #ref_type_name #ty_generics
@@ -303,7 +288,7 @@ fn impl_into_heap_for_struct(ast: &syn::DeriveInput, data: &syn::VariantData) ->
                 {}
             };
 
-            // 7. The ref type also hashes...
+            // 6. The ref type also hashes...
             let ref_type_hash = quote! {
                 impl #impl_generics ::std::hash::Hash for #ref_type_name #ty_generics
                     #where_clause
@@ -315,7 +300,7 @@ fn impl_into_heap_for_struct(ast: &syn::DeriveInput, data: &syn::VariantData) ->
                 }
             };
 
-            // 8. Getters and setters.
+            // 7. Getters and setters.
             let field_setter_names: Vec<_> = fields
                 .iter()
                 .map(|f| {
@@ -362,7 +347,6 @@ fn impl_into_heap_for_struct(ast: &syn::DeriveInput, data: &syn::VariantData) ->
             quote! {
                 #storage_struct
                 #into_heap
-                #type_hash_impl
                 #into_heap_allocation
                 #ref_type
                 #ref_type_into_heap

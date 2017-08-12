@@ -6,9 +6,9 @@
 use gc_leaf::GcLeaf;
 use gc_ref::GcRef;
 use ptr::Pointer;
+use std::any::Any;
 use std::hash::Hash;
 use std::marker::PhantomData;
-use type_hash::PreComputedTypeHash;
 
 /// Base trait for values that can be moved into a GC heap.
 pub trait IntoHeapBase: Sized {
@@ -41,7 +41,7 @@ pub trait IntoHeapBase: Sized {
     /// Users never get a direct `&` reference to any in-heap value. All access is
     /// through safe `IntoHeap` types, like the `Ref` type that is automatically
     /// declared for you when you use `#[derive(IntoHeap)]` on a struct or union.
-    type In: 'static;
+    type In: Any + 'static;
 
     /// Convert the value to the form it should have in the heap.
     /// This is for cell-gc to call.
@@ -135,18 +135,8 @@ pub trait IntoHeapBase: Sized {
 ///
 pub unsafe trait IntoHeap<'h>: IntoHeapBase {}
 
-/// A pre-computed hash for the `Self` type.
-pub trait TypeHash {
-    /// Get the hash.
-    ///
-    /// All implementors should mark this `#[inline]` so that the optimizer can
-    /// see that it is in fact a constant (you did make it a constant,
-    /// right?!?!??!).
-    fn type_hash() -> PreComputedTypeHash;
-}
-
 /// Types that can be allocated in the heap.
-pub trait IntoHeapAllocation<'h>: IntoHeap<'h> + TypeHash {
+pub trait IntoHeapAllocation<'h>: IntoHeap<'h> {
     /// The safe reference type that's returned when a value of this type is
     /// moved into the heap (i.e. when it's allocated).
     type Ref: Hash + IntoHeap<'h>;
@@ -185,12 +175,6 @@ macro_rules! gc_trivial_impl {
             #[inline] unsafe fn trace<R>(_storage: &$t, _tracer: &mut R) where R: Tracer {}
         }
         unsafe impl<'h> IntoHeap<'h> for $t {}
-        impl TypeHash for $t {
-            #[inline]
-            fn type_hash() -> PreComputedTypeHash {
-                PreComputedTypeHash::new($h)
-            }
-        }
         impl<'h> IntoHeapAllocation<'h> for $t {
             type Ref = GcRef<'h, Self>;
             #[inline] fn wrap_gc_ref(gc_ref: GcRef<'h, Self>) -> Self::Ref { gc_ref }
@@ -231,18 +215,6 @@ macro_rules! gc_generic_trivial_impl {
         gc_generic_trivial_impl! {
             @as_item
             unsafe impl<'h, $($x)*> IntoHeap<'h> for $t {}
-        }
-        gc_generic_trivial_impl! {
-            @as_item
-            impl<$($x)*> TypeHash for $t {
-                #[inline]
-                fn type_hash() -> PreComputedTypeHash {
-                    // It is unfortunate that Arc<usize> and Arc<f64> (more
-                    // generally, all instantiations of a particular generic
-                    // type) will have the same hash.
-                    PreComputedTypeHash::new($h)
-                }
-            }
         }
         gc_generic_trivial_impl! {
             @as_item
