@@ -81,6 +81,7 @@ use signposts;
 use std::any::TypeId;
 use std::cmp;
 use std::collections::HashMap;
+use std::hash::{Hasher, BuildHasher};
 use std::marker::PhantomData;
 use std::mem;
 use std::sync::{Arc, Mutex, Weak};
@@ -94,7 +95,7 @@ pub struct GcHeap {
     ///
     /// This owns the page sets, which own the pages. The cleanup when you drop
     /// a `GcHeap` is done by `PageSet::drop`.
-    page_sets: HashMap<TypeId, PageSet>,
+    page_sets: HashMap<TypeId, PageSet, BuildTrivialHasher>,
 
     /// Tracer for the mark phase of GC.
     marking_tracer: Option<MarkingTracer>,
@@ -166,7 +167,7 @@ impl GcHeap {
     /// Create a new, empty heap.
     pub fn new() -> GcHeap {
         GcHeap {
-            page_sets: HashMap::new(),
+            page_sets: HashMap::with_hasher(BuildTrivialHasher),
             marking_tracer: Some(MarkingTracer::default()),
             dropped_frozen_ptrs: Arc::new(Mutex::new(Vec::new())),
             gc_counter: GC_COUNTER_START,
@@ -467,3 +468,56 @@ impl<'h> GcHeapSession<'h> {
         self.heap.is_empty()
     }
 }
+
+
+// TrivialHasher ///////////////////////////////////////////////////////////////
+
+/// A hasher that does minimal work. This is used exclusively for hashing
+/// `TypeId` values in the map `GcHeap::page_sets`. It's measurably faster than
+/// the default hasher for this purpose.
+struct TrivialHasher {
+    state: u64
+}
+
+impl Hasher for TrivialHasher {
+    #[inline]
+    fn finish(&self) -> u64 {
+        // Mix the bits a little.
+        //
+        // TypeId hashing is undocumented. In Rust 1.21, it calls
+        // `.write_u64()`, always passing an even number.
+        //
+        // Whatever .finish() returns will be bitmasked and used as a hash
+        // table index without further ado. We're responsible for making sure
+        // each bit of that word has some entropy in it.
+        //
+        // The magic multiplicand here is an arbitrary 64-bit integer with the
+        // most and least significant bits set and a mix of zeros and ones;
+        // those properties maximize our tendency to spread whatever entropy we
+        // have in some bits of self.state throughout the output bits. Not bad,
+        // but there is a limit to the magic a single multiplication can work:
+        // since `self.state` is always even, the result is always even. So,
+        // shift the always-zero bit to someplace where it won't be used.
+        self.state.wrapping_mul(0xd171_35cf_f019_a245).rotate_right(8)
+    }
+
+    /// Unused. If the standard library implementation of Hash for TypeId
+    /// changes, we definitely want to know about it, so panic.
+    fn write(&mut self, _bytes: &[u8]) {
+        panic!("unexpected TypeId hashing");
+    }
+
+    fn write_u64(&mut self, u: u64) {
+        self.state = u;
+    }
+}
+
+struct BuildTrivialHasher;
+
+impl BuildHasher for BuildTrivialHasher {
+    type Hasher = TrivialHasher;
+    fn build_hasher(&self) -> TrivialHasher {
+        TrivialHasher { state: 0 }
+    }
+}
+
