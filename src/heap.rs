@@ -337,6 +337,16 @@ impl GcHeap {
     }
 }
 
+// GcHeap does not need its own destructor, since PageSet's destructor does all
+// the work; but when building with signposts, we want to measure how long this
+// takes.
+impl Drop for GcHeap {
+    fn drop(&mut self) {
+        let _sp = signposts::Dropping::new();
+        self.page_sets.clear();
+    }
+}
+
 impl<'h> GcHeapSession<'h> {
     fn get_page_set<'a, T: IntoHeapAllocation<'h> + 'a>(&'a mut self) -> PageSetRef<'a, 'h, T> {
         let key = pages::heap_type_id::<T>();

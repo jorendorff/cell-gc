@@ -32,3 +32,4 @@ macro_rules! define_signpost {
 
 define_signpost!(100, Marking);
 define_signpost!(200, Sweeping);
+define_signpost!(300, Dropping);
