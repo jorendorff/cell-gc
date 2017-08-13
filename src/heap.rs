@@ -324,10 +324,10 @@ impl GcHeap {
         );
         self.alloc_counter -= num_swept;
 
-        // Schedule a GC for when the heap reaches 1.5x its current size. Unless
+        // Schedule a GC for when the heap reaches 4x its current size. Unless
         // the heap is really small, in which case we don't want to set the gc
         // counter get to some ridiculously low number.
-        self.gc_counter = cmp::max(self.alloc_counter / 2, MIN_ALLOCS_BEFORE_GC);
+        self.gc_counter = cmp::max(self.alloc_counter * 3, MIN_ALLOCS_BEFORE_GC);
     }
 
     fn is_empty(&self) -> bool {
