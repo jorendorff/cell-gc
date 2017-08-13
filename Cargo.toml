@@ -24,7 +24,7 @@ compiletest_rs = "0.2"
 path = "lisp"
 
 [features]
-default-features = [ "signpost" ]
+default = [ "signpost" ]
 
 [profile.release]
 debug = true  # enable debug symbols in release builds
