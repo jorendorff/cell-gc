@@ -238,6 +238,3 @@ pub fn eval_compiled<'h>(
                "code can only run in the environment for which it was compiled");
     eval_compiled_to_tail_call(hs, env, code)?.eval(hs)
 }
-
-#[cfg(test)]
-include!("tests.rs");
