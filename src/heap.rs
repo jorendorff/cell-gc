@@ -396,7 +396,7 @@ impl<'h> GcHeapSession<'h> {
     /// Safe as long as GC isn't currently happening and no
     /// `UninitializedAllocation`s already exist in this heap.
     unsafe fn try_fast_alloc<T: IntoHeapAllocation<'h>>(&mut self) -> Option<UninitializedAllocation<T::In>> {
-        self.heap.gc_counter.saturating_sub(1);
+        self.heap.gc_counter = self.heap.gc_counter.saturating_sub(1);
         self.get_page_set::<T>().try_fast_alloc()
             .map(|p| {
                 self.heap.alloc_counter += 1;
@@ -405,7 +405,7 @@ impl<'h> GcHeapSession<'h> {
     }
 
     fn try_slow_alloc<T: IntoHeapAllocation<'h>>(&mut self, value: T) -> Option<T::Ref> {
-        self.heap.gc_counter.saturating_sub(1);
+        self.heap.gc_counter = self.heap.gc_counter.saturating_sub(1);
         if self.heap.gc_counter == 0 {
             self.heap.gc();
         }
