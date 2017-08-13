@@ -28,6 +28,7 @@
 
 use gc_leaf::GcLeaf;
 use gc_ref::GcRef;
+use poison;
 use ptr::Pointer;
 use std::any::Any;
 use std::hash::Hash;
@@ -243,7 +244,7 @@ gc_trivial_impl!(String, 0x1c66d28939b11111);
 
 macro_rules! gc_generic_trivial_impl {
     (@as_item $it:item) => { $it };
-    ([$($x:tt)*] $t:ty, $h:expr) => {
+    ([$($x:tt)*] $t:ty) => {
         gc_generic_trivial_impl! {
             @as_item
             impl<$($x)*> InHeap for $t {
@@ -273,10 +274,10 @@ macro_rules! gc_generic_trivial_impl {
     }
 }
 
-gc_generic_trivial_impl!([T: ?Sized + Sync] &'static T, 0x2c90082b4b071552);
-gc_generic_trivial_impl!([T: Clone + Send + 'static] GcLeaf<T>, 0x3f2cff0110e82982);
-gc_generic_trivial_impl!([T: Clone + Send + ?Sized + 'static] Box<T>, 0x5d55e2e560c89ec2);
-gc_generic_trivial_impl!([T: Sync + ?Sized + 'static] ::std::sync::Arc<T>, 0x4d920888eb74e08);
+gc_generic_trivial_impl!([T: ?Sized + Sync] &'static T);
+gc_generic_trivial_impl!([T: Clone + Send + 'static] GcLeaf<T>);
+gc_generic_trivial_impl!([T: Clone + Send + ?Sized + 'static] Box<T>);
+gc_generic_trivial_impl!([T: Sync + ?Sized + 'static] ::std::sync::Arc<T>);
 
 /// Currently, `#[derive(IntoHeap)]` only works for types that have a lifetime
 /// parameter.  This poses a problem because sometimes you want to store stuff
@@ -307,8 +308,14 @@ impl<'h, T: IntoHeapAllocation<'h>> IntoHeapBase for GcRef<'h, T> {
     }
 
     unsafe fn from_heap(storage: &Self::In) -> Self {
+        poison::assert_is_not_poisoned(storage.as_raw());
         Self::new(*storage)
     }
+
+    // unsafe fn trace<R: Tracer>(storage: &Self::In, tracer: &mut R) {
+    //     poison::assert_is_not_poisoned(storage.as_raw());
+    //     tracer.visit::<T>(*storage);
+    // }
 }
 
 unsafe impl<'h, T: IntoHeapAllocation<'h>> IntoHeap<'h> for GcRef<'h, T> {}

@@ -8,6 +8,7 @@ use std::any::TypeId;
 use std::{cmp, mem, ptr};
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
+use poison;
 use traits::{InHeap, Tracer};
 
 /// Stores mark bits, pin counts, and an "am I in use?" bit for heap allocations.
@@ -215,8 +216,25 @@ impl PageHeader {
         let end = self.end(allocation_size);
         while addr < end {
             let mark_word = &mut *(addr as *mut MarkWord);
-            mark_word.unmark();
             if mark_word.is_pinned() {
+                mark_word.mark();
+                let ptr = UntypedPointer::new((addr + mem::size_of::<MarkWord>()) as *const ());
+                roots.push(ptr);
+            } else {
+                mark_word.unmark();
+            }
+            addr += allocation_size;
+        }
+    }
+
+    /// Collect all the roots in this page.
+    pub unsafe fn mark_and_collect_roots(&mut self, allocation_size: usize, roots: &mut Vec<UntypedPointer>) {
+        let mut addr = self.begin();
+        let end = self.end(allocation_size);
+        while addr < end {
+            let mark_word = &mut *(addr as *mut MarkWord);
+            if mark_word.is_pinned() {
+                mark_word.mark();
                 let ptr = UntypedPointer::new((addr + mem::size_of::<MarkWord>()) as *const ());
                 roots.push(ptr);
             }
@@ -405,6 +423,8 @@ impl<U: InHeap> TypedPage<U> {
         MarkWord::from_ptr(ptr, |mw| {
             debug_assert!(!mw.is_allocated());
             mw.set_allocated();
+            // Clear the sticky bit, if it was stuck.
+            mw.unmark();
         });
         UninitializedAllocation { ptr }
     }
@@ -420,11 +440,7 @@ impl<U: InHeap> TypedPage<U> {
             if mw.is_allocated() && !mw.is_marked() {
                 let object_ptr = (addr + mem::size_of::<MarkWord>()) as *mut U;
                 ptr::drop_in_place(object_ptr);
-                if cfg!(debug_assertions) || cfg!(test) {
-                    // Paint the unused memory with a known-bad value.
-                    const SWEPT_BYTE: u8 = 0xf4;
-                    ptr::write_bytes(object_ptr, SWEPT_BYTE, 1);
-                }
+                poison::paint::swept(object_ptr);
                 mw.clear_allocated();
                 self.add_to_free_list(object_ptr);
                 num_swept += 1;
@@ -520,7 +536,7 @@ impl PageSet {
     pub unsafe fn new<'h, U: InHeap>(heap: *mut GcHeap) -> PageSet {
         PageSet {
             heap,
-            allocation_size: TypedPage::<U::In>::allocation_size(),
+            allocation_size: TypedPage::<U>::allocation_size(),
             sweep_fn: sweep_entry_point::<U>,
             page_count: 0,
             full_pages: ptr::null_mut(),
@@ -564,6 +580,12 @@ impl PageSet {
     pub unsafe fn clear_mark_bits(&mut self, roots: &mut Vec<UntypedPointer>) {
         let size = self.allocation_size;
         self.each_page_mut(|page| page.clear_mark_bits(size, roots));
+    }
+
+    /// Collect all the roots in this page set.
+    pub fn mark_and_collect_roots(&mut self, roots: &mut Vec<UntypedPointer>) {
+        let size = self.allocation_size;
+        self.each_page_mut(|page| unsafe { page.mark_and_collect_roots(size, roots); });
     }
 
     /// Sweep all unmarked objects from all pages and return the number of

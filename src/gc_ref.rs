@@ -1,6 +1,7 @@
 use gc_leaf::GcLeaf;
 use heap::{GcHeap, HeapId, GcHeapSession, HeapSessionId};
 use pages;
+use poison;
 use ptr::Pointer;
 use std::fmt;
 use std::hash::{Hash, Hasher};
@@ -21,6 +22,7 @@ impl<'h, T: IntoHeapAllocation<'h>> GcRef<'h, T> {
     /// type `T::In` --- and a complete allocation, not a sub-object of one ---
     /// then later unsafe code will explode.
     pub unsafe fn new(p: Pointer<T::In>) -> GcRef<'h, T> {
+        poison::assert_is_not_poisoned(p.as_raw());
         pages::pin(p);
         GcRef {
             ptr: p,
@@ -30,16 +32,28 @@ impl<'h, T: IntoHeapAllocation<'h>> GcRef<'h, T> {
 
     /// Get an untyped GC pointer to the referent.
     pub fn ptr(&self) -> Pointer<T::In> {
+        unsafe {
+            poison::assert_is_not_poisoned(self.ptr.as_raw());
+        }
+
         self.ptr
     }
 
     /// Get a raw, untyped const pointer to the referent.
     pub fn as_ptr(&self) -> *const T::In {
+        unsafe {
+            poison::assert_is_not_poisoned(self.ptr.as_raw());
+        }
+
         self.ptr.as_raw()
     }
 
     /// Get a raw, untyped mut pointer to the referent.
     pub fn as_mut_ptr(&self) -> *mut T::In {
+        unsafe {
+            poison::assert_is_not_poisoned(self.ptr.as_raw());
+        }
+
         self.ptr.as_raw() as *mut T::In
     }
 
@@ -47,6 +61,10 @@ impl<'h, T: IntoHeapAllocation<'h>> GcRef<'h, T> {
     /// unpinning its referent. The referent will be considered a GC root until
     /// manually unpinned.
     pub fn into_pinned_ptr(self) -> Pointer<T::In> {
+        unsafe {
+            poison::assert_is_not_poisoned(self.ptr.as_raw());
+        }
+
         let ptr = self.ptr;
         mem::forget(self); // skip unpinning destructor
         ptr
@@ -63,6 +81,10 @@ impl<'h, T: IntoHeapAllocation<'h>> Hash for GcRef<'h, T> {
 impl<'h, T: Clone + Send + 'static> GcRef<'h, GcLeaf<T>> {
     /// Get this reference's referent.
     pub fn get(&self) -> T {
+        unsafe {
+            poison::assert_is_not_poisoned(self.ptr.as_raw());
+        }
+
         // XXX TODO I think this `unsafe` block is sound, I'm not totally
         // sure. It's OK as long as we can't trigger GC in the middle of
         // cloning...  which would ordinarily be the case since the 'static
@@ -80,6 +102,7 @@ impl<'h, T: Clone + Send + 'static> GcRef<'h, GcLeaf<T>> {
 impl<'h, T: IntoHeapAllocation<'h>> Drop for GcRef<'h, T> {
     fn drop(&mut self) {
         unsafe {
+            poison::assert_is_not_poisoned(self.ptr.as_raw());
             pages::unpin(self.ptr);
         }
     }
@@ -89,6 +112,7 @@ impl<'h, T: IntoHeapAllocation<'h>> Clone for GcRef<'h, T> {
     fn clone(&self) -> GcRef<'h, T> {
         let &GcRef { ptr, heap_id } = self;
         unsafe {
+            poison::assert_is_not_poisoned(ptr.as_raw());
             pages::pin(ptr);
         }
         GcRef {

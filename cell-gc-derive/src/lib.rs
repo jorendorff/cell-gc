@@ -194,6 +194,7 @@ fn impl_into_heap_for_struct(ast: &syn::DeriveInput, data: &syn::VariantData) ->
 
             // Oddly you can't use the same identifier more than once in the
             // same loop. So create an alias.
+            let field_types_1 = field_types;
             let field_names_1 = field_names;
 
             let into_heap = quote! {
@@ -320,6 +321,9 @@ fn impl_into_heap_for_struct(ast: &syn::DeriveInput, data: &syn::VariantData) ->
                     Ident::from(format!("set_{}", field_str))
                 })
                 .collect();
+            let this_type = ::std::iter::repeat(quote! {
+                #name #ty_generics
+            });
             let accessors = quote! {
                 impl #impl_generics #ref_type_name #ty_generics #where_clause {
                     #(
@@ -340,6 +344,15 @@ fn impl_into_heap_for_struct(ast: &syn::DeriveInput, data: &syn::VariantData) ->
                             let u = ::cell_gc::traits::IntoHeapBase::into_heap(v);
                             unsafe {
                                 (*ptr).#field_names = u;
+
+                                ::cell_gc::post_write_barrier::<
+                                    #this_type,
+                                    #field_types_1,
+                                    ::cell_gc::YesGc
+                                >(
+                                    &self.0.ptr(),
+                                    &(*ptr).#field_names_1
+                                );
                             }
                         }
                     )*

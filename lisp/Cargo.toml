@@ -14,4 +14,3 @@ path = ".."
 
 [dependencies.cell-gc-derive]
 path = "../cell-gc-derive"
-
