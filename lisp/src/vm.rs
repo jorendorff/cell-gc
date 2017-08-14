@@ -155,9 +155,6 @@ pub fn eval_compiled<'h>(
             environments = code.environments();
             insns = code.insns();
 
-            //println!("resuming at pc={}", pc);
-            //code.dump();
-
             // Push the return value to its operand stack.
             stack.push($value);
         }
@@ -166,7 +163,6 @@ pub fn eval_compiled<'h>(
     loop {
         let op_code = insns.get(pc);
         pc += 1;
-        //println!("{} op {}", pc - 1, op_code);
         match op_code {
             op::RETURN => {
                 // The return value is the last thing left on the current
