@@ -11,6 +11,9 @@ use std::hash::Hash;
 use std::marker::PhantomData;
 
 /// Base trait for values that can be moved into a GC heap.
+///
+/// An implementation of this trait is safe if its `from_heap` and `trace`
+/// methods are safe under the circumstances described in their documentation.
 pub trait IntoHeapBase: Sized {
     /// The type of the value when it is physically stored in the heap.
     ///
@@ -57,27 +60,39 @@ pub trait IntoHeapBase: Sized {
     ///
     /// # Safety
     ///
-    /// It is impossible for ordinary users to call this safely, because `self`
-    /// must be a direct, unwrapped reference to a value stored in the GC heap,
-    /// which ordinary users cannot obtain.
-    unsafe fn from_heap(&Self::In) -> Self;
+    /// This must be safe to call if `u` is a valid in-heap value and the
+    /// caller has read access to the heap that contains it.
+    ///
+    /// The implementation of this method for `GcRef`, for example, is safe to
+    /// call if `u` is a valid pointer—it points to an initialized allocation
+    /// of the correct type in the same heap.
+    ///
+    /// This method exists for the benefit of cell-gc-derive. It is impossible
+    /// for ordinary users to call it safely, because `self` must be a
+    /// direct, unwrapped reference to a value stored in the GC heap, which
+    /// ordinary users cannot obtain.
+    unsafe fn from_heap(u: &Self::In) -> Self;
 
     /// Traverse a value in the heap.
     ///
     /// This calls `tracer.visit(ptr)` for each edge from this value
     /// to other heap values.
     ///
-    /// For user-defined structs, this is achieved by calling the
+    /// For user-defined structs and enums, this is achieved by calling the
     /// `field.trace(tracer)` method of each field of this value. (They are
     /// typically all `In` types.) The implementation of this method for
-    /// `Pointer<T>` calls `tracer.visit()` (if the pointer is non-null?).
+    /// `Pointer<T>` calls `tracer.visit()`.
     ///
     /// # Safety
     ///
-    /// It is impossible for ordinary users to call this safely, because `self`
-    /// must be a direct, unwrapped reference to a value stored in the GC heap,
+    /// This must be safe to call if `u` is a valid in-heap value and the
+    /// caller has read access to the heap that contains it.
+    ///
+    /// This method exists for the benefit of the garbage collector. It is
+    /// impossible for ordinary users to call this safely, because `self` must
+    /// be a direct, unwrapped reference to a value stored in the GC heap,
     /// which ordinary users cannot obtain.
-    unsafe fn trace<R>(&Self::In, tracer: &mut R)
+    unsafe fn trace<R>(u: &Self::In, tracer: &mut R)
     where
         R: Tracer;
 }
