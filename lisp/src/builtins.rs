@@ -2,13 +2,13 @@
 
 use cell_gc::{GcHeapSession, GcLeaf};
 use cell_gc::collections::VecRef;
-use compile;
-use env::{self, EnvironmentRef};
+use compile::{self, Code};
+use env::{self, EnvironmentRef, StaticEnvironment};
 use errors::*;
 use std::io::{self, Write};
 use std::sync::Arc;
 use std::vec;
-use value::{self, BuiltinFn, BuiltinFnPtr, InternedString, Pair, Value};
+use value::{self, BuiltinFn, BuiltinFnPtr, InternedString, Lambda, Pair, Value};
 use value::{ArgType, Rest, RetType};
 use value::Value::*;
 use vm::Trampoline;
@@ -445,7 +445,6 @@ fn apply<'h>(_hs: &mut GcHeapSession<'h>, mut args: Vec<Value<'h>>) -> Result<Tr
 }
 
 // 6.10 Input and output
-
 builtins! {
     fn write "write" <'h>(_hs, obj: Value<'h>) -> Result<()> {
         let stdout = io::stdout();
@@ -592,6 +591,44 @@ pub fn define_builtins<'h>(hs: &mut GcHeapSession<'h>, env: &EnvironmentRef<'h>)
             Builtin(GcLeaf::new(BuiltinFnPtr(f))),
         );
     }
+
+    // Call/cc is implemented as a "lambda" because builtins do not get full
+    // access to all the information that makes up the current continuation.
+    // We use a special opcode.
+    let call_cc = {
+        use compile::op;
+
+        let insns = hs.alloc(vec![
+            op::SAVE,              // save this lambda's continuation
+            op::PUSH_ENV, 1,       // push "locals" environment
+            op::SET_STATIC, 0, 0,  // store the saved stack in this local
+            op::GET_STATIC, 1, 0,  // get procedure to invoke
+            op::LAMBDA, 0,         // create the continuation procedure
+            op::TAIL_CALL, 1,      // call procedure, passing current continuation
+        ]);
+        let names = hs.alloc(vec![GcLeaf::new(InternedString::get("proc"))]);
+        let params = hs.alloc(StaticEnvironment { parent: Some(env.senv()), names });
+        let names = hs.alloc(vec![GcLeaf::new(InternedString::get("saved-stack"))]);
+        let locals = hs.alloc(StaticEnvironment { parent: Some(params.clone()), names });
+        let environments = hs.alloc(vec![params, locals.clone()]);
+        let ctn_code = {
+            let insns = hs.alloc(vec![
+                op::RESTORE
+            ]);
+            let environments = {
+                let names = hs.alloc(vec![GcLeaf::new(InternedString::get("return-value"))]);
+                let params = hs.alloc(StaticEnvironment { parent: Some(locals), names });
+                hs.alloc(vec![params])
+            };
+            let constants = hs.alloc(Vec::<Value>::new());
+            hs.alloc(Code { insns, environments, constants, rest: false, operands_max: 0 })
+        };
+        let constants = hs.alloc(vec![Value::Code(ctn_code)]);
+        let code = hs.alloc(Code { insns, environments, constants, rest: false, operands_max: 2 });
+        Value::Lambda(hs.alloc(Lambda { code, env: env.clone() }))
+    };
+    env.push(InternedString::get("call-with-current-continuation"), call_cc.clone());
+    env.push(InternedString::get("call/cc"), call_cc);
 
     // One last extension, implemented as a "lambda" because builtins don't
     // have an environment pointer.

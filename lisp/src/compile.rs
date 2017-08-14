@@ -24,6 +24,8 @@ pub mod op {
     pub const SET_DYNAMIC: OpCode = 12; // (symbol_index)
     pub const PUSH_ENV: OpCode = 13; // (static_env_index)
     pub const POP_ENV: OpCode = 14; // ()
+    pub const SAVE: OpCode = 15; // ()
+    pub const RESTORE: OpCode = 16; // ()
 }
 
 #[derive(IntoHeap)]

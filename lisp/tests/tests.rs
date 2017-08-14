@@ -51,6 +51,7 @@ core_test!(booleans);
 core_test!(characters);
 core_test!(closure);
 core_test!(cons);
+expanded_test!(continuations);
 core_test!(double);
 expanded_test!(equivalence);
 core_test!(extensions);

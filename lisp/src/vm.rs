@@ -340,6 +340,33 @@ pub fn eval_compiled<'h>(
                 env = env.parent().unwrap();
             }
 
+            op::SAVE => {
+                // Capture the current function activation's continuation as a
+                // vector, a snapshot of the stack. This opcode is used only in
+                // call/cc.
+                //
+                // Note that this does not capture the continuation of the
+                // current *instruction*, which would have to include the
+                // current values of code, pc, and env. What call/cc needs to
+                // capture is the continuation of call/cc.
+                let v = hs.alloc(stack.clone());
+                stack.push(Value::Vector(v));
+            }
+
+            op::RESTORE => {
+                // Resume a previously captured continuation. The continuation
+                // and the value we will pass to it are taken from just-so
+                // locations in the current environment. This opcode is used
+                // exclusively in the code for continuation-lambdas produced by
+                // call/cc.
+                let arg = env.get(0, 0);
+                let new_stack = env.get(1, 0)
+                    .as_vector("internal error").unwrap();
+                stack.clear();
+                stack.extend(new_stack);
+                return_value!(arg);
+            }
+
             _ => panic!("internal error: invalid opcode {}", op_code),
         }
     }
