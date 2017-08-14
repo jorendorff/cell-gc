@@ -3,7 +3,7 @@
 use cell_gc::GcHeapSession;
 use cell_gc::collections::VecRef;
 use compile::{op, CodeRef};
-use env::{Environment, EnvironmentRef};
+use env::{Environment, EnvironmentRef, StaticEnvironmentRef};
 use errors::Result;
 use value::{Lambda, Pair, Value};
 
@@ -36,6 +36,38 @@ impl<'h> Trampoline<'h> {
     }
 }
 
+fn new_call_env<'h>(
+    hs: &mut GcHeapSession<'h>,
+    senv: StaticEnvironmentRef<'h>,
+    has_rest: bool,
+    parent: EnvironmentRef<'h>,
+    mut args: Vec<Value<'h>>,
+) -> Result<EnvironmentRef<'h>> {
+    let names = senv.names();
+    let n_names = names.len();
+    let n_required_params = n_names - has_rest as usize;
+
+    let n_actual = args.len();
+    if n_actual < n_required_params {
+        return Err("not enough arguments".into());
+    }
+    if has_rest {
+        let mut rest_list = Value::Nil;
+        for arg in args.drain(n_required_params..).rev() {
+            rest_list = Value::Cons(hs.alloc(Pair {
+                car: arg,
+                cdr: rest_list,
+            }));
+        }
+        args.push(rest_list);
+    } else if n_actual > n_required_params {
+        return Err("too many arguments".into());
+    }
+
+    let args = hs.alloc(args);  // move values into heap
+    Ok(Environment::new(hs, Some(parent), senv, args))
+}
+
 pub fn apply<'h>(
     hs: &mut GcHeapSession<'h>,
     fval: Value<'h>,
@@ -53,7 +85,7 @@ pub fn apply<'h>(
 
             let n_required_params = n_names - has_rest as usize;
             if args.len() < n_required_params {
-                return Err("apply: not enough arguments".into());
+                return Err("not enough arguments".into());
             }
             if has_rest {
                 let mut rest_list = Value::Nil;
@@ -65,14 +97,14 @@ pub fn apply<'h>(
                 }
                 args.push(rest_list);
             } else if args.len() > n_required_params {
-                return Err("apply: too many arguments".into());
+                return Err("too many arguments".into());
             }
 
             let values = hs.alloc(args);
             let env = Environment::new(hs, Some(parent), senv, values);
             eval_compiled_to_tail_call(hs, &env, code)
         }
-        _ => Err("apply: not a function".into()),
+        _ => Err("not a procedure".into()),
     }
 }
 
@@ -82,32 +114,60 @@ pub fn apply<'h>(
 pub fn eval_compiled_to_tail_call<'h>(
     hs: &mut GcHeapSession<'h>,
     env: &EnvironmentRef<'h>,
-    code: CodeRef<'h>,
+    mut code: CodeRef<'h>,
 ) -> Result<Trampoline<'h>> {
-    let constants = code.constants();
-    let environments = code.environments();
-    let insns = code.insns();
+    // The stack is a sequence of concatenated stack frames. Each frame is laid out like this:
+    //   #(code pc env operand0 ...)
+
+    let mut stack = Vec::<Value<'h>>::with_capacity(1024);
+    let mut constants = code.constants();
+    let mut environments = code.environments();
+    let mut insns = code.insns();
     let mut env = env.clone();
     let mut pc = 0;
-    let mut operands = Vec::with_capacity(code.operands_max());
+
+    macro_rules! return_value {
+        ($value:ident) => {
+            if stack.is_empty() {
+                return Ok(Trampoline::Value($value));
+            }
+
+            // Read the caller's stack frame back into local variables.
+            env = stack.pop().unwrap().as_environment("internal error").unwrap();
+            pc = stack.pop().unwrap().as_int("internal error").unwrap() as usize;
+            code = stack.pop().unwrap().as_code("internal error").unwrap();
+            constants = code.constants();
+            environments = code.environments();
+            insns = code.insns();
+
+            //println!("resuming at pc={}", pc);
+            //code.dump();
+
+            // Push the return value to its operand stack.
+            stack.push($value);
+        }
+    }
 
     loop {
         let op_code = insns.get(pc);
         pc += 1;
+        //println!("{} op {}", pc - 1, op_code);
         match op_code {
             op::RETURN => {
-                assert_eq!(operands.len(), 1);
-                return Ok(Trampoline::Value(operands.pop().unwrap()));
+                // The return value is the last thing left on the current
+                // frame's operand stack.
+                let value = stack.pop().unwrap();
+                return_value!(value);
             }
 
             op::POP => {
-                operands.pop().unwrap();
+                stack.pop().unwrap();
             }
 
             op::CONSTANT => {
                 let i = insns.get(pc) as usize;
                 pc += 1;
-                operands.push(constants.get(i));
+                stack.push(constants.get(i));
             }
 
             op::GET_DYNAMIC => {
@@ -117,7 +177,7 @@ pub fn eval_compiled_to_tail_call<'h>(
                     Value::Symbol(id) => id,
                     _ => panic!("internal error: bad GetDynamic insn"),
                 };
-                operands.push(env.dynamic_get(&symbol)?);
+                stack.push(env.dynamic_get(&symbol)?);
             }
 
             op::GET_STATIC => {
@@ -125,7 +185,7 @@ pub fn eval_compiled_to_tail_call<'h>(
                 pc += 1;
                 let i = insns.get(pc) as usize;
                 pc += 1;
-                operands.push(env.get(up_count, i));
+                stack.push(env.get(up_count, i));
             }
 
             op::LAMBDA => {
@@ -139,31 +199,67 @@ pub fn eval_compiled_to_tail_call<'h>(
                     code: fn_code,
                     env: env.clone(),
                 }));
-                operands.push(fn_value);
+                stack.push(fn_value);
             }
 
-            op::CALL => {
+            op::CALL | op::TAIL_CALL => {
                 let argc = insns.get(pc) as usize;
                 pc += 1;
-                let top = operands.len();
-                let args = operands.split_off(top - argc);
-                let fval = operands.pop().unwrap();
-                operands.push(apply(hs, fval, args)?.eval(hs)?);
-            }
 
-            op::TAIL_CALL => {
-                let argc = insns.get(pc) as usize;
-                // No `pc += 1;` here because pc is a dead value.
-                assert_eq!(operands.len(), argc + 1);
-                let fval = operands.remove(0);
-                return Ok(Trampoline::TailCall {
-                    func: fval,
-                    args: operands
-                });
+                let top = stack.len();
+                let mut args = stack.split_off(top - argc);
+                let mut fval = stack.pop().unwrap();
+
+                loop {
+                    match fval {
+                        Value::Lambda(lambda) => {
+                            if op_code == op::CALL {
+                                stack.push(Value::Code(code));
+                                assert!(pc <= i32::max_value() as usize);
+                                stack.push(Value::Int(pc as i32));
+                                stack.push(Value::Environment(env));
+                            } else {
+                                // Tail call. Our caller's frame is already on top
+                                // of stack. Assert that it's correctly laid out.
+                                let top = stack.len();
+                                if top != 0 {
+                                    assert!(stack[top - 3].is_code());
+                                    assert!(stack[top - 2].is_int());
+                                    assert!(stack[top - 1].is_environment());
+                                }
+                            }
+
+                            code = lambda.code();
+                            constants = code.constants();
+                            environments = code.environments();
+                            insns = code.insns();
+                            pc = 0;
+                            env = new_call_env(hs, code.environments().get(0), code.rest(), lambda.env(), args)?;
+                            break;
+                        }
+                        Value::Builtin(f) => {
+                            match (f.0)(hs, args)? {
+                                Trampoline::Value(v) => {
+                                    if op_code == op::TAIL_CALL {
+                                        return_value!(v);
+                                    } else {
+                                        stack.push(v);
+                                    }
+                                    break;
+                                }
+                                Trampoline::TailCall { func: new_fval, args: new_args } => {
+                                    fval = new_fval;
+                                    args = new_args;
+                                }
+                            }
+                        }
+                        _ => return Err("not a procedure".into())
+                    }
+                }
             }
 
             op::JUMP_IF_FALSE => {
-                let offset = match operands.pop().unwrap() {
+                let offset = match stack.pop().unwrap() {
                     Value::Bool(false) => insns.get(pc) as usize,
                     _ => 1
                 };
@@ -181,7 +277,7 @@ pub fn eval_compiled_to_tail_call<'h>(
                     Value::Symbol(id) => id,
                     _ => panic!("internal error: bad Define insn"),
                 };
-                let value = operands.pop().unwrap();
+                let value = stack.pop().unwrap();
                 env.define(symbol.unwrap(), value);
             }
 
@@ -190,7 +286,7 @@ pub fn eval_compiled_to_tail_call<'h>(
                 pc += 1;
                 let i = insns.get(pc) as usize;
                 pc += 1;
-                env.set(up_count, i, operands.pop().unwrap());
+                env.set(up_count, i, stack.pop().unwrap());
             }
 
             op::SET_DYNAMIC => {
@@ -200,7 +296,7 @@ pub fn eval_compiled_to_tail_call<'h>(
                     Value::Symbol(id) => id.unwrap(),
                     _ => panic!("internal error: bad Set insn"),
                 };
-                let value = operands.pop().unwrap();
+                let value = stack.pop().unwrap();
                 env.dynamic_set(&symbol, value)?;
             }
 

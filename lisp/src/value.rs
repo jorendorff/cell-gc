@@ -182,6 +182,7 @@ impl<'h> Value<'h> {
     pattern_getter_by_ref!(as_char, "character", char, Char(c) => c);
 
     pattern_predicate!(is_number, Int(_));
+    pattern_predicate!(is_int, Int(_));
     pattern_getter_by_ref!(as_int, "integer", i32, Int(i) => i);
 
     pub fn as_index(&self, error_msg: &str) -> Result<usize> {
@@ -217,6 +218,10 @@ impl<'h> Value<'h> {
                     StringObj(s) => s.unwrap().0);
 
     pattern_predicate!(is_procedure, Lambda(_) | Builtin(_));
+    pattern_predicate!(is_code, Code(_));
+    pattern_getter!(as_code, "code object", CodeRef<'h>,
+                    Code(code) => code);
+    pattern_predicate!(is_environment, Environment(_));
     pattern_getter!(as_environment, "environment", EnvironmentRef<'h>,
                     Environment(env) => env);
 
