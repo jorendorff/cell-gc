@@ -2,7 +2,7 @@
 
 use cell_gc::{GcHeapSession, GcLeaf};
 use cell_gc::collections::VecRef;
-use compile;
+use compile::CodeRef;
 use env::EnvironmentRef;
 use errors::Result;
 use std::borrow::Borrow;
@@ -23,7 +23,7 @@ pub struct Pair<'h> {
 
 #[derive(Debug, IntoHeap)]
 pub struct Lambda<'h> {
-    pub code: compile::CodeRef<'h>,
+    pub code: CodeRef<'h>,
     pub env: EnvironmentRef<'h>,
 }
 
@@ -38,7 +38,7 @@ pub enum Value<'h> {
     StringObj(GcLeaf<NonInternedStringObject>),
     ImmString(GcLeaf<InternedString>),
     Lambda(LambdaRef<'h>),
-    Code(compile::CodeRef<'h>),
+    Code(CodeRef<'h>),
     Builtin(GcLeaf<BuiltinFnPtr>),
     Cons(PairRef<'h>),
     Vector(VecRef<'h, Value<'h>>),
