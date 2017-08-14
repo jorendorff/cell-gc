@@ -10,14 +10,36 @@ use std::io::{self, Write};
 use value::{BuiltinFnPtr, InternedString, Value};
 use vm::{self, Trampoline};
 
-
-pub fn default_env<'h>(hs: &mut GcHeapSession<'h>) -> EnvironmentRef<'h> {
+/// Create an environment that supports only core Scheme syntax.
+///
+/// It supports `(letrec)`, for example, but not `(let)`, `(and)`, or `(or)`.
+pub fn core_env<'h>(hs: &mut GcHeapSession<'h>) -> EnvironmentRef<'h> {
     let env = Environment::empty(hs);
 
     builtins::define_builtins(hs, &env);
 
     const PRELUDE: &'static str = include_str!("prelude.scm");
     let _ = eval_str(hs, &env, PRELUDE).expect("unexpected error running the prelude");
+    env
+}
+
+/// Create an environment that supports core syntax plus a handful of goodies
+/// like `(let)`, `(and)`, and `(or)`. These are supported using simple-expander.scm
+/// instead of psyntax.pp.
+pub fn expanded_env<'h>(hs: &mut GcHeapSession<'h>) -> EnvironmentRef<'h> {
+    let env = core_env(hs);
+
+    const EXPANDER_CODE: &'static str = include_str!("simple-expander.scm");
+    let xenv = env.new_nested_environment(hs);
+    let expander = eval_str(hs, &xenv, EXPANDER_CODE)
+        .expect("unexpected error initializing the simple expander");
+    env.set_expander(expander);
+
+    env
+}
+
+pub fn default_env<'h>(hs: &mut GcHeapSession<'h>) -> EnvironmentRef<'h> {
+    let env = core_env(hs);
 
     const EXPANDER_CODE: &'static str = concat!(
         include_str!("psyntax-support.scm"),
@@ -147,15 +169,53 @@ pub fn repl() -> Result<()> {
     })
 }
 
-#[test]
-fn add_in_lambda() {
+#[cfg(test)]
+use value::RetType;
+
+#[cfg(test)]
+#[allow(dead_code)]
+enum Env {
+    Core,
+    Expanded,
+    Full
+}
+
+#[cfg(test)]
+fn test_eval<R: for<'h> RetType<'h>>(env_type: Env, program: &str, expected: R) {
     use cell_gc::GcHeap;
 
     let mut heap = GcHeap::new();
     heap.enter(|hs| {
-        let env = default_env(hs);
-        let program = "((lambda (x y z) (+ x (+ y z))) 3 4 5)";
+        let env = match env_type {
+            Env::Core => core_env(hs),
+            Env::Expanded => expanded_env(hs),
+            Env::Full => default_env(hs),
+        };
+        let v = match expected.pack(hs).expect("expected return value should pack OK") {
+            Trampoline::Value(v) => v,
+            _ => panic!("packing expected return value produced unexpected tail call"),
+        };
         let result = eval_str(hs, &env, program).expect("Should eval OK");
-        assert_eq!(result, Value::Int(12));
+        assert_eq!(result, v);
     });
+}
+
+#[test]
+fn test_2p2e4() {
+    test_eval(Env::Core, r"(+ 2 2)", 4);
+}
+
+#[test]
+fn test_simple_lambda() {
+    test_eval(Env::Core, r"((lambda (x y z) (+ x (+ y z))) 3 4 5)", 12);
+}
+
+#[test]
+fn test_list() {
+    test_eval(Env::Core, r#"(equal? "abcd" (apply string (list #\a #\b #\c #\d)))"#, true);
+}
+
+#[test]
+fn test_simple_lambda_with_psyntax() {
+    test_eval(Env::Full, "((lambda (x y z) (+ x (+ y z))) 3 4 5)", 12);
 }
