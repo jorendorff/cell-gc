@@ -8,7 +8,7 @@ use errors::*;
 use parse;
 use std::io::{self, Write};
 use value::{BuiltinFnPtr, InternedString, Value};
-use vm::{self, Trampoline};
+use vm;
 
 /// Create an environment that supports only core Scheme syntax.
 ///
@@ -64,22 +64,14 @@ pub fn default_env<'h>(hs: &mut GcHeapSession<'h>) -> EnvironmentRef<'h> {
     env
 }
 
-pub fn eval_to_tail_call<'h>(
-    hs: &mut GcHeapSession<'h>,
-    env: &EnvironmentRef<'h>,
-    expr: Value<'h>,
-) -> Result<Trampoline<'h>> {
-    let expr = env.expand(hs, expr)?;
-    let expr = compile::compile_toplevel(hs, &env.senv(), expr)?;
-    vm::eval_compiled_to_tail_call(hs, env, expr)
-}
-
 pub fn eval<'h>(
     hs: &mut GcHeapSession<'h>,
     env: &EnvironmentRef<'h>,
     expr: Value<'h>,
 ) -> Result<Value<'h>> {
-    eval_to_tail_call(hs, env, expr)?.eval(hs)
+    let expr = env.expand(hs, expr)?;
+    let expr = compile::compile_toplevel(hs, &env.senv(), expr)?;
+    vm::eval_compiled(hs, env, expr)
 }
 
 /// Evaluate a toplevel script, possibly including many definitions and
@@ -121,7 +113,7 @@ pub fn eval_toplevel_forms<'h>(
             }
         }
         let code = compile::compile_toplevel_forms(hs, &env.senv(), batch)?;
-        result = vm::eval_compiled_to_tail_call(hs, &env, code)?.eval(hs)?;
+        result = vm::eval_compiled(hs, &env, code)?;
     }
     Ok(result)
 }
@@ -183,6 +175,7 @@ enum Env {
 #[cfg(test)]
 fn test_eval<R: for<'h> RetType<'h>>(env_type: Env, program: &str, expected: R) {
     use cell_gc::GcHeap;
+    use vm::Trampoline;
 
     let mut heap = GcHeap::new();
     heap.enter(|hs| {

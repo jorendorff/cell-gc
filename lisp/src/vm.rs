@@ -8,31 +8,30 @@ use errors::Result;
 use value::{Lambda, Pair, Value};
 
 /// A potentially partially evaluated value.
+///
+/// When the interpreter calls a builtin, usually the builtin runs, computes a
+/// Value, and returns it. But a small number of builtins (`apply`, `eval`) can
+/// tail-call Scheme code. This must be done without recursively invoking the
+/// interpreter. That would consume some system stack space; it wouldn't be a
+/// true tail call. So instead, the builtin returns a special Trampoline to the
+/// interpreter that means "I did the part of the computation that's written in
+/// Rust; the rest is Scheme code and here's how to run it". The word "returns"
+/// is the key: the stack space that was expended to call the builtin is
+/// reclaimed when it returns.
 pub enum Trampoline<'h> {
     /// A completely evaluated value.
     Value(Value<'h>),
-    /// The continuation of a partial evaluation in tail position. The stack
-    /// should be unwound before resumption of its evaluation.
+
+    /// A value that can be computed by calling a particular procedure.
     TailCall {
         func: Value<'h>,
         args: Vec<Value<'h>>,
     },
-}
 
-impl<'h> Trampoline<'h> {
-    /// Complete the evaluation of this value. Avoids recursion to implement
-    /// proper tail calls and keep from blowing the stack.
-    pub fn eval(mut self, hs: &mut GcHeapSession<'h>) -> Result<Value<'h>> {
-        loop {
-            match self {
-                Trampoline::Value(v) => {
-                    return Ok(v);
-                }
-                Trampoline::TailCall { func, args } => {
-                    self = apply(hs, func, args)?;
-                }
-            }
-        }
+    /// A value that can be computed by running the given code.
+    TailEval {
+        code: CodeRef<'h>,
+        env: EnvironmentRef<'h>
     }
 }
 
@@ -70,52 +69,68 @@ fn new_call_env<'h>(
 
 pub fn apply<'h>(
     hs: &mut GcHeapSession<'h>,
-    fval: Value<'h>,
+    mut fval: Value<'h>,
     mut args: Vec<Value<'h>>,
-) -> Result<Trampoline<'h>> {
-    match fval {
-        Value::Builtin(f) => (f.0)(hs, args),
-        Value::Lambda(lambda) => {
-            let code = lambda.code();
-            let parent = lambda.env();
-            let senv = code.environments().get(0);
-            let names = senv.names();
-            let n_names = names.len();
-            let has_rest = code.rest();
-
-            let n_required_params = n_names - has_rest as usize;
-            if args.len() < n_required_params {
-                return Err("not enough arguments".into());
-            }
-            if has_rest {
-                let mut rest_list = Value::Nil;
-                for v in args.drain(n_required_params..).rev() {
-                    rest_list = Value::Cons(hs.alloc(Pair {
-                        car: v,
-                        cdr: rest_list,
-                    }));
+) -> Result<Value<'h>> {
+    loop {
+        match fval {
+            Value::Builtin(f) => {
+                match (f.0)(hs, args)? {
+                    Trampoline::Value(v) => return Ok(v),
+                    Trampoline::TailCall { func: new_fval, args: new_args } => {
+                        fval = new_fval;
+                        args = new_args;
+                    }
+                    Trampoline::TailEval { code, env } => return eval_compiled(hs, &env, code),
                 }
-                args.push(rest_list);
-            } else if args.len() > n_required_params {
-                return Err("too many arguments".into());
             }
 
-            let values = hs.alloc(args);
-            let env = Environment::new(hs, Some(parent), senv, values);
-            eval_compiled_to_tail_call(hs, &env, code)
+            Value::Lambda(lambda) => {
+                let code = lambda.code();
+                let parent = lambda.env();
+                let senv = code.environments().get(0);
+                let names = senv.names();
+                let n_names = names.len();
+                let has_rest = code.rest();
+
+                let n_required_params = n_names - has_rest as usize;
+                if args.len() < n_required_params {
+                    return Err("not enough arguments".into());
+                }
+                if has_rest {
+                    let mut rest_list = Value::Nil;
+                    for v in args.drain(n_required_params..).rev() {
+                        rest_list = Value::Cons(hs.alloc(Pair {
+                            car: v,
+                            cdr: rest_list,
+                        }));
+                    }
+                    args.push(rest_list);
+                } else if args.len() > n_required_params {
+                    return Err("too many arguments".into());
+                }
+
+                let values = hs.alloc(args);
+                let env = Environment::new(hs, Some(parent), senv, values);
+                return eval_compiled(hs, &env, code);
+            }
+
+            _ => {
+                return Err("not a procedure".into());
+            }
         }
-        _ => Err("not a procedure".into()),
     }
 }
 
-/// Evaluate `expr` until we reach a tail call, at which point it is packaged up
-/// as a `Trampoline::TailCall` and returned so we can unwind the stack before
-/// continuing evaluation.
-pub fn eval_compiled_to_tail_call<'h>(
+// Fully evaluate the given code in the given environment.
+pub fn eval_compiled<'h>(
     hs: &mut GcHeapSession<'h>,
     env: &EnvironmentRef<'h>,
     mut code: CodeRef<'h>,
-) -> Result<Trampoline<'h>> {
+) -> Result<Value<'h>> {
+    assert_eq!(code.environments().get(0), env.senv(),
+               "code can only run in the environment for which it was compiled");
+
     // The stack is a sequence of concatenated stack frames. Each frame is laid out like this:
     //   #(code pc env operand0 ...)
 
@@ -129,7 +144,7 @@ pub fn eval_compiled_to_tail_call<'h>(
     macro_rules! return_value {
         ($value:ident) => {
             if stack.is_empty() {
-                return Ok(Trampoline::Value($value));
+                return Ok($value);
             }
 
             // Read the caller's stack frame back into local variables.
@@ -251,6 +266,15 @@ pub fn eval_compiled_to_tail_call<'h>(
                                     fval = new_fval;
                                     args = new_args;
                                 }
+                                Trampoline::TailEval { code: eval_code, env: eval_env } => {
+                                    code = eval_code;
+                                    constants = code.constants();
+                                    environments = code.environments();
+                                    insns = code.insns();
+                                    pc = 0;
+                                    env = eval_env;
+                                    break;
+                                }
                             }
                         }
                         _ => return Err("not a procedure".into())
@@ -319,14 +343,4 @@ pub fn eval_compiled_to_tail_call<'h>(
             _ => panic!("internal error: invalid opcode {}", op_code),
         }
     }
-}
-
-pub fn eval_compiled<'h>(
-    hs: &mut GcHeapSession<'h>,
-    env: &EnvironmentRef<'h>,
-    code: CodeRef<'h>,
-) -> Result<Value<'h>> {
-    assert_eq!(code.environments().get(0), env.senv(),
-               "code can only run in the environment for which it was compiled");
-    eval_compiled_to_tail_call(hs, env, code)?.eval(hs)
 }

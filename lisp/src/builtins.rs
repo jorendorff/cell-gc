@@ -2,12 +2,12 @@
 
 use cell_gc::{GcHeapSession, GcLeaf};
 use cell_gc::collections::VecRef;
+use compile;
 use env::{self, EnvironmentRef};
 use errors::*;
 use std::io::{self, Write};
 use std::sync::Arc;
 use std::vec;
-use toplevel;
 use value::{self, BuiltinFn, BuiltinFnPtr, InternedString, Pair, Value};
 use value::{ArgType, Rest, RetType};
 use value::Value::*;
@@ -498,7 +498,9 @@ builtins! {
     }
 
     fn eval "eval" <'h>(hs, expr: Value<'h>, env: EnvironmentRef<'h>) -> Result<Trampoline<'h>> {
-        toplevel::eval_to_tail_call(hs, &env, expr)
+        let expr = env.expand(hs, expr)?;
+        let code = compile::compile_toplevel(hs, &env.senv(), expr)?;
+        Ok(Trampoline::TailEval { code, env })
     }
 
     fn dis "dis" <'h>(_hs, expr: Value<'h>) -> Result<()> {

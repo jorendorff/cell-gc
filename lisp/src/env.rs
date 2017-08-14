@@ -164,11 +164,7 @@ impl<'h> EnvironmentRef<'h> {
     pub fn expand(&self, hs: &mut GcHeapSession<'h>, expr: Value<'h>) -> Result<Value<'h>> {
         match self.dynamic_get(&EXPANDER_SYMBOL) {
             Err(_) => Ok(expr),
-            Ok(expander) => {
-                let args = vec![expr];
-                let tail = vm::apply(hs, expander, args)?;
-                tail.eval(hs)
-            }
+            Ok(expander) => vm::apply(hs, expander, vec![expr]),
         }
     }
 
