@@ -10,6 +10,32 @@ use std::any::Any;
 use std::hash::Hash;
 use std::marker::PhantomData;
 
+/// Trait for values actually stored inside the heap.
+pub trait InHeap: Any + 'static {
+    /// Traverse a value in the heap.
+    ///
+    /// This calls `tracer.visit(ptr)` for each edge from this value
+    /// to other heap values.
+    ///
+    /// For user-defined structs and enums, this is achieved by calling the
+    /// `field.trace(tracer)` method of each field of this value. (They are
+    /// typically all `In` types.) The implementation of this method for
+    /// `Pointer<T>` calls `tracer.visit()`.
+    ///
+    /// # Safety
+    ///
+    /// This must be safe to call if `u` is a valid in-heap value and the
+    /// caller has read access to the heap that contains it.
+    ///
+    /// This method exists for the benefit of the garbage collector. It is
+    /// impossible for ordinary users to call this safely, because `self` must
+    /// be a direct, unwrapped reference to a value stored in the GC heap,
+    /// which ordinary users cannot obtain.
+    unsafe fn trace<R>(&self, tracer: &mut R)
+    where
+        R: Tracer;
+}
+
 /// Base trait for values that can be moved into a GC heap.
 ///
 /// An implementation of this trait is safe if its `from_heap` and `trace`
@@ -44,7 +70,7 @@ pub trait IntoHeapBase: Sized {
     /// Users never get a direct `&` reference to any in-heap value. All access is
     /// through safe `IntoHeap` types, like the `Ref` type that is automatically
     /// declared for you when you use `#[derive(IntoHeap)]` on a struct or union.
-    type In: Any + 'static;
+    type In: InHeap;
 
     /// Convert the value to the form it should have in the heap.
     /// This is for cell-gc to call.
@@ -72,29 +98,6 @@ pub trait IntoHeapBase: Sized {
     /// direct, unwrapped reference to a value stored in the GC heap, which
     /// ordinary users cannot obtain.
     unsafe fn from_heap(u: &Self::In) -> Self;
-
-    /// Traverse a value in the heap.
-    ///
-    /// This calls `tracer.visit(ptr)` for each edge from this value
-    /// to other heap values.
-    ///
-    /// For user-defined structs and enums, this is achieved by calling the
-    /// `field.trace(tracer)` method of each field of this value. (They are
-    /// typically all `In` types.) The implementation of this method for
-    /// `Pointer<T>` calls `tracer.visit()`.
-    ///
-    /// # Safety
-    ///
-    /// This must be safe to call if `u` is a valid in-heap value and the
-    /// caller has read access to the heap that contains it.
-    ///
-    /// This method exists for the benefit of the garbage collector. It is
-    /// impossible for ordinary users to call this safely, because `self` must
-    /// be a direct, unwrapped reference to a value stored in the GC heap,
-    /// which ordinary users cannot obtain.
-    unsafe fn trace<R>(u: &Self::In, tracer: &mut R)
-    where
-        R: Tracer;
 }
 
 /// Trait for values that can be moved into a GC heap.
@@ -174,20 +177,20 @@ pub trait IntoHeapAllocation<'h>: IntoHeap<'h> {
 pub trait Tracer {
     /// Tell the `Tracer` about an outgoing edge of the object currently being
     /// traced.
-    fn visit<'h, T>(&mut self, Pointer<T::In>)
-    where
-        T: IntoHeapAllocation<'h>;
+    fn visit<U: InHeap>(&mut self, Pointer<U>);
 }
 
 // === Provided implmentations for primitive types
 
 macro_rules! gc_trivial_impl {
     ($t:ty, $h:expr) => {
+        impl InHeap for $t {
+            #[inline] unsafe fn trace<R: Tracer>(&self, _tracer: &mut R) {}
+        }
         impl IntoHeapBase for $t {
             type In = $t;
             #[inline] fn into_heap(self) -> $t { self }
             #[inline] unsafe fn from_heap(storage: &$t) -> $t { storage.clone() }
-            #[inline] unsafe fn trace<R>(_storage: &$t, _tracer: &mut R) where R: Tracer {}
         }
         unsafe impl<'h> IntoHeap<'h> for $t {}
         impl<'h> IntoHeapAllocation<'h> for $t {
@@ -220,11 +223,16 @@ macro_rules! gc_generic_trivial_impl {
     ([$($x:tt)*] $t:ty, $h:expr) => {
         gc_generic_trivial_impl! {
             @as_item
+            impl<$($x)*> InHeap for $t {
+                unsafe fn trace<R: Tracer>(&self, _tracer: &mut R) {}
+            }
+        }
+        gc_generic_trivial_impl! {
+            @as_item
             impl<$($x)*> IntoHeapBase for $t {
                 type In = $t;
                 fn into_heap(self) -> $t { self }
                 unsafe fn from_heap(storage: &$t) -> $t { (*storage).clone() }
-                unsafe fn trace<R>(_storage: &$t, _tracer: &mut R) where R: Tracer {}
             }
         }
         gc_generic_trivial_impl! {
@@ -251,11 +259,20 @@ gc_generic_trivial_impl!([T: Clone + Sync + 'static] ::std::sync::Arc<T>, 0x4d92
 /// parameter.  This poses a problem because sometimes you want to store stuff
 /// in the heap that doesn't contain any `GcRef`s or other heap lifetimes.
 /// As a hackaround, we allow `PhantomData<&'h T>` fields (for now).
+impl<T: 'static> InHeap for PhantomData<&'static T> {
+    unsafe fn trace<R: Tracer>(&self, _tracer: &mut R) {}
+}
+
 impl<'h, T: 'static> IntoHeapBase for PhantomData<&'h T> {
     type In = PhantomData<&'static T>;
     fn into_heap(self) -> Self::In { PhantomData }
     unsafe fn from_heap(_storage: &Self::In) -> Self { PhantomData }
-    unsafe fn trace<R: Tracer>(_storage: &Self::In, _tracer: &mut R) {}
+}
+
+impl<U: InHeap> InHeap for Pointer<U> {
+    unsafe fn trace<R: Tracer>(&self, tracer: &mut R) {
+        tracer.visit::<U>(*self);
+    }
 }
 
 // GCRef has a special implementation.
@@ -269,10 +286,6 @@ impl<'h, T: IntoHeapAllocation<'h>> IntoHeapBase for GcRef<'h, T> {
     unsafe fn from_heap(storage: &Self::In) -> Self {
         Self::new(*storage)
     }
-
-    unsafe fn trace<R: Tracer>(storage: &Self::In, tracer: &mut R) {
-        tracer.visit::<T>(*storage);
-    }
 }
 
 unsafe impl<'h, T: IntoHeapAllocation<'h>> IntoHeap<'h> for GcRef<'h, T> {}
@@ -280,21 +293,19 @@ unsafe impl<'h, T: IntoHeapAllocation<'h>> IntoHeap<'h> for GcRef<'h, T> {}
 // Transitive implementations ("this particular kind of struct/enum is IntoHeap
 // if all its fields are") are slightly less trivial.
 
+impl<U: InHeap> InHeap for Option<U> {
+    unsafe fn trace<R: Tracer>(&self, tracer: &mut R) {
+        if let &Some(ref u) = self {
+            u.trace(tracer);
+        }
+    }
+}
+
 impl<T: IntoHeapBase> IntoHeapBase for Option<T> {
     type In = Option<T::In>;
 
     fn into_heap(self) -> Option<T::In> {
         self.map(|t| t.into_heap())
-    }
-
-    unsafe fn trace<R>(storage: &Option<T::In>, tracer: &mut R)
-    where
-        R: Tracer,
-    {
-        match storage {
-            &None => (),
-            &Some(ref u) => T::trace(u, tracer),
-        }
     }
 
     unsafe fn from_heap(storage: &Option<T::In>) -> Option<T> {
@@ -312,6 +323,24 @@ macro_rules! gc_trivial_tuple_impl {
     ($($t:ident),*) => {
         gc_trivial_tuple_impl! {
             @as_item
+            impl<$($t: InHeap,)*> InHeap for ($($t,)*) {
+                #[allow(non_snake_case)]
+                unsafe fn trace<R: Tracer>(&self, tracer: &mut R) {
+                    let &($(ref $t,)*) = self;
+
+                    $(
+                        <$t as $crate::traits::InHeap>::trace($t, tracer);
+                    )*
+
+                    // If the above `$(...)*` expansion is empty, we need this
+                    // to quiet unused variable warnings for `tracer`.
+                    let _ = tracer;
+                }
+            }
+        }
+
+        gc_trivial_tuple_impl! {
+            @as_item
             impl<$($t: IntoHeapBase,)*> IntoHeapBase for ($($t,)*) {
                 type In = ($($t::In,)*);
 
@@ -319,21 +348,6 @@ macro_rules! gc_trivial_tuple_impl {
                 fn into_heap(self) -> Self::In {
                     let ($($t,)*) = self;
                     ($($t.into_heap(),)*)
-                }
-
-                #[allow(non_snake_case)]
-                unsafe fn trace<R>(storage: &Self::In, tracer: &mut R)
-                    where R: Tracer
-                {
-                    let &($(ref $t,)*) = storage;
-
-                    $(
-                        <$t as $crate::traits::IntoHeapBase>::trace($t, tracer);
-                    )*
-
-                    // If the above `$(...)*` expansion is empty, we need this
-                    // to quiet unused variable warnings for `tracer`.
-                    let _ = tracer;
                 }
 
                 #[allow(non_snake_case)]

@@ -4,7 +4,7 @@ use heap::GcHeap;
 use pages::{self, PageHeader};
 use ptr::{Pointer, UntypedPointer};
 use signposts;
-use traits::{IntoHeapAllocation, Tracer};
+use traits::{InHeap, Tracer};
 
 /// Perform all the marking for a collection.
 pub fn mark<'h>(heap: &mut GcHeap) {
@@ -85,10 +85,7 @@ impl<'h> MarkingTracer {
 }
 
 impl Tracer for MarkingTracer {
-    fn visit<'h, T>(&mut self, ptr: Pointer<T::In>)
-    where
-        T: IntoHeapAllocation<'h>,
-    {
+    fn visit<U: InHeap>(&mut self, ptr: Pointer<U>) {
         let is_marked = unsafe { pages::get_mark_bit(ptr) };
         if is_marked {
             return;
@@ -108,7 +105,7 @@ impl Tracer for MarkingTracer {
         // Keep going with the monomorphized fast path for marking.
         self.fuel -= 1;
         unsafe {
-            T::trace(ptr.as_ref(), self);
+            ptr.as_ref().trace(self);
         }
         self.fuel += 1;
     }

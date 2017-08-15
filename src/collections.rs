@@ -6,7 +6,15 @@ use std::cmp::Ordering;
 use std::hash::{Hash, Hasher};
 use std::mem;
 use std::ops::Range;
-use traits::{IntoHeap, IntoHeapAllocation, IntoHeapBase, Tracer};
+use traits::{InHeap, IntoHeap, IntoHeapAllocation, IntoHeapBase, Tracer};
+
+impl<U: InHeap> InHeap for Vec<U> {
+    unsafe fn trace<R: Tracer>(&self, tracer: &mut R) {
+        for r in self {
+            r.trace(tracer);
+        }
+    }
+}
 
 impl<T: IntoHeapBase> IntoHeapBase for Vec<T> {
     type In = Vec<T::In>;
@@ -17,15 +25,6 @@ impl<T: IntoHeapBase> IntoHeapBase for Vec<T> {
 
     unsafe fn from_heap(storage: &Vec<T::In>) -> Vec<T> {
         storage.iter().map(|x| T::from_heap(x)).collect()
-    }
-
-    unsafe fn trace<R>(storage: &Vec<T::In>, tracer: &mut R)
-    where
-        R: Tracer,
-    {
-        for r in storage {
-            T::trace(r, tracer);
-        }
     }
 }
 
@@ -81,13 +80,6 @@ impl<'h, T: IntoHeap<'h>> IntoHeapBase for VecRef<'h, T> {
 
     unsafe fn from_heap(storage: &Pointer<Vec<T::In>>) -> VecRef<'h, T> {
         VecRef(GcRef::new(*storage))
-    }
-
-    unsafe fn trace<R>(storage: &Pointer<Vec<T::In>>, tracer: &mut R)
-    where
-        R: Tracer,
-    {
-        tracer.visit::<Vec<T>>(*storage)
     }
 }
 

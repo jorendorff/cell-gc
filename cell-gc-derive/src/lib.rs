@@ -152,8 +152,7 @@ fn impl_into_heap_for_struct(ast: &syn::DeriveInput, data: &syn::VariantData) ->
             let field_vis: &Vec<_> = &fields.iter().map(|f| &f.vis).collect();
             let field_names: &Vec<_> = &fields.iter().map(|f| &f.ident).collect();
             let field_types: &Vec<_> = &fields.iter().map(|f| &f.ty).collect();
-            let field_storage_types: Vec<_> = fields
-                .iter()
+            let field_storage_types: &Vec<_> = &fields.iter()
                 .map(|f| field_storage_type(&f.ty, &heap_lifetime))
                 .collect();
 
@@ -170,10 +169,8 @@ fn impl_into_heap_for_struct(ast: &syn::DeriveInput, data: &syn::VariantData) ->
                 .iter()
                 .map(|f| {
                     let name = &f.ident;
-                    let ty = &f.ty;
                     quote! {
-                        <#ty as ::cell_gc::traits::IntoHeapBase>
-                            ::trace(&storage.#name, tracer);
+                        ::cell_gc::traits::InHeap::trace(&self.#name, tracer);
                     }
                 })
                 .collect();
@@ -183,6 +180,21 @@ fn impl_into_heap_for_struct(ast: &syn::DeriveInput, data: &syn::VariantData) ->
             let field_names_1 = field_names;
 
             let into_heap = quote! {
+                impl #impl_generics ::cell_gc::traits::InHeap
+                    for #storage_type_name #storage_ty_generics
+                    #where_clause
+                {
+                    unsafe fn trace<R>(&self, tracer: &mut R)
+                        where R: ::cell_gc::traits::Tracer
+                    {
+                        #( #trace_fields )*
+
+                        // Quiet unused variable warnings when `$(...)*` expands
+                        // to nothing.
+                        let _ = tracer;
+                    }
+                }
+
                 impl #impl_generics ::cell_gc::traits::IntoHeapBase
                     for #name #ty_generics
                     #where_clause
@@ -197,16 +209,6 @@ fn impl_into_heap_for_struct(ast: &syn::DeriveInput, data: &syn::VariantData) ->
                                         self.#field_names_1)
                             ),*
                         }
-                    }
-
-                    unsafe fn trace<R>(storage: &Self::In, tracer: &mut R)
-                        where R: ::cell_gc::traits::Tracer
-                    {
-                        #( #trace_fields )*
-
-                        // Quiet unused variable warnings when `$(...)*` expands
-                        // to nothing.
-                        let _ = tracer;
                     }
 
                     unsafe fn from_heap(storage: &Self::In) -> Self {
@@ -272,13 +274,6 @@ fn impl_into_heap_for_struct(ast: &syn::DeriveInput, data: &syn::VariantData) ->
 
                     unsafe fn from_heap(storage: &Self::In) -> Self {
                         #ref_type_name(::cell_gc::GcRef::<#heap_lifetime, #name #ty_generics>::new(*storage))
-                    }
-
-                    unsafe fn trace<R>(storage: &Self::In, tracer: &mut R)
-                        where R: ::cell_gc::traits::Tracer
-                    {
-                        <::cell_gc::GcRef<#heap_lifetime, #name #ty_generics>
-                            as ::cell_gc::traits::IntoHeapBase>::trace(storage, tracer)
                     }
                 }
 
@@ -521,26 +516,22 @@ fn impl_into_heap_for_enum(ast: &syn::DeriveInput, variants: &[syn::Variant]) ->
         match v.data {
             syn::VariantData::Struct(ref fields) => {
                 let field_names: &Vec<_> = &fields.iter().map(|f| &f.ident).collect();
-                let field_types = fields.iter().map(|f| &f.ty);
                 quote! {
                     #storage_type_name::#ident { #(ref #field_names),* } => {
                         #(
-                            <#field_types as ::cell_gc::traits::IntoHeapBase>
-                                ::trace(#field_names, tracer);
+                            ::cell_gc::traits::InHeap::trace(#field_names, tracer);
                         )*
                     }
                 }
             }
             syn::VariantData::Tuple(ref fields) => {
-                let field_types = fields.iter().map(|f| &f.ty);
                 let bindings: &Vec<Ident> = &(0..fields.len())
                     .map(|n| Ident::from(format!("x{}", n)))
                     .collect();
                 quote! {
                     #storage_type_name::#ident( #(ref #bindings),* ) => {
                         #(
-                            <#field_types as ::cell_gc::traits::IntoHeapBase>
-                                ::trace(#bindings, tracer);
+                            ::cell_gc::traits::InHeap::trace(#bindings, tracer);
                         )*
                     }
                 }
@@ -552,6 +543,24 @@ fn impl_into_heap_for_enum(ast: &syn::DeriveInput, variants: &[syn::Variant]) ->
     });
 
     let into_heap = quote! {
+        impl #impl_generics
+            ::cell_gc::traits::InHeap
+            for #storage_type_name #storage_ty_generics
+            #where_clause
+        {
+            unsafe fn trace<R>(&self, tracer: &mut R)
+                where R: ::cell_gc::traits::Tracer
+            {
+                match *self {
+                    #( #trace_arms ),*
+                }
+
+                // Quiet unused variable warnings when `$(...)*` expands to
+                // nothing.
+                let _ = tracer;
+            }
+        }
+
         impl #impl_generics
             ::cell_gc::traits::IntoHeapBase
             for #name #ty_generics
@@ -569,18 +578,6 @@ fn impl_into_heap_for_enum(ast: &syn::DeriveInput, variants: &[syn::Variant]) ->
                 match *storage {
                     #( #from_heap_arms ),*
                 }
-            }
-
-            unsafe fn trace<R>(storage: &Self::In, tracer: &mut R)
-                where R: ::cell_gc::traits::Tracer
-            {
-                match *storage {
-                    #( #trace_arms ),*
-                }
-
-                // Quiet unused variable warnings when `$(...)*` expands to
-                // nothing.
-                let _ = tracer;
             }
         }
 

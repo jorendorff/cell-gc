@@ -8,7 +8,7 @@ use std::any::TypeId;
 use std::{cmp, mem, ptr};
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
-use traits::{IntoHeapAllocation, Tracer};
+use traits::{InHeap, IntoHeapAllocation, Tracer};
 
 /// Stores mark bits, pin counts, and an "am I in use?" bit for heap allocations.
 struct MarkWord(usize);
@@ -125,13 +125,13 @@ where
         // If the mark bit is set, then this object is gray in the classic
         // tri-color sense: seen but we just popped it off the mark stack and
         // have't finished enumerating its outgoing edges.
-        T::trace(addr.as_ref(), tracer);
+        addr.as_ref().trace(tracer);
     } else {
         // If the mark bit is not set, then this object is white in the classic
         // tri-color sense: freshly discovered to be live, and we now need to
         // set its mark bit and then process its edges or push it onto the mark
         // stack for later edge processing.
-        tracer.visit::<T>(addr);
+        tracer.visit::<T::In>(addr);
     }
 }
 
