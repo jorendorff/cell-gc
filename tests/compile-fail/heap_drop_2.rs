@@ -1,7 +1,7 @@
 //! Check that Rust does not let us drop the heap while references into it
 //! still exist (they would be dangling pointers).
 
-#[macro_use] extern crate cell_gc;
+extern crate cell_gc;
 #[macro_use] extern crate cell_gc_derive;
 mod pairs_aux;
 use cell_gc::*;

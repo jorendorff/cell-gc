@@ -1,7 +1,7 @@
 //! Being able to swap two heap bindings would utterly break the safety
 //! enforcement regime. :)
 
-#[macro_use] extern crate cell_gc;
+extern crate cell_gc;
 #[macro_use] extern crate cell_gc_derive;
 mod pairs_aux;
 use cell_gc::*;

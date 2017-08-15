@@ -9,7 +9,7 @@
 //! changed since then; now we have heap sessions and this is less of a
 //! potential pitfall.)
 
-#[macro_use] extern crate cell_gc;
+extern crate cell_gc;
 #[macro_use] extern crate cell_gc_derive;
 mod pairs_aux;
 use cell_gc::*;

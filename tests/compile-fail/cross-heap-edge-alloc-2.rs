@@ -1,6 +1,6 @@
 //! Same as `cross-heap-edge-alloc.rs` but crossing the other direction.
 
-#[macro_use] extern crate cell_gc;
+extern crate cell_gc;
 #[macro_use] extern crate cell_gc_derive;
 mod pairs_aux;
 use cell_gc::*;
