@@ -85,7 +85,7 @@ use std::hash::{Hasher, BuildHasher};
 use std::marker::PhantomData;
 use std::mem;
 use std::sync::{Arc, Mutex, Weak};
-use traits::IntoHeapAllocation;
+use traits::{InHeap, IntoHeapAllocation};
 
 /// A universe in which you can store values that implement
 /// `IntoHeapAllocation`. The values are mutable and they can point to each
@@ -348,13 +348,13 @@ impl Drop for GcHeap {
 }
 
 impl<'h> GcHeapSession<'h> {
-    fn get_page_set<'a, T: IntoHeapAllocation<'h> + 'a>(&'a mut self) -> PageSetRef<'a, 'h, T> {
-        let key = pages::heap_type_id::<T>();
+    fn get_page_set<'a, U: InHeap>(&'a mut self) -> PageSetRef<'a, U> {
+        let key = pages::heap_type_id::<U>();
         let heap: *mut GcHeap = self.heap;
         self.heap
             .page_sets
             .entry(key)
-            .or_insert_with(|| unsafe { PageSet::new::<T>(heap) })
+            .or_insert_with(|| unsafe { PageSet::new::<U>(heap) })
             .downcast_mut()
     }
 
@@ -366,7 +366,7 @@ impl<'h> GcHeapSession<'h> {
     /// If there are already at least `limit` pages for `T` values, this may have no effect;
     /// it doesn't cause pages to be freed.
     pub fn set_page_limit<T: IntoHeapAllocation<'h>>(&mut self, limit: Option<usize>) {
-        self.get_page_set::<T>().set_page_limit(limit);
+        self.get_page_set::<T::In>().set_page_limit(limit);
     }
 
     /// Allocate memory, moving `value` into the heap.
@@ -397,7 +397,7 @@ impl<'h> GcHeapSession<'h> {
     /// `UninitializedAllocation`s already exist in this heap.
     unsafe fn try_fast_alloc<T: IntoHeapAllocation<'h>>(&mut self) -> Option<UninitializedAllocation<T::In>> {
         self.heap.gc_counter = self.heap.gc_counter.saturating_sub(1);
-        self.get_page_set::<T>().try_fast_alloc()
+        self.get_page_set::<T::In>().try_fast_alloc()
             .map(|p| {
                 self.heap.alloc_counter += 1;
                 p
@@ -410,11 +410,11 @@ impl<'h> GcHeapSession<'h> {
             self.heap.gc();
         }
         unsafe {
-            let allocation = match self.get_page_set::<T>().try_alloc() {
+            let allocation = match self.get_page_set::<T::In>().try_alloc() {
                 Some(p) => p,
                 None => {
                     self.heap.gc();
-                    match self.get_page_set::<T>().try_alloc() {
+                    match self.get_page_set::<T::In>().try_alloc() {
                         Some(p) => p,
                         None => return None,
                     }

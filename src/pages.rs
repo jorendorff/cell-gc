@@ -1,14 +1,14 @@
 //! Allocating pages of memory from the OS and carving them into individual
 //! allocations. See TypedPage for details.
 
-use heap::{GcHeap, HeapSessionId};
+use heap::GcHeap;
 use marking::MarkingTracer;
 use ptr::{Pointer, UntypedPointer};
 use std::any::TypeId;
 use std::{cmp, mem, ptr};
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
-use traits::{InHeap, IntoHeapAllocation, Tracer};
+use traits::{InHeap, Tracer};
 
 /// Stores mark bits, pin counts, and an "am I in use?" bit for heap allocations.
 struct MarkWord(usize);
@@ -23,8 +23,8 @@ const ALLOCATED_BIT: usize = 2;
 ///
 /// # Safety
 ///
-/// `p` must point to a live allocation of type `T` in this heap.
-pub unsafe fn pin<U>(p: Pointer<U>) {
+/// `p` must point to a live allocation of type `U` in this heap.
+pub unsafe fn pin<U: InHeap>(p: Pointer<U>) {
     MarkWord::from_ptr(p, |mw| mw.pin());
 }
 
@@ -32,8 +32,8 @@ pub unsafe fn pin<U>(p: Pointer<U>) {
 ///
 /// # Safety
 ///
-/// `p` must point to a pinned allocation of type `T` in this heap.
-pub unsafe fn unpin<U>(p: Pointer<U>) {
+/// `p` must point to a pinned allocation of type `U` in this heap.
+pub unsafe fn unpin<U: InHeap>(p: Pointer<U>) {
     MarkWord::from_ptr(p, |mw| mw.unpin());
 }
 
@@ -46,18 +46,18 @@ pub unsafe fn unpin_untyped(p: UntypedPointer) {
     MarkWord::from_untyped_ptr(p, |mw| mw.unpin());
 }
 
-pub unsafe fn get_mark_bit<U>(p: Pointer<U>) -> bool {
+pub unsafe fn get_mark_bit<U: InHeap>(p: Pointer<U>) -> bool {
     MarkWord::from_ptr(p, |mw| mw.is_marked())
 }
 
-pub unsafe fn set_mark_bit<U>(p: Pointer<U>) {
+pub unsafe fn set_mark_bit<U: InHeap>(p: Pointer<U>) {
     MarkWord::from_ptr(p, |mw| mw.mark());
 }
 
 const MARK_WORD_INIT: MarkWord = MarkWord(0);
 
 impl MarkWord {
-    unsafe fn from_ptr<U, F, R>(ptr: Pointer<U>, f: F) -> R
+    unsafe fn from_ptr<U: InHeap, F, R>(ptr: Pointer<U>, f: F) -> R
         where F: for<'a> FnOnce(&'a mut MarkWord) -> R
     {
         let addr = ptr.as_usize() - mem::size_of::<MarkWord>();
@@ -115,11 +115,8 @@ impl MarkWord {
 
 /// Non-inlined function that serves as an entry point to marking. This is used
 /// for marking root set entries.
-unsafe fn mark_entry_point<'h, T>(addr: UntypedPointer, tracer: &mut MarkingTracer)
-where
-    T: IntoHeapAllocation<'h>,
-{
-    let addr = addr.as_typed_ptr::<T::In>();
+unsafe fn mark_entry_point<U: InHeap>(addr: UntypedPointer, tracer: &mut MarkingTracer) {
+    let addr = addr.as_typed_ptr::<U>();
 
     if get_mark_bit(addr) {
         // If the mark bit is set, then this object is gray in the classic
@@ -131,12 +128,12 @@ where
         // tri-color sense: freshly discovered to be live, and we now need to
         // set its mark bit and then process its edges or push it onto the mark
         // stack for later edge processing.
-        tracer.visit::<T::In>(addr);
+        tracer.visit::<U>(addr);
     }
 }
 
-pub fn heap_type_id<'h, T: IntoHeapAllocation<'h>>() -> TypeId {
-    TypeId::of::<T::In>()
+pub fn heap_type_id<U: InHeap>() -> TypeId {
+    TypeId::of::<U>()
 }
 
 pub(crate) const PAGE_SIZE: usize = 0x1000;
@@ -173,24 +170,18 @@ impl PageHeader {
         self.type_id
     }
 
-    pub fn downcast_mut<'h, T>(&mut self) -> Option<&mut TypedPage<T::In>>
-    where
-        T: IntoHeapAllocation<'h>,
-    {
-        if heap_type_id::<T>() == self.type_id() {
-            let ptr = self as *mut PageHeader as *mut TypedPage<T::In>;
+    pub fn downcast_mut<U: InHeap>(&mut self) -> Option<&mut TypedPage<U>> {
+        if heap_type_id::<U>() == self.type_id() {
+            let ptr = self as *mut PageHeader as *mut TypedPage<U>;
             Some(unsafe { &mut *ptr })
         } else {
             None
         }
     }
 
-    pub fn unchecked_downcast_mut<'h, T>(&mut self) -> &mut TypedPage<T::In>
-    where
-        T: IntoHeapAllocation<'h>
-    {
-        debug_assert_eq!(heap_type_id::<T>(), self.type_id());
-        let ptr = self as *mut PageHeader as *mut TypedPage<T::In>;
+    pub fn unchecked_downcast_mut<U: InHeap>(&mut self) -> &mut TypedPage<U> {
+        debug_assert_eq!(heap_type_id::<U>(), self.type_id());
+        let ptr = self as *mut PageHeader as *mut TypedPage<U>;
         unsafe { &mut *ptr }
     }
 
@@ -248,12 +239,12 @@ impl PageHeader {
 /// The layout of a page is like this:
 ///
 /// ```ignore
-/// struct TypedPage<U> {
+/// struct TypedPage<U: InHeap> {
 ///     header: PageHeader
 ///     allocations: [Allocation<U>; Self::capacity()]
 /// }
 ///
-/// struct Allocation<U> {
+/// struct Allocation<U: InHeap> {
 ///     mark_word: MarkWord,
 ///     union {
 ///         value: U,
@@ -279,12 +270,12 @@ impl PageHeader {
 /// Trivia: This wastes a word when size_of<U>() is 0; the MarkWord (rather
 /// than the value field) could contain the free-list chain. However, the
 /// direction we'd like to go is to get rid of pin counts.
-pub struct TypedPage<U> {
+pub struct TypedPage<U: InHeap> {
     pub header: PageHeader,
     pub allocations: PhantomData<U>,
 }
 
-impl<U> Deref for TypedPage<U> {
+impl<U: InHeap> Deref for TypedPage<U> {
     type Target = PageHeader;
 
     fn deref(&self) -> &PageHeader {
@@ -292,7 +283,7 @@ impl<U> Deref for TypedPage<U> {
     }
 }
 
-impl<U> DerefMut for TypedPage<U> {
+impl<U: InHeap> DerefMut for TypedPage<U> {
     fn deref_mut(&mut self) -> &mut PageHeader {
         &mut self.header
     }
@@ -311,7 +302,7 @@ fn round_up(n: usize, k: usize) -> usize {
     }
 }
 
-impl<U> TypedPage<U> {
+impl<U: InHeap> TypedPage<U> {
     /// The actual size of an allocation can't be smaller than the size of a
     /// pointer, due to the way we store the freelist by stealing a pointer
     /// from the allocation itself.
@@ -438,8 +429,8 @@ impl<U> TypedPage<U> {
 ///
 /// This must be called only after a full mark phase, to avoid sweeping objects
 /// that are still reachable.
-unsafe fn sweep_entry_point<'h, T: IntoHeapAllocation<'h>>(header: &mut PageHeader) -> usize {
-    header.downcast_mut::<T>().expect("page header corrupted").sweep()
+unsafe fn sweep_entry_point<U: InHeap>(header: &mut PageHeader) -> usize {
+    header.downcast_mut::<U>().expect("page header corrupted").sweep()
 }
 
 /// An unordered collection of memory pages that all share an allocation type.
@@ -513,10 +504,10 @@ impl PageSet {
     /// # Safety
     ///
     /// Safe as long as `heap` is a valid pointer.
-    pub unsafe fn new<'h, T: IntoHeapAllocation<'h>>(heap: *mut GcHeap) -> PageSet {
+    pub unsafe fn new<'h, U: InHeap>(heap: *mut GcHeap) -> PageSet {
         PageSet {
             heap,
-            sweep_fn: sweep_entry_point::<T>,
+            sweep_fn: sweep_entry_point::<U>,
             page_count: 0,
             full_pages: ptr::null_mut(),
             other_pages: ptr::null_mut(),
@@ -528,20 +519,16 @@ impl PageSet {
     ///
     /// # Panics
     ///
-    /// If T is not the actual allocation type for this page set.
-    pub fn downcast_mut<'a, 'h, T>(&'a mut self) -> PageSetRef<'a, 'h, T>
-    where
-        T: IntoHeapAllocation<'h> + 'a,
-    {
+    /// If U is not the actual allocation type for this page set.
+    pub fn downcast_mut<'a, U: InHeap>(&'a mut self) -> PageSetRef<'a, U> {
         assert_eq!(
             self.sweep_fn as *const (),
-            sweep_entry_point::<T> as *const ()
+            sweep_entry_point::<U> as *const ()
         );
 
         PageSetRef {
             page_set: self,
-            id: PhantomData,
-            also: PhantomData,
+            phantom: PhantomData,
         }
     }
 
@@ -617,24 +604,23 @@ impl PageSet {
     }
 }
 
-pub struct PageSetRef<'a, 'h, T: IntoHeapAllocation<'h> + 'a> {
+pub struct PageSetRef<'a, U: InHeap> {
     page_set: &'a mut PageSet,
-    id: HeapSessionId<'h>,
-    also: PhantomData<&'a mut T>,
+    phantom: PhantomData<&'a mut U>,
 }
 
-impl<'a, 'h, T: IntoHeapAllocation<'h> + 'a> Deref for PageSetRef<'a, 'h, T> {
+impl<'a, U: InHeap> Deref for PageSetRef<'a, U> {
     type Target = PageSet;
 
     fn deref(&self) -> &PageSet { self.page_set }
 }
 
-impl<'a, 'h, T: IntoHeapAllocation<'h> + 'a> DerefMut for PageSetRef<'a, 'h, T> {
+impl<'a, U: InHeap> DerefMut for PageSetRef<'a, U> {
     fn deref_mut(&mut self) -> &mut PageSet { self.page_set }
 }
 
-impl<'a, 'h, T: IntoHeapAllocation<'h> + 'a> PageSetRef<'a, 'h, T> {
-    pub unsafe fn try_fast_alloc(&mut self) -> Option<UninitializedAllocation<T::In>> {
+impl<'a, U: InHeap> PageSetRef<'a, U> {
+    pub unsafe fn try_fast_alloc(&mut self) -> Option<UninitializedAllocation<U>> {
         if self.other_pages.is_null() {
             None
         } else {
@@ -642,12 +628,12 @@ impl<'a, 'h, T: IntoHeapAllocation<'h> + 'a> PageSetRef<'a, 'h, T> {
         }
     }
 
-    unsafe fn infallible_fast_alloc(&mut self) -> UninitializedAllocation<T::In> {
+    unsafe fn infallible_fast_alloc(&mut self) -> UninitializedAllocation<U> {
         // We have a nonfull page. Allocation can't fail.
         debug_assert!(!self.other_pages.is_null());
 
         let front_page = self.other_pages;
-        let page = (*front_page).unchecked_downcast_mut::<T>();
+        let page = (*front_page).unchecked_downcast_mut::<U>();
         let ptr = page.infallible_alloc();
 
         // If the page is full now, move it to the other list.
@@ -662,12 +648,12 @@ impl<'a, 'h, T: IntoHeapAllocation<'h> + 'a> PageSetRef<'a, 'h, T> {
         ptr
     }
 
-    /// Allocate memory for a value of type `T::In`.
+    /// Allocate memory for a value of type `U`.
     ///
     /// # Safety
     ///
     /// Safe to call as long as GC is not happening.
-    pub unsafe fn try_alloc(&mut self) -> Option<UninitializedAllocation<T::In>> {
+    pub unsafe fn try_alloc(&mut self) -> Option<UninitializedAllocation<U>> {
         // First, try to allocate from an existing page.
         if !self.other_pages.is_null() {
             return Some(self.infallible_fast_alloc());
@@ -684,25 +670,25 @@ impl<'a, 'h, T: IntoHeapAllocation<'h> + 'a> PageSetRef<'a, 'h, T> {
     ///
     /// Initialize its header and freelist and link it into this page set's
     /// linked list of pages.
-    fn new_page(&mut self) -> &mut TypedPage<T::In> {
-        let capacity = TypedPage::<T::In>::capacity();
+    fn new_page(&mut self) -> &mut TypedPage<U> {
+        let capacity = TypedPage::<U>::capacity();
         assert!({
-            let size_of_page = mem::size_of::<TypedPage<T::In>>();
-            let alloc_offset = TypedPage::<T::In>::first_allocation_offset();
+            let size_of_page = mem::size_of::<TypedPage<U>>();
+            let alloc_offset = TypedPage::<U>::first_allocation_offset();
             size_of_page <= alloc_offset
         });
         assert!({
-            let alloc_offset = TypedPage::<T::In>::first_allocation_offset();
-            let alloc_size = TypedPage::<T::In>::allocation_size();
+            let alloc_offset = TypedPage::<U>::first_allocation_offset();
+            let alloc_size = TypedPage::<U>::allocation_size();
             alloc_offset + capacity * alloc_size <= PAGE_SIZE
         });
 
         // All allocations in a page are pointer-size-aligned. If this isn't
-        // good enough for T::In, panic.
+        // good enough for U, panic.
         {
             let word_size = mem::size_of::<usize>();
             assert_eq!(mem::size_of::<MarkWord>(), word_size);
-            assert!(mem::align_of::<T::In>() <= word_size,
+            assert!(mem::align_of::<U>() <= word_size,
                     "Types with exotic alignment requirements are not supported");
         }
 
@@ -713,10 +699,10 @@ impl<'a, 'h, T: IntoHeapAllocation<'h> + 'a> PageSetRef<'a, 'h, T> {
         // If it doesn't, panic.
         assert!(is_aligned(raw_page));
 
-        let page_ptr: *mut TypedPage<T::In> = raw_page as *mut TypedPage<T::In>;
+        let page_ptr: *mut TypedPage<U> = raw_page as *mut TypedPage<U>;
         unsafe {
             // Normally we insert the new page in the nonfull page list.
-            // However, if T::In is so large that only one allocation fits in a
+            // However, if U is so large that only one allocation fits in a
             // page, the new page must go directly into the full page list.
             let list_head =
                 if capacity == 1 {
@@ -731,10 +717,10 @@ impl<'a, 'h, T: IntoHeapAllocation<'h> + 'a> PageSetRef<'a, 'h, T> {
                     header: PageHeader {
                         heap: self.page_set.heap,
                         next_page: *list_head,
-                        type_id: heap_type_id::<T>(),
-                        mark_fn: mark_entry_point::<T>,
+                        type_id: heap_type_id::<U>(),
+                        mark_fn: mark_entry_point::<U>,
                         freelist: ptr::null_mut(),
-                        allocation_size: TypedPage::<T::In>::allocation_size()
+                        allocation_size: TypedPage::<U>::allocation_size()
                     },
                     allocations: PhantomData,
                 },
@@ -774,11 +760,11 @@ impl<'a, 'h, T: IntoHeapAllocation<'h> + 'a> PageSetRef<'a, 'h, T> {
 /// Invariant: At any given time, at most one of these objects will exist per
 /// heap. (This is a consequence of the safety rule: trying to allocate another
 /// object could trigger GC.)
-pub struct UninitializedAllocation<U> {
+pub struct UninitializedAllocation<U: InHeap> {
     ptr: Pointer<U>
 }
 
-impl<U> UninitializedAllocation<U> {
+impl<U: InHeap> UninitializedAllocation<U> {
     pub fn as_mut(&self) -> *mut U {
         self.ptr.as_mut()
     }
@@ -796,7 +782,7 @@ impl<U> UninitializedAllocation<U> {
     }
 }
 
-impl<U> Drop for UninitializedAllocation<U> {
+impl<U: InHeap> Drop for UninitializedAllocation<U> {
     fn drop(&mut self) {
         // Roll back the allocation.
         unsafe {
