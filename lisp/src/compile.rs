@@ -317,9 +317,15 @@ impl<'e, 'h> Emitter<'e, 'h> {
     }
 
     /// After parsing a letrec, emit the actual code for it.
+    ///
+    /// R6RS states that (letrec) and (letrec*) expressions "should" or "must"
+    /// not use variables that aren't bound yet, and says "the continuation of
+    /// each <init> should not be invoked more than once." We do not detect
+    /// either error.
     fn compile_parsed_letrec(
         &mut self,
         senv: &StaticEnvironmentRef<'h>,
+        letrec_star: bool,
         exprs: Vec<Value<'h>>,
         body: Value<'h>,
         k: Ctn,
@@ -328,9 +334,21 @@ impl<'e, 'h> Emitter<'e, 'h> {
         assert_eq!(senv.names().len(), exprs.len());
 
         self.emit_push_env(senv.clone())?;
-        for (i, expr) in exprs.into_iter().enumerate() {
-            self.compile_expr(senv, expr, Ctn::Single)?;
-            self.emit_set_static(0, i)?;
+        if letrec_star {
+            // (letrec*) initialization expressions are evaluated and bound in order.
+            for (i, expr) in exprs.into_iter().enumerate() {
+                self.compile_expr(senv, expr, Ctn::Single)?;
+                self.emit_set_static(0, i)?;
+            }
+        } else {
+            // (letrec) initialization expressions are all evaluated before binding.
+            let n = exprs.len();
+            for expr in exprs {
+                self.compile_expr(senv, expr, Ctn::Single)?;
+            }
+            for i in (0..n).rev() {
+                self.emit_set_static(0, i)?;
+            }
         }
         self.compile_body(senv, body, k)?;
         if k != Ctn::Tail {
@@ -339,7 +357,7 @@ impl<'e, 'h> Emitter<'e, 'h> {
         Ok(())
     }
 
-    // Compile the body of a lambda or letrec*.
+    // Compile the body of a lambda, letrec, or letrec*.
     fn compile_body(
         &mut self,
         senv: &StaticEnvironmentRef<'h>,
@@ -375,7 +393,7 @@ impl<'e, 'h> Emitter<'e, 'h> {
 
         // Translate this body into a `letrec*`.
         let body_senv = senv.new_nested_environment(self.hs, names);
-        self.compile_parsed_letrec(&body_senv, init_exprs, body, k)
+        self.compile_parsed_letrec(&body_senv, true, init_exprs, body, k)
     }
 
     pub fn compile_name(
@@ -490,19 +508,20 @@ impl<'e, 'h> Emitter<'e, 'h> {
     fn compile_letrec(
         &mut self,
         senv: &StaticEnvironmentRef<'h>,
+        letrec_star: bool,
         tail: Value<'h>,
         k: Ctn,
     ) -> Result<()> {
-        let (bindings, body_forms) = tail.as_pair("letrec*: bindings required")?;
+        let (bindings, body_forms) = tail.as_pair("letrec: bindings required")?;
         let mut names = vec![];
         let mut init_exprs = vec![];
         for binding_result in bindings {
             let binding = binding_result?;
-            let (name_v, rest) = binding.as_pair("letrec*: invalid binding")?;
-            let name = name_v.as_symbol("letrec*: name required")?;
-            let (expr, rest) = rest.as_pair("letrec*: value required for binding")?;
+            let (name_v, rest) = binding.as_pair("letrec: invalid binding")?;
+            let name = name_v.as_symbol("letrec: name required")?;
+            let (expr, rest) = rest.as_pair("letrec: value required for binding")?;
             if !rest.is_nil() {
-                return Err("(letrec*): too many arguments".into());
+                return Err("letrec: too many elements in binding".into());
             }
             names.push(GcLeaf::new(name));
             init_exprs.push(expr);
@@ -512,7 +531,7 @@ impl<'e, 'h> Emitter<'e, 'h> {
         }
 
         let body_senv = senv.new_nested_environment(self.hs, names);
-        return self.compile_parsed_letrec(&body_senv, init_exprs, body_forms, k);
+        return self.compile_parsed_letrec(&body_senv, letrec_star, init_exprs, body_forms, k);
     }
 
     fn compile_set(
@@ -571,13 +590,10 @@ impl<'e, 'h> Emitter<'e, 'h> {
                         "begin" =>
                             // In expression context, this is sequencing, not splicing.
                             self.compile_seq(senv, p.cdr(), k),
-                        "letrec" | "letrec*" =>
-                            // Treat (letrec) forms just like (letrec*). Nonstandard in
-                            // R6RS, which requires implementations to detect invalid
-                            // references to letrec bindings before they're bound. But
-                            // R5RS does not require this, and anyway well-behaved
-                            // programs won't care.
-                            self.compile_letrec(senv, p.cdr(), k),
+                        "letrec" =>
+                            self.compile_letrec(senv, false, p.cdr(), k),
+                        "letrec*" =>
+                            self.compile_letrec(senv, true, p.cdr(), k),
                         "set!" =>
                             self.compile_set(senv, p.cdr(), k),
                         "define" =>
