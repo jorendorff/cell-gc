@@ -320,7 +320,7 @@ impl GcHeap {
 
         assert!(
             num_swept <= self.alloc_counter,
-            "Should never have sweep more objects than are currently allocated"
+            "Should never sweep more objects than are currently allocated"
         );
         self.alloc_counter -= num_swept;
 
