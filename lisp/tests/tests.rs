@@ -30,7 +30,7 @@ macro_rules! expanded_test {
     ( $file:ident ) => {
         #[test]
         fn $file() {
-            let file = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/", stringify!($file), ".lisp");
+            let file = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/", stringify!($file), ".scm");
             eval_test_file(true, Path::new(file));
         }
     }
@@ -40,7 +40,7 @@ macro_rules! core_test {
     ( $file:ident ) => {
         #[test]
         fn $file() {
-            let file = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/", stringify!($file), ".lisp");
+            let file = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/", stringify!($file), ".scm");
             eval_test_file(false, Path::new(file));
         }
     }
