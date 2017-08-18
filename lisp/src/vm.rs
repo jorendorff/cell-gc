@@ -141,6 +141,26 @@ pub fn eval_compiled<'h>(
     let mut env = env.clone();
     let mut pc = 0;
 
+    macro_rules! push_stack_frame_unless_tail_call {
+        ($op_code:expr) => {
+            if $op_code == op::CALL {
+                stack.push(Value::Code(code));
+                assert!(pc <= i32::max_value() as usize);
+                stack.push(Value::Int(pc as i32));
+                stack.push(Value::Environment(env));
+            } else {
+                // Tail call. Our caller's frame is already on top
+                // of stack. Assert that it's correctly laid out.
+                let top = stack.len();
+                if top != 0 {
+                    assert!(stack[top - 3].is_code());
+                    assert!(stack[top - 2].is_int());
+                    assert!(stack[top - 1].is_environment());
+                }
+            }
+        }
+    }
+
     macro_rules! return_value {
         ($value:ident) => {
             if stack.is_empty() {
@@ -224,21 +244,7 @@ pub fn eval_compiled<'h>(
                 loop {
                     match fval {
                         Value::Lambda(lambda) => {
-                            if op_code == op::CALL {
-                                stack.push(Value::Code(code));
-                                assert!(pc <= i32::max_value() as usize);
-                                stack.push(Value::Int(pc as i32));
-                                stack.push(Value::Environment(env));
-                            } else {
-                                // Tail call. Our caller's frame is already on top
-                                // of stack. Assert that it's correctly laid out.
-                                let top = stack.len();
-                                if top != 0 {
-                                    assert!(stack[top - 3].is_code());
-                                    assert!(stack[top - 2].is_int());
-                                    assert!(stack[top - 1].is_environment());
-                                }
-                            }
+                            push_stack_frame_unless_tail_call!(op_code);
 
                             code = lambda.code();
                             constants = code.constants();
@@ -263,6 +269,8 @@ pub fn eval_compiled<'h>(
                                     args = new_args;
                                 }
                                 Trampoline::TailEval { code: eval_code, env: eval_env } => {
+                                    push_stack_frame_unless_tail_call!(op_code);
+
                                     code = eval_code;
                                     constants = code.constants();
                                     environments = code.environments();
