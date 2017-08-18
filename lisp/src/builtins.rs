@@ -477,7 +477,7 @@ builtins! {
         if ok {
             Ok(())
         } else if let Some(msg) = msg {
-            Err(format!("assert: assertion failed: {:?}", msg).into())
+            Err(format!("assert: assertion failed: {}", msg).into())
         } else {
             Err("assert: assertion failed".into())
         }
