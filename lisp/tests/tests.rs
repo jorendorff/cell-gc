@@ -54,6 +54,7 @@ core_test!(cons);
 expanded_test!(continuations);
 core_test!(double);
 expanded_test!(equivalence);
+expanded_test!(eval);
 core_test!(extensions);
 core_test!(y_combinator);
 core_test!(y_combinator_2);
