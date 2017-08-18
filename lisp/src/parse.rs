@@ -321,7 +321,7 @@ fn token(s: &str) -> IResult<&str, Token> {
     }
 }
 
-// A token that is not one of ``( ) ' ` "` or a symbol starting with an ASCII
+// A token that is not one of ``( ) ' ` "`` or a symbol starting with an ASCII
 // letter.
 named!(
     other_token(&str) -> Token,
