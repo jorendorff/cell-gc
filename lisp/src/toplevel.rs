@@ -44,7 +44,7 @@ pub fn default_env<'h>(hs: &mut GcHeapSession<'h>) -> EnvironmentRef<'h> {
     const EXPANDER_CODE: &'static str = concat!(
         include_str!("psyntax-support.scm"),
         include_str!("psyntax.pp"),
-        "\nsc-expand\n"
+        "\nsc-expand-toplevel\n"
     );
     let xenv = env.new_nested_environment(hs);
     xenv.push(

@@ -319,21 +319,6 @@
                   expr)
                 (assert #f "unrecognized expression" expr))))))
 
-(define expand-toplevel-script
-  (lambda (senv forms)
-    (assert (list? forms))
-    (if (null? forms)
-        '()
-        (letrec* ((head (car forms))
-                  (heads (if (list? head)
-                             (if (eq? (car head) 'begin)
-                                 head
-                                 (list head))
-                             (list head)))
-                  (tails (expand-toplevel-script senv (cdr forms))))
-          (append heads tails)))))
-
-
 (assert (equal? (expand-body (default-senv) '((newline)))
                 '(newline)))
 (assert (equal? (expand-body (default-senv) '((write 3) (newline)))
@@ -365,6 +350,15 @@
 (assert (equal? (expand-defn-or-expr (default-senv) '(let () (define x 1) (define y x) (+ x y)))
                 '((lambda () (letrec* ((x 1) (y x)) (+ x y))))))
 
+(define expand-toplevel
+  (lambda (senv form)
+    (if (if (list? form)
+            (eq? (car form) 'begin)
+            #f)
+        (cons 'begin (map (lambda (form) expand-toplevel senv form)
+                          (cdr form)))
+        (expand-defn-or-expr senv form))))
+
 (define toplevel-senv (default-senv))
-(lambda (form) (expand-defn-or-expr toplevel-senv form))
+(lambda (form) (expand-toplevel toplevel-senv form))
 

@@ -38,10 +38,9 @@
       (interaction-environment))
 (assert (eq? name 'jimb))
 
-;; BUG: psyntax rejects this.
-;; (eval '(begin
-;;         (define y 30)
-;;         (define z '(a b c)))
-;;       (interaction-environment))
-;; (assert (eqv? y 30))
-;; (assert (equal? z '(a b c)))
+(eval '(begin
+        (define y 30)
+        (define z '(a b c)))
+      (interaction-environment))
+(assert (eqv? y 30))
+(assert (equal? z '(a b c)))

@@ -299,21 +299,25 @@ impl<'e, 'h> Emitter<'e, 'h> {
         Ok(())
     }
 
-    fn compile_seq(
+    fn compile_begin<F>(
         &mut self,
+        mut f: F,
         senv: &StaticEnvironmentRef<'h>,
         mut expr_list: Value<'h>,
         k: Ctn,
-    ) -> Result<()> {
+    ) -> Result<()>
+        where
+        F: FnMut(&mut Self, &StaticEnvironmentRef<'h>, Value<'h>, Ctn) -> Result<()>
+    {
         let mut current = match expr_list.next() {
             None => return Err("expression required".into()),
             Some(first) => first?,
         };
         for next in expr_list {
-            self.compile_expr(senv, current, Ctn::Ignore)?;
+            f(self, senv, current, Ctn::Ignore)?;
             current = next?;
         }
-        self.compile_expr(senv, current, k)
+        f(self, senv, current, k)
     }
 
     /// After parsing a letrec, emit the actual code for it.
@@ -386,9 +390,9 @@ impl<'e, 'h> Emitter<'e, 'h> {
             }
         }
 
-        // If there are no definitions, this is easy.
+        // If there are no definitions, this is just like a begin-expression.
         if names.is_empty() {
-            return self.compile_seq(senv, body, k);
+            return self.compile_begin(Self::compile_expr, senv, body, k);
         }
 
         // Translate this body into a `letrec*`.
@@ -589,7 +593,7 @@ impl<'e, 'h> Emitter<'e, 'h> {
                             self.compile_if(senv, p.cdr(), k),
                         "begin" =>
                             // In expression context, this is sequencing, not splicing.
-                            self.compile_seq(senv, p.cdr(), k),
+                            self.compile_begin(Self::compile_expr, senv, p.cdr(), k),
                         "letrec" =>
                             self.compile_letrec(senv, false, p.cdr(), k),
                         "letrec*" =>
@@ -639,8 +643,9 @@ impl<'e, 'h> Emitter<'e, 'h> {
         expr: Value<'h>,
         k: Ctn,
     ) -> Result<()> {
-        // TODO: support (begin) here
-        if is_definition(&expr) {
+        if let Some(children) = begin_form_children(&expr) {
+            self.compile_begin(Self::compile_toplevel, senv, children, k)
+        } else if is_definition(&expr) {
             let (name, init_expr) = parse_define(self.hs, expr)?;
             self.compile_expr(senv, init_expr, Ctn::Single)?;
             self.emit_define(name.unwrap())?;
@@ -649,6 +654,18 @@ impl<'e, 'h> Emitter<'e, 'h> {
             self.compile_expr(senv, expr, k)
         }
     }
+}
+
+/// If `form` is a begin form, return the list of its children, else None.
+fn begin_form_children<'h>(form: &Value<'h>) -> Option<Value<'h>> {
+    if let Value::Cons(ref pair) = *form {
+        if let Value::Symbol(op) = pair.car() {
+            if op.as_str() == "begin" {
+                return Some(pair.cdr());
+            }
+        }
+    }
+    None
 }
 
 fn is_definition<'h>(form: &Value<'h>) -> bool {

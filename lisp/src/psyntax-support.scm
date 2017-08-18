@@ -118,3 +118,12 @@
 (define values list)
 (define (call-with-values f g)
   (apply g (f)))
+
+;; `sc-expand` doesn't handle toplevel (begin) forms, but it's easy to add
+;; support.
+(define (sc-expand-toplevel form)
+  (if (if (list? form)
+          (eq? (car form) 'begin)
+          #f)
+      (cons 'begin (map sc-expand-toplevel (cdr form)))
+      (sc-expand form)))
