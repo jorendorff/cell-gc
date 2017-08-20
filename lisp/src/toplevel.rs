@@ -6,7 +6,7 @@ use compile;
 use env::{Environment, EnvironmentRef};
 use errors::*;
 use parse;
-use std::io::{self, Write};
+use std::path::Path;
 use value::{BuiltinFnPtr, InternedString, Value};
 use vm;
 
@@ -127,36 +127,29 @@ pub fn eval_str<'h>(
     eval_toplevel_forms(hs, env, forms)
 }
 
+pub fn load<'h>(
+    hs: &mut GcHeapSession<'h>,
+    env: &EnvironmentRef<'h>,
+    filename: &Path,
+) -> Result<Value<'h>> {
+    use std::fs::File;
+    use std::io::prelude::*;
+
+    let mut file = File::open(Path::new(filename))
+        .chain_err(|| format!("opening file {:?}", filename))?;
+
+    let mut code = String::new();
+    file.read_to_string(&mut code)
+        .chain_err(|| "reading file")?;
+
+    eval_str(hs, env, &code)
+}
+
 pub fn repl() -> Result<()> {
+    const REPL_CODE: &'static str = include_str!("repl.scm");
     cell_gc::with_heap(|hs| {
         let env = default_env(hs);
-
-        loop {
-            print!("lisp> ");
-            io::stdout().flush()
-                .chain_err(|| "error writing to stdout")?;
-
-            // Read
-            let mut source = String::new();
-            io::stdin().read_line(&mut source)
-                .chain_err(|| "error reading stdin")?;
-            if source.is_empty() {
-                break;
-            }
-            let forms = parse::parse(hs, &source)
-                .chain_err(|| "parse error")?;
-
-            // Eval
-            let result = eval_toplevel_forms(hs, &env, forms)?;
-
-            // Print
-            if !result.is_unspecified() {
-                println!("{}", result);
-            }
-
-            // Loop...
-        }
-
+        eval_str(hs, &env, REPL_CODE)?;
         Ok(())
     })
 }

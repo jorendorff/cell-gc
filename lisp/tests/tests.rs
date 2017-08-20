@@ -1,8 +1,6 @@
 extern crate cell_gc;
 extern crate lisp;
 
-use std::fs;
-use std::io::Read;
 use std::path::Path;
 
 enum Mode {
@@ -12,23 +10,14 @@ enum Mode {
 }
 
 fn eval_test_file(mode: Mode, file: &Path) {
-    let mut file = fs::File::open(file).expect("Should open file OK");
-
-    let mut source = String::new();
-    file.read_to_string(&mut source)
-        .expect("Should read file OK");
-
     cell_gc::with_heap(|hs| {
-        let exprs = lisp::parse::parse(hs, &source).expect("Should parse s-exps OK");
         let env = match mode {
             Mode::Core => lisp::toplevel::core_env(hs),
             Mode::Expanded => lisp::toplevel::expanded_env(hs),
             Mode::Full => lisp::toplevel::default_env(hs),
         };
-        for expr in exprs {
-            lisp::toplevel::eval(hs, &env, expr).expect("Should eval exprs OK");
-            hs.force_gc();
-        }
+
+        lisp::toplevel::load(hs, &env, file).unwrap();
     });
 }
 

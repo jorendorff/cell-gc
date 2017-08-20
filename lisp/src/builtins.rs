@@ -569,27 +569,12 @@ builtins! {
         }))
     }
 
-    fn load "load" <'h>(hs, path_str: Arc<String>, env: EnvironmentRef<'h>) -> Result<()> {
-        use parse;
-        use std::fs::File;
-        use std::io::prelude::*;
+    fn load "load" <'h>(hs, path_str: Arc<String>, env: EnvironmentRef<'h>) -> Result<Value<'h>> {
         use std::path::Path;
         use toplevel;
 
         let filename: &str = &path_str;
-        let mut file = File::open(Path::new(filename))
-            .chain_err(|| format!("opening file {:?}", filename))?;
-
-        let mut source = String::new();
-        file.read_to_string(&mut source)
-            .chain_err(|| "reading file")?;
-
-        let exprs = parse::parse(hs, &source)
-            .chain_err(|| "parsing file")?;
-        for expr in exprs {
-            toplevel::eval(hs, &env, expr)?;
-        }
-        Ok(())
+        toplevel::load(hs, &env, Path::new(filename))
     }
 }
 
