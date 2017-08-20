@@ -511,6 +511,86 @@ builtins! {
         }
     }
 
+    // Read a line of input. Returns an empty string only on EOF.
+    fn read_line "read-line" <'h>(_hs) -> Result<String> {
+        use std::io;
+        use std::error::Error;
+
+        let mut line = String::new();
+        let _ = io::stdout().flush();
+        match io::stdin().read_line(&mut line) {
+            Err(err) => Err(err.description().into()),
+            Ok(_) => Ok(line)
+        }
+    }
+
+    // Parse the given string. Return value is a keyword-payload pair,
+    // (cons 'ok <list>) if data is a list of parsed values;
+    // (cons 'error <message>) where message is a string;
+    // (cons 'incomplete '()) if data doesn't parse, but is a prefix of something that would.
+    fn parse "parse" <'h>(hs, data: Arc<String>) -> Value<'h> {
+        use parse;
+        let (keyword, payload) =
+            match parse::parse(hs, &data) {
+                Ok(values) => {
+                    let mut out = Value::Nil;
+                    for v in values.into_iter().rev() {
+                        out = Value::Cons(hs.alloc(Pair {
+                            car: v,
+                            cdr: out
+                        }));
+                    }
+                    ("ok", out)
+                }
+                Err(ref err) if err.description() == "parse error: unexpected end of input" =>
+                    ("incomplete", Value::Nil),
+                Err(err) =>
+                    ("error", Value::ImmString(GcLeaf::new(InternedString::get(err.description())))),
+            };
+        Value::Cons(hs.alloc(Pair {
+            car: Value::Symbol(GcLeaf::new(InternedString::get(keyword))),
+            cdr: payload,
+        }))
+    }
+
+    // `(try f)` calls `f` with no arguments and returns
+    // `(cons 'ok (f))` on success,
+    // `(cons 'error <message>)` on error.
+    fn try "try" <'h>(hs, fval: Value<'h>) -> Value<'h> {
+        use vm;
+        let (keyword, payload) =
+            match vm::apply(hs, fval, vec![]) {
+                Ok(x) => ("ok", x),
+                Err(err) => ("error", Value::ImmString(GcLeaf::new(InternedString::get(err.description())))),
+            };
+        Value::Cons(hs.alloc(Pair {
+            car: Value::Symbol(GcLeaf::new(InternedString::get(keyword))),
+            cdr: payload,
+        }))
+    }
+
+    fn load "load" <'h>(hs, path_str: Arc<String>, env: EnvironmentRef<'h>) -> Result<()> {
+        use parse;
+        use std::fs::File;
+        use std::io::prelude::*;
+        use std::path::Path;
+        use toplevel;
+
+        let filename: &str = &path_str;
+        let mut file = File::open(Path::new(filename))
+            .chain_err(|| format!("opening file {:?}", filename))?;
+
+        let mut source = String::new();
+        file.read_to_string(&mut source)
+            .chain_err(|| "reading file")?;
+
+        let exprs = parse::parse(hs, &source)
+            .chain_err(|| "parsing file")?;
+        for expr in exprs {
+            toplevel::eval(hs, &env, expr)?;
+        }
+        Ok(())
+    }
 }
 
 // Builtin function list ///////////////////////////////////////////////////////
@@ -552,13 +632,16 @@ pub static BUILTINS: &[(&'static str, BuiltinFn)] = &[
     ("gensym?", gensym_question),
     ("list->string", list_to_string),
     ("list->vector", list_to_vector),
+    ("load", load),
     ("make-vector", make_vector),
     ("newline", newline),
     ("null?", null_question),
     ("number?", number_question),
     ("number->string", number_to_string),
     ("pair?", pair_question),
+    ("parse", parse),
     ("procedure?", procedure_question),
+    ("read-line", read_line),
     ("set-car!", set_car),
     ("set-cdr!", set_cdr),
     ("string", string),
@@ -571,6 +654,7 @@ pub static BUILTINS: &[(&'static str, BuiltinFn)] = &[
     ("string=?", string_eq_question),
     ("symbol?", symbol_question),
     ("symbol->string", symbol_to_string),
+    ("try", try),
     ("vector", vector),
     ("vector?", vector_question),
     ("vector-length", vector_length),
