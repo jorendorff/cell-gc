@@ -399,6 +399,8 @@ named!(
 );
 
 named!(digit(&str) -> char, one_of!("0123456789"));
+named!(xdigit(&str) -> u32,
+       map!(one_of!("0123456789abcdefABCDEF"), |ch| ch.to_digit(16).unwrap()));
 
 named!(
     boolean(&str) -> bool,
@@ -447,6 +449,13 @@ named!(
     alt!(
         none_of!("\"\\")
       | preceded!(char!('\\'), one_of!("\\\""))
+      | value!('\n', tag!("\\n"))
+      | value!('\r', tag!("\\r"))
+      | preceded!(tag!("\\x"), do_parse!(
+            d1: xdigit >>
+            d2: xdigit >>
+            (((d1 * 16) + d2) as u8 as char)
+        ))
     )
 );
 
