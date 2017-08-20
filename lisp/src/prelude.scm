@@ -189,7 +189,61 @@
         l
         (loop (- i 1) (cons (vector-ref v i) l))))
   (loop (- (vector-length v) 1) '()))
+;
+(define dynamic-wind #f)
+((lambda ()
 
+  (define winders '())
+
+  (define (common-tail x y)
+     (define lx (length x))
+     (define ly (length y))
+     (define (loop x y)
+       (if (eq? x y)
+           x
+           (loop (cdr x) (cdr y))))
+     (loop (if (> lx ly) (list-tail x (- lx ly)) x)
+           (if (> ly lx) (list-tail y (- ly lx)) y)))
+
+  (define (do-wind new)
+    (define tail (common-tail new winders))
+    (define (f1 l)
+      (if (not (eq? l tail))
+          (begin
+            (set! winders (cdr l))
+            ((cdar l))
+            (f1 (cdr l)))))
+    (define (f2 l)
+      (if (not (eq? l tail))
+          (begin
+            (f2 (cdr l))
+            ((caar l))
+            (set! winders l))))
+    (f1 winders)
+    (f2 new))
+
+  ((lambda (c)
+    (set! call/cc
+      (lambda (f)
+        (c (lambda (k)
+             (f ((lambda (save)
+                  (lambda x
+                    (if (not (eq? save winders)) (do-wind save))
+                    (apply k x)))
+                 winders)))))))
+      call/cc)
+  (set! call-with-current-continuation call/cc)
+
+  (set! dynamic-wind
+    (lambda (in body out)
+      (define ans #f)
+      (in)
+      (set! winders (cons (cons in out) winders))
+      (set! ans (body))
+      (set! winders (cdr winders))
+      (out)
+      ans))))
+;
 (define void
   (letrec ((unspecified (if #f #f)))
     (lambda () unspecified)))
