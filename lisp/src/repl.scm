@@ -8,17 +8,50 @@
 
 (let ()
   (define (erase-line)
-    (display "\r") ;; move cursor to start of line
-    (display "\x1b[1A") ;; move up 1 line
-    (display "\x1b[K")) ;; erase to end of line
+    (real-display "\r") ;; move cursor to start of line
+    (real-display "\x1b[1A") ;; move up 1 line
+    (real-display "\x1b[K")) ;; erase to end of line
 
-  (define (undisplay s)
-    (for-each (lambda (c)
-                (if (eqv? c #\newline)
-                    (erase-line)))
-              (string->list s)))
+  (define real-display display)
+  (define real-write write)
+  (define real-read-line read-line)
 
-  (define (unwrite value) #f)
+  (define terminal-todo '())
+
+  (define (virtual-display s)
+    (set! terminal-todo (cons (cons 'display s) terminal-todo)))
+
+  (define (virtual-write v)
+    (set! terminal-todo (cons (cons 'write v) terminal-todo)))
+
+  (define (virtual-newline)
+    (virtual-display "\n"))
+
+  (define (flush-virtual-writes)
+    (for-each (lambda (cmd)
+                (case (car cmd)
+                  ((display) (real-display (cdr cmd)))
+                  ((write) (real-write (cdr cmd)))
+                  ((erase-line) (erase-line))))
+              (reverse terminal-todo))
+    (set! terminal-todo '()))
+
+  (define (virtual-read-line)
+    (flush-virtual-writes)
+    (real-read-line))
+
+  (define (un action value)
+    (if (and (not (null? terminal-todo))
+             (equal? (cons action value) (car terminal-todo)))
+        (set! terminal-todo (cdr terminal-todo))
+        (if (eq? action 'display)
+            (for-each (lambda (c)
+                        (if (eqv? c #\newline)
+                            (set! terminal-todo (cons '(erase-line) terminal-todo))))
+                      (string->list value)))))
+
+  (define (undisplay s) (un 'display s))
+  (define (unwrite value) (un 'write value))
 
   ;; Stack of commands to redo when rolling forward.
   (define redo-stack '())
@@ -34,6 +67,7 @@
                       recorded-line))))
       (if (= (string-length line) 0)
           (begin (display "\n")
+                 (flush-virtual-writes)
                  (undisplay "\n")
                  (undisplay prompt)
                  (on-eof))
@@ -110,4 +144,8 @@
                      (lambda () ;; on-eof
                        (exit (if #f #f)))))))
 
+  (set! display virtual-display)
+  (set! newline virtual-newline)
+  (set! write virtual-write)
+  (set! read-line virtual-read-line)
   (repl))
