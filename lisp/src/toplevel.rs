@@ -76,7 +76,7 @@ pub fn eval<'h>(
 
 /// Evaluate a toplevel script, possibly including many definitions and
 /// expressions.
-pub fn eval_toplevel_forms<'h>(
+fn eval_toplevel_forms<'h>(
     hs: &mut GcHeapSession<'h>,
     env: &EnvironmentRef<'h>,
     forms: Vec<Value<'h>>,
