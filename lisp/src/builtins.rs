@@ -608,6 +608,31 @@ builtins! {
         let filename: &str = &path_str;
         toplevel::load(hs, &env, Path::new(filename))
     }
+
+    fn error "error" <'h>(
+        hs,
+        who: Option<Value<'h>>,
+        what: Option<Value<'h>>,
+        irritants: Rest<'h>
+    ) -> Result<()> {
+        let mut message = String::new();
+
+        if let Some(who_val) = who {
+            if who_val != Value::Bool(false) {
+                message += &format!("{}: ", who_val);
+            }
+        }
+
+        if let Some(what_value) = what {
+            message += &format!("{}", value::DisplayValue(what_value));
+        }
+
+        for v in irritants {
+            message += &format!(" {}", v);
+        }
+
+        Err(message.into())
+    }
 }
 
 // Builtin function list ///////////////////////////////////////////////////////
@@ -644,6 +669,7 @@ pub static BUILTINS: &[(&'static str, BuiltinFn)] = &[
     ("display", display),
     ("eq?", eq_question),
     ("eqv?", eqv_question),
+    ("error", error),
     ("eval", eval),
     ("gensym", gensym),
     ("gensym?", gensym_question),

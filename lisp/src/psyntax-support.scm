@@ -47,22 +47,6 @@
 
 (define (eval datum) (original-eval datum psyntax-environment))
 
-;;; (error who format-string why what)
-;;; where who is either a symbol or #f, format-string is always "~a ~s",
-;;; why is always a string, and what may be any object.  error should
-;;; signal an error with a message something like
-;;;
-;;;    "error in <who>: <why> <what>"
-(define (error who format-string why what)
-  (display "error in ")
-  (display who)
-  (display ": ")
-  (display why)
-  (display " ")
-  (write what)
-  (newline)
-  *ERROR*)
-
 
 ;;; (putprop symbol key value)
 ;;; (getprop symbol key)
