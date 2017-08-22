@@ -213,6 +213,37 @@ builtins! {
         }
     }
 
+    fn quotient "quotient" <'h>(_hs, n1: i32, n2: i32) -> Result<i32> {
+        if n2 == 0 {
+            Err("quotient: divide by zero".into())
+        } else if n1 == i32::min_value() && n2 == -1 {
+            Err("quotient: integer overflow".into())
+        } else {
+            Ok(n1 / n2)
+        }
+    }
+
+    fn remainder "remainder" <'h>(_hs, n1: i32, n2: i32) -> Result<i32> {
+        if n2 == 0 {
+            Err("remainder: divide by zero".into())
+        } else {
+            Ok(n1 % n2)
+        }
+    }
+
+    fn modulo "modulo" <'h>(_hs, n1: i32, n2: i32) -> Result<i32> {
+        if n2 == 0 {
+            Err("modulo: divide by zero".into())
+        } else {
+            let rem = n1 % n2;
+            if n1.signum() != n2.signum() && rem != 0 {
+                Ok(rem + n2)
+            } else {
+                Ok(rem)
+            }
+        }
+    }
+
     fn number_to_string "number->string" <'h>(_hs, n: i32) -> String {
         format!("{}", n)
     }
@@ -620,6 +651,7 @@ pub static BUILTINS: &[(&'static str, BuiltinFn)] = &[
     ("list->vector", list_to_vector),
     ("load", load),
     ("make-vector", make_vector),
+    ("modulo", modulo),
     ("newline", newline),
     ("null?", null_question),
     ("number?", number_question),
@@ -627,7 +659,9 @@ pub static BUILTINS: &[(&'static str, BuiltinFn)] = &[
     ("pair?", pair_question),
     ("parse", parse),
     ("procedure?", procedure_question),
+    ("quotient", quotient),
     ("read-line", read_line),
+    ("remainder", remainder),
     ("set-car!", set_car),
     ("set-cdr!", set_cdr),
     ("string", string),
