@@ -8,6 +8,7 @@ use errors::*;
 use std::io::{self, Write};
 use std::sync::Arc;
 use std::vec;
+use toplevel;
 use value::{self, BuiltinFn, BuiltinFnPtr, InternedString, Lambda, Pair, Value};
 use value::{ArgType, Rest, RetType};
 use value::Value::*;
@@ -706,4 +707,11 @@ pub fn define_builtins<'h>(hs: &mut GcHeapSession<'h>, env: &EnvironmentRef<'h>)
         InternedString::get("interaction-environment"),
         interaction_env_proc,
     );
+
+    // Bind the second argument of (load).
+    toplevel::eval_str(hs, env, "
+        (set! load (letrec* ((core-load load)
+                             (env (interaction-environment)))
+                     (lambda (filename)
+                       (core-load filename env))))").expect("defining (load)");
 }
