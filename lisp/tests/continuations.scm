@@ -35,9 +35,7 @@
 ;; Implementation of (amb) and other pieces for the SICP example
 
 (define (fail)
-  (display "no solutions")
-  (newline)
-  *ERROR*)
+  (error 'require "no solutions"))
 
 (define backtrack fail)
 
@@ -45,25 +43,71 @@
   (if (not ok)
       (backtrack)))
 
+;; Return one of the values in `values` such that all future `(require)` calls
+;; are satisfied.
 (define (amb . values)
-  (require (not (null? values)))
-  (call/cc (lambda (ctn)
-             (let ((older backtrack))
-               (set! backtrack (lambda ()
-                                 (set! backtrack older)
-                                 (ctn (apply amb (cdr values))))))
-             (car values))))
+  (let ((backtrack-further backtrack))
+    (call/cc (lambda (ctn)
+               (define (next values)
+                 (if (null? values)
+                     (backtrack-further)
+                     (begin (set! backtrack
+                                  (lambda () (next (cdr values))))
+                            (ctn (car values)))))
+               (next values)))))
 
-(define (for-all lst pred)
-  (if (null? lst)
-      #t
-    (and (pred (car lst))
-         (for-all (cdr lst) pred))))
+(define (reset-amb)
+  (set! backtrack fail))
+
+(let ()
+  (define x (amb 1 2 3))
+  (require (= x 1))
+  (assert (= x 1))
+  (reset-amb))
+
+(let ()
+  (define x (amb 1 2 3))
+  (require (not (= x 1)))
+  (assert (not (= x 1)))
+  (reset-amb))
+
+(let ()
+  (define x (amb 1 2 3 4 5))
+  (require (> x 2))
+  (assert (> x 2))
+  (reset-amb))
+
+(let ()
+  (define x (amb 1 2 3 4 5 6 7 8 9))
+  (define y (amb 1 2 3 4 5 6 7 8 9))
+  (require (= (* x y) 24))
+  (assert (= x 3))
+  (assert (= y 8))
+  (reset-amb))
+
+(let ()
+  (define x (amb 1 2 3 4 5 6 7 8 9))
+  (define y (amb 1 2 3 4 5 6 7 8 9))
+  (require (= (* x y) 24))
+  (require (> x y))
+  (assert (= x 6))
+  (assert (= y 4))
+  (reset-amb))
+
+(let ()
+  (define x (amb 1 2 3 4 5 6 7 8 9))
+  (define y (amb 1 2 3 4 5 6 7 8 9))
+  (require (= (* x y) 24))
+  (require (> x y))
+  (require (or (odd? x) (odd? y)))
+  (assert (= x 8))
+  (assert (= y 3))
+  (reset-amb))
+
 
 (define (distinct? values)
   (or (null? values)
-      (and (for-all (cdr values) (lambda (v)
-                                   (not (= v (car values)))))
+      (and (not (memv (car values) (cdr values)))
            (distinct? (cdr values)))))
 
 
@@ -92,3 +136,4 @@
 
 (assert (equal? (multiple-dwelling)
                 '((baker 3) (cooper 2) (fletcher 4) (miller 5) (smith 1))))
+
