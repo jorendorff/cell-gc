@@ -898,7 +898,7 @@ fn expr_is_infallible<'h>(
                 }
             }
             _ => Ok(false),
-        }
+        },
 
         // Self-evaluating values.
         &Value::Bool(_) |
