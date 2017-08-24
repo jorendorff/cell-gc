@@ -7,13 +7,9 @@
 ;; and replays the whole interaction from that point forward.
 
 (let ()
-  (define (erase-line)
-    (real-display "\r") ;; move cursor to start of line
-    (real-display "\x1b[1A") ;; move up 1 line
-    (real-display "\x1b[K")) ;; erase to end of line
-
   (define real-display display)
   (define real-write write)
+  (define real-newline newline)
   (define real-read-line read-line)
 
   (define terminal-todo '())
@@ -27,6 +23,11 @@
   (define (virtual-newline)
     (virtual-display "\n"))
 
+  (define (erase-line)
+    (real-display "\r") ;; move cursor to start of line
+    (real-display "\x1b[1A") ;; move up 1 line
+    (real-display "\x1b[K")) ;; erase to end of line
+
   (define (flush-virtual-writes)
     (for-each (lambda (cmd)
                 (case (car cmd)
@@ -39,6 +40,21 @@
   (define (virtual-read-line)
     (flush-virtual-writes)
     (real-read-line))
+
+  (define (with-virtual-output thunk)
+    (dynamic-wind
+        (lambda ()
+          (set! display virtual-display)
+          (set! newline virtual-newline)
+          (set! write virtual-write)
+          (set! read-line virtual-read-line))
+        thunk
+        (lambda ()
+          (flush-virtual-writes)
+          (set! display real-display)
+          (set! newline real-newline)
+          (set! write real-write)
+          (set! read-line real-read-line))))
 
   (define (un action value)
     (if (and (not (null? terminal-todo))
@@ -144,8 +160,4 @@
                      (lambda () ;; on-eof
                        (exit (if #f #f)))))))
 
-  (set! display virtual-display)
-  (set! newline virtual-newline)
-  (set! write virtual-write)
-  (set! read-line virtual-read-line)
-  (repl))
+  (with-virtual-output repl))
