@@ -633,7 +633,7 @@ impl<'e, 'h> Emitter<'e, 'h> {
             }
 
             // Everything else is an error.
-            _ => Err("not an expression".into()),
+            _ => Err(format!("syntax error {}", expr).into()),
         }
     }
 
