@@ -41,30 +41,38 @@
     (flush-virtual-writes)
     (real-read-line))
 
+  (define (virtual-output?)
+    (eq? display virtual-display))
+
+  (define (activate-virtual-output)
+    (set! display virtual-display)
+    (set! newline virtual-newline)
+    (set! write virtual-write)
+    (set! read-line virtual-read-line))
+
+  (define (deactivate-virtual-output)
+    (flush-virtual-writes)
+    (set! display real-display)
+    (set! newline real-newline)
+    (set! write real-write)
+    (set! read-line real-read-line))
+
   (define (with-virtual-output thunk)
     (dynamic-wind
-        (lambda ()
-          (set! display virtual-display)
-          (set! newline virtual-newline)
-          (set! write virtual-write)
-          (set! read-line virtual-read-line))
+        activate-virtual-output
         thunk
-        (lambda ()
-          (flush-virtual-writes)
-          (set! display real-display)
-          (set! newline real-newline)
-          (set! write real-write)
-          (set! read-line real-read-line))))
+        deactivate-virtual-output))
 
   (define (un action value)
-    (if (and (not (null? terminal-todo))
-             (equal? (cons action value) (car terminal-todo)))
-        (set! terminal-todo (cdr terminal-todo))
-        (if (eq? action 'display)
-            (for-each (lambda (c)
-                        (if (eqv? c #\newline)
-                            (set! terminal-todo (cons '(erase-line) terminal-todo))))
-                      (string->list value)))))
+    (if (virtual-output?)
+        (if (and (not (null? terminal-todo))
+                 (equal? (cons action value) (car terminal-todo)))
+            (set! terminal-todo (cdr terminal-todo))
+            (if (eq? action 'display)
+                (for-each (lambda (c)
+                            (if (eqv? c #\newline)
+                                (set! terminal-todo (cons '(erase-line) terminal-todo))))
+                          (string->list value))))))
 
   (define (undisplay s) (un 'display s))
   (define (unwrite value) (un 'write value))
@@ -84,8 +92,6 @@
       (if (= (string-length line) 0)
           (begin (display "\n")
                  (flush-virtual-writes)
-                 (undisplay "\n")
-                 (undisplay prompt)
                  (on-eof))
           (dynamic-wind
               (lambda () #f)
@@ -177,6 +183,7 @@
                      (lambda (message) ;; on-error
                        (cps-display-error message repl))
                      (lambda () ;; on-eof
+                       (deactivate-virtual-output)
                        (exit (if #f #f)))))))
 
   (with-virtual-output repl))
