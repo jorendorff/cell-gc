@@ -139,10 +139,28 @@
         (cons (list 'lambda names body-expr)
               init-exprs)))))
 
-(define expand-cond
+(define expand-letrec
+  ;; The bytecode compiler supports (letrec) and (letrec*), so
+  ;; leave this pretty much as-is, just expanding subexpressions.
   (lambda (senv expr)
     (assert (list? expr))
-    (assert (>= (length expr) 2))
+    (assert (>= (length expr) 3))
+    (assert (not (not (memq (car expr) '(letrec letrec*)))))
+    (letrec* ((letrec-keyword (car expr))
+              (bindings (cadr expr))
+              (names (map car bindings))
+              (nested-senv (senv-extend-with-variable-bindings senv names))
+              (expanded-bindings (map (lambda (binding)
+                                        (list (car binding)
+                                              (expand-expr nested-senv (cadr binding))))
+                                      bindings))
+              (expanded-body (expand-body nested-senv (cddr expr))))
+      (list letrec-keyword expanded-bindings expanded-body))))
+
+(define expand-cond
+  (lambda (senv expr)
+    (assert (list? expr) "cond form is an improper list")
+    (assert (>= (length expr) 2) "cond without clauses")
     (assert (eq? (car expr) 'cond))
     (if (= (length expr) 2)  ;; base case input: `(cond (else ,@else-body))
         (letrec* ((else-clause (cadr expr)))
@@ -275,6 +293,8 @@
           (cons 'define expand-define)
           (cons 'if expand-if)
           (cons 'let expand-let)
+          (cons 'letrec expand-letrec)
+          (cons 'letrec* expand-letrec)
           (cons 'cond expand-cond)
           (cons 'and expand-and)
           (cons 'or expand-or)
@@ -360,5 +380,6 @@
         (expand-defn-or-expr senv form))))
 
 (define toplevel-senv (default-senv))
-(lambda (form) (expand-toplevel toplevel-senv form))
 
+(lambda (form)
+  (expand-toplevel toplevel-senv form))
