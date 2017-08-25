@@ -38,6 +38,7 @@ test!(Core, characters);
 test!(Core, closure);
 test!(Core, cons);
 test!(Expanded, continuations);
+test!(Expanded, control);
 test!(Core, double);
 test!(Expanded, equivalence);
 test!(Full, eval);
