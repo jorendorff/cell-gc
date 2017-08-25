@@ -123,24 +123,31 @@
                                   (else (error "unexpected result from (parse)" result)))))
                             on-eof)))
 
-  (define (try thunk)
-    (call/cc (lambda (return)
-               (with-exception-handler
-                (lambda (err)
-                  (return (cons 'error err)))
-                (lambda ()
-                  (cons 'ok (thunk)))))))
+  (define (try thunk on-success on-error)
+    ;; Implementation note: The continuation `return` may be heavy, and
+    ;; `with-exception-handler` is implemented using dynamic-wind, *and*
+    ;; `on-success/error` may be on stack for a long time, so exit
+    ;; `with-exception-handler` and drop `return` before calling
+    ;; `on-success/error`.
+    (let ((result (call/cc (lambda (return)
+                             (with-exception-handler
+                              (lambda (exc)
+                                (return (cons 'error exc)))
+                              (lambda ()
+                                (cons 'ok (thunk))))))))
+      (if (eq? 'ok (car result))
+          (on-success (cdr result))
+          (on-error (cdr result)))))
 
   (define (cps-evaluate-forms forms ctn)
     (if (null? forms)
         (ctn)
-        (let ((result (try (lambda ()
-                             (eval (cons 'begin forms) (interaction-environment))))))
-          (if (eq? 'ok (car result))
-            (cps-write (cdr result) ctn)
-            (begin
-              (assert (eq? 'error (car result)))
-              (cps-display-error (cdr result) ctn))))))
+        (try (lambda ()
+               (eval (cons 'begin forms) (interaction-environment)))
+             (lambda (value) ;; on-success
+               (cps-write value ctn))
+             (lambda (exc) ;; on-error
+               (cps-display-error exc ctn)))))
 
   (define (cps-display-error obj ctn)
     (define (error->string obj)
