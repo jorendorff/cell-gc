@@ -400,7 +400,7 @@ impl<'e, 'h> Emitter<'e, 'h> {
         self.compile_parsed_letrec(&body_senv, true, init_exprs, body, k)
     }
 
-    pub fn compile_name(
+    fn compile_name(
         &mut self,
         senv: &StaticEnvironmentRef<'h>,
         s: InternedString,
@@ -414,7 +414,7 @@ impl<'e, 'h> Emitter<'e, 'h> {
         Ok(())
     }
 
-    pub fn compile_lambda(
+    fn compile_lambda(
         &mut self,
         senv: &StaticEnvironmentRef<'h>,
         tail: Value<'h>,
@@ -559,7 +559,7 @@ impl<'e, 'h> Emitter<'e, 'h> {
         return self.emit_unspecified(k);
     }
 
-    pub fn compile_call(
+    fn compile_call(
         &mut self,
         senv: &StaticEnvironmentRef<'h>,
         expr: Value<'h>,
@@ -573,7 +573,7 @@ impl<'e, 'h> Emitter<'e, 'h> {
         self.emit_call(elements - 1, k) // subtract 1 to compensate for that
     }
 
-    pub fn compile_expr(
+    fn compile_expr(
         &mut self,
         senv: &StaticEnvironmentRef<'h>,
         expr: Value<'h>,
