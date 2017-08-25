@@ -1,11 +1,12 @@
 //! Interpreter for compiled code.
 
-use cell_gc::GcHeapSession;
+use cell_gc::{GcHeapSession, GcLeaf};
 use cell_gc::collections::VecRef;
 use compile::{op, CodeRef};
 use env::{Environment, EnvironmentRef, StaticEnvironmentRef};
-use errors::Result;
-use value::{Lambda, Pair, Value};
+use errors::*;
+use std::sync::Arc;
+use value::{DisplayValue, InternedString, Lambda, NonInternedStringObject, Pair, Value};
 
 /// A potentially partially evaluated value.
 ///
@@ -122,6 +123,48 @@ pub fn apply<'h>(
     }
 }
 
+fn push_stack_frame<'h>(
+    stack: &mut Vec<Value<'h>>,
+    code: CodeRef<'h>,
+    pc: usize,
+    env: EnvironmentRef<'h>
+) {
+    stack.push(Value::Code(code));
+    assert!(pc <= i32::max_value() as usize);
+    stack.push(Value::Int(pc as i32));
+    stack.push(Value::Environment(env));
+}
+
+fn handle_error<'h>(
+    hs: &mut GcHeapSession<'h>,
+    err: Error,
+    stack: &mut Vec<Value<'h>>,
+    code: &mut CodeRef<'h>,
+    insns: &mut VecRef<'h, u32>,
+    pc: &mut usize,
+    env: &mut EnvironmentRef<'h>,
+) -> Result<()> {
+    push_stack_frame(stack, code.clone(), *pc, env.clone());
+    while let Some(parent) = env.parent() {
+        *env = parent;
+    }
+    let error = env.dynamic_get(&InternedString::get("error"))?;
+    if !error.is_procedure() {
+        return Err(err)
+            .chain_err(|| "(while handling this error: `error` is not a procedure)");
+    }
+    stack.push(error);
+    let msg = Error::from(err).description().to_string();
+    stack.push(Value::StringObj(GcLeaf::new(NonInternedStringObject(Arc::new(msg)))));
+
+    // Note: this leaves env, code, constants, and environments with bogus values.
+    // It doesn't matter because TAIL_CALL does not use any of those.
+    *insns = hs.alloc(vec![op::TAIL_CALL, 1]);
+    *pc = 0;
+
+    Ok(())
+}
+
 // Fully evaluate the given code in the given environment.
 pub fn eval_compiled<'h>(
     hs: &mut GcHeapSession<'h>,
@@ -144,10 +187,7 @@ pub fn eval_compiled<'h>(
     macro_rules! push_stack_frame_unless_tail_call {
         ($op_code:expr) => {
             if $op_code == op::CALL {
-                stack.push(Value::Code(code));
-                assert!(pc <= i32::max_value() as usize);
-                stack.push(Value::Int(pc as i32));
-                stack.push(Value::Environment(env));
+                push_stack_frame(&mut stack, code, pc, env);
             } else {
                 // Tail call. Our caller's frame is already on top
                 // of stack. Assert that it's correctly laid out.
@@ -208,7 +248,14 @@ pub fn eval_compiled<'h>(
                     Value::Symbol(id) => id,
                     _ => panic!("internal error: bad GetDynamic insn"),
                 };
-                stack.push(env.dynamic_get(&symbol)?);
+                match env.dynamic_get(&symbol) {
+                    Ok(value) => {
+                        stack.push(value);
+                    }
+                    Err(err) => {
+                        handle_error(hs, err, &mut stack, &mut code, &mut insns, &mut pc, &mut env)?;
+                    }
+                }
             }
 
             op::GET_STATIC => {
@@ -244,19 +291,29 @@ pub fn eval_compiled<'h>(
                 loop {
                     match fval {
                         Value::Lambda(lambda) => {
-                            push_stack_frame_unless_tail_call!(op_code);
-
-                            code = lambda.code();
-                            constants = code.constants();
-                            environments = code.environments();
-                            insns = code.insns();
-                            pc = 0;
-                            env = new_call_env(hs, code.environments().get(0), code.rest(), lambda.env(), args)?;
-                            break;
+                            let fn_code = lambda.code();
+                            match new_call_env(hs, fn_code.environments().get(0),
+                                               fn_code.rest(), lambda.env(), args) {
+                                Ok(new_env) => {
+                                    push_stack_frame_unless_tail_call!(op_code);
+                                    code = fn_code;
+                                    constants = code.constants();
+                                    environments = code.environments();
+                                    insns = code.insns();
+                                    pc = 0;
+                                    env = new_env;
+                                    break;
+                                }
+                                Err(err) => {
+                                    handle_error(hs, err, &mut stack, &mut code, &mut insns,
+                                                 &mut pc, &mut env)?;
+                                    break;
+                                }
+                            }
                         }
                         Value::Builtin(f) => {
-                            match (f.0)(hs, args)? {
-                                Trampoline::Value(v) => {
+                            match (f.0)(hs, args) {
+                                Ok(Trampoline::Value(v)) => {
                                     if op_code == op::TAIL_CALL {
                                         return_value!(v);
                                     } else {
@@ -264,11 +321,11 @@ pub fn eval_compiled<'h>(
                                     }
                                     break;
                                 }
-                                Trampoline::TailCall { func: new_fval, args: new_args } => {
+                                Ok(Trampoline::TailCall { func: new_fval, args: new_args }) => {
                                     fval = new_fval;
                                     args = new_args;
                                 }
-                                Trampoline::TailEval { code: eval_code, env: eval_env } => {
+                                Ok(Trampoline::TailEval { code: eval_code, env: eval_env }) => {
                                     push_stack_frame_unless_tail_call!(op_code);
 
                                     code = eval_code;
@@ -279,9 +336,18 @@ pub fn eval_compiled<'h>(
                                     env = eval_env;
                                     break;
                                 }
+                                Err(err) => {
+                                    handle_error(hs, err, &mut stack, &mut code, &mut insns,
+                                                 &mut pc, &mut env)?;
+                                    break;
+                                }
                             }
                         }
-                        _ => return Err("not a procedure".into())
+                        _ => {
+                            handle_error(hs, "not a procedure".into(),
+                                         &mut stack, &mut code, &mut insns, &mut pc, &mut env)?;
+                            break;
+                        }
                     }
                 }
             }
@@ -325,7 +391,10 @@ pub fn eval_compiled<'h>(
                     _ => panic!("internal error: bad Set insn"),
                 };
                 let value = stack.pop().unwrap();
-                env.dynamic_set(&symbol, value)?;
+                if let Err(err) = env.dynamic_set(&symbol, value) {
+                    handle_error(hs, err, &mut stack, &mut code, &mut insns,
+                                 &mut pc, &mut env)?;
+                }
             }
 
             op::PUSH_ENV => {
@@ -369,6 +438,13 @@ pub fn eval_compiled<'h>(
                 stack.clear();
                 stack.extend(new_stack);
                 return_value!(arg);
+            }
+
+            op::TERMINATE => {
+                // Exit the current interpreter invocation immediately with an
+                // error, skipping dynamic-wind "after" thunks.
+                let obj = stack.pop().unwrap();
+                return Err(format!("{}", DisplayValue(obj)).into());
             }
 
             _ => panic!("internal error: invalid opcode {}", op_code),

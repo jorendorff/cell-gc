@@ -585,22 +585,6 @@ builtins! {
         }))
     }
 
-    // `(try f)` calls `f` with no arguments and returns
-    // `(cons 'ok (f))` on success,
-    // `(cons 'error <message>)` on error.
-    fn try "try" <'h>(hs, fval: Value<'h>) -> Value<'h> {
-        use vm;
-        let (keyword, payload) =
-            match vm::apply(hs, fval, vec![]) {
-                Ok(x) => ("ok", x),
-                Err(err) => ("error", Value::ImmString(GcLeaf::new(InternedString::get(err.description())))),
-            };
-        Value::Cons(hs.alloc(Pair {
-            car: Value::Symbol(GcLeaf::new(InternedString::get(keyword))),
-            cdr: payload,
-        }))
-    }
-
     fn load "load" <'h>(hs, path_str: Arc<String>, env: EnvironmentRef<'h>) -> Result<Value<'h>> {
         use std::path::Path;
         use toplevel;
@@ -609,29 +593,8 @@ builtins! {
         toplevel::load(hs, &env, Path::new(filename))
     }
 
-    fn error "error" <'h>(
-        hs,
-        who: Option<Value<'h>>,
-        what: Option<Value<'h>>,
-        irritants: Rest<'h>
-    ) -> Result<()> {
-        let mut message = String::new();
-
-        if let Some(who_val) = who {
-            if who_val != Value::Bool(false) {
-                message += &format!("{}: ", who_val);
-            }
-        }
-
-        if let Some(what_value) = what {
-            message += &format!("{}", value::DisplayValue(what_value));
-        }
-
-        for v in irritants {
-            message += &format!(" {}", v);
-        }
-
-        Err(message.into())
+    fn write_to_string "write-to-string" <'h>(_hs, value: Value<'h>) -> String {
+        format!("{}", value)
     }
 }
 
@@ -669,7 +632,6 @@ pub static BUILTINS: &[(&'static str, BuiltinFn)] = &[
     ("display", display),
     ("eq?", eq_question),
     ("eqv?", eqv_question),
-    ("error", error),
     ("eval", eval),
     ("gensym", gensym),
     ("gensym?", gensym_question),
@@ -700,7 +662,6 @@ pub static BUILTINS: &[(&'static str, BuiltinFn)] = &[
     ("string=?", string_eq_question),
     ("symbol?", symbol_question),
     ("symbol->string", symbol_to_string),
-    ("try", try),
     ("vector", vector),
     ("vector?", vector_question),
     ("vector-length", vector_length),
@@ -708,10 +669,62 @@ pub static BUILTINS: &[(&'static str, BuiltinFn)] = &[
     ("vector-set!", vector_set),
     ("write", write),
     ("write-char", write_char),
+    ("write-to-string", write_to_string),
 ];
 
 pub fn get_eval() -> BuiltinFn {
     eval
+}
+
+fn make_call_cc_lambda<'h>(hs: &mut GcHeapSession<'h>, env: &EnvironmentRef<'h>) -> Value<'h> {
+    use compile::op;
+
+    let insns = hs.alloc(vec![
+        op::SAVE,              // save this lambda's continuation
+        op::PUSH_ENV, 1,       // push "locals" environment
+        op::SET_STATIC, 0, 0,  // store the saved stack in this local
+        op::GET_STATIC, 1, 0,  // get procedure to invoke
+        op::LAMBDA, 0,         // create the continuation procedure
+        op::TAIL_CALL, 1,      // call procedure, passing current continuation
+    ]);
+    let names = hs.alloc(vec![GcLeaf::new(InternedString::get("proc"))]);
+    let params = hs.alloc(StaticEnvironment { parent: Some(env.senv()), names });
+    let names = hs.alloc(vec![GcLeaf::new(InternedString::get("saved-stack"))]);
+    let locals = hs.alloc(StaticEnvironment { parent: Some(params.clone()), names });
+    let environments = hs.alloc(vec![params, locals.clone()]);
+    let ctn_code = {
+        let insns = hs.alloc(vec![
+            op::RESTORE
+        ]);
+        let environments = {
+            let names = hs.alloc(vec![GcLeaf::new(InternedString::get("return-value"))]);
+            let params = hs.alloc(StaticEnvironment { parent: Some(locals), names });
+            hs.alloc(vec![params])
+        };
+        let constants = hs.alloc(Vec::<Value>::new());
+        hs.alloc(Code { insns, environments, constants, rest: false, operands_max: 0 })
+    };
+    let constants = hs.alloc(vec![Value::Code(ctn_code)]);
+    let code = hs.alloc(Code { insns, environments, constants, rest: false, operands_max: 2 });
+    Value::Lambda(hs.alloc(Lambda { code, env: env.clone() }))
+}
+
+fn make_default_exception_handler<'h>(
+    hs: &mut GcHeapSession<'h>,
+    env: &EnvironmentRef<'h>
+) -> Value<'h> {
+    use compile::op;
+
+    let insns = hs.alloc(vec![
+        op::GET_STATIC, 0, 0,  // get the first argument
+        op::TERMINATE,         // exit the interpreter
+    ]);
+    let names = hs.alloc(vec![GcLeaf::new(InternedString::get("obj"))]);
+    let params = hs.alloc(StaticEnvironment { parent: Some(env.senv()), names });
+    let environments = hs.alloc(vec![params]);
+    let constants = hs.alloc(vec![]);
+    let code = hs.alloc(Code { insns, environments, constants, rest: false, operands_max: 1 });
+    Value::Lambda(hs.alloc(Lambda { code, env: env.clone() }))
 }
 
 pub fn define_builtins<'h>(hs: &mut GcHeapSession<'h>, env: &EnvironmentRef<'h>) {
@@ -725,40 +738,14 @@ pub fn define_builtins<'h>(hs: &mut GcHeapSession<'h>, env: &EnvironmentRef<'h>)
     // Call/cc is implemented as a "lambda" because builtins do not get full
     // access to all the information that makes up the current continuation.
     // We use a special opcode.
-    let call_cc = {
-        use compile::op;
-
-        let insns = hs.alloc(vec![
-            op::SAVE,              // save this lambda's continuation
-            op::PUSH_ENV, 1,       // push "locals" environment
-            op::SET_STATIC, 0, 0,  // store the saved stack in this local
-            op::GET_STATIC, 1, 0,  // get procedure to invoke
-            op::LAMBDA, 0,         // create the continuation procedure
-            op::TAIL_CALL, 1,      // call procedure, passing current continuation
-        ]);
-        let names = hs.alloc(vec![GcLeaf::new(InternedString::get("proc"))]);
-        let params = hs.alloc(StaticEnvironment { parent: Some(env.senv()), names });
-        let names = hs.alloc(vec![GcLeaf::new(InternedString::get("saved-stack"))]);
-        let locals = hs.alloc(StaticEnvironment { parent: Some(params.clone()), names });
-        let environments = hs.alloc(vec![params, locals.clone()]);
-        let ctn_code = {
-            let insns = hs.alloc(vec![
-                op::RESTORE
-            ]);
-            let environments = {
-                let names = hs.alloc(vec![GcLeaf::new(InternedString::get("return-value"))]);
-                let params = hs.alloc(StaticEnvironment { parent: Some(locals), names });
-                hs.alloc(vec![params])
-            };
-            let constants = hs.alloc(Vec::<Value>::new());
-            hs.alloc(Code { insns, environments, constants, rest: false, operands_max: 0 })
-        };
-        let constants = hs.alloc(vec![Value::Code(ctn_code)]);
-        let code = hs.alloc(Code { insns, environments, constants, rest: false, operands_max: 2 });
-        Value::Lambda(hs.alloc(Lambda { code, env: env.clone() }))
-    };
+    let call_cc = make_call_cc_lambda(hs, env);
     env.push(InternedString::get("call-with-current-continuation"), call_cc.clone());
     env.push(InternedString::get("call/cc"), call_cc);
+
+    // The default exception handler uses a special opcode to exit the interpreter
+    // (without triggering a second exception).
+    let default_exception_handler = make_default_exception_handler(hs, env);
+    env.push(InternedString::get("default-exception-handler"), default_exception_handler);
 
     // One last extension, implemented as a "lambda" because builtins don't
     // have an environment pointer.

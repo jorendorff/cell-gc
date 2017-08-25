@@ -117,18 +117,37 @@
                                   (else (error "unexpected result from (parse)" result)))))
                             on-eof)))
 
+  (define (try thunk)
+    (call/cc (lambda (return)
+               (with-exception-handler
+                (lambda (err)
+                  (return (cons 'error err)))
+                (lambda ()
+                  (cons 'ok (thunk)))))))
+
   (define (cps-evaluate-forms forms ctn)
     (if (null? forms)
         (ctn)
         (let ((result (try (lambda ()
                              (eval (cons 'begin forms) (interaction-environment))))))
-          (case (car result)
-            ((ok) (cps-write (cdr result) ctn))
-            ((error) (cps-display-error (cdr result) ctn))
-            (else (error "unexpected result from (try)" result))))))
+          (if (eq? 'ok (car result))
+            (cps-write (cdr result) ctn)
+            (begin
+              (assert (eq? 'error (car result)))
+              (cps-display-error (cdr result) ctn))))))
 
-  (define (cps-display-error message ctn)
-    (let ((full-message (string-append error-prefix message error-postfix)))
+  (define (cps-display-error obj ctn)
+    (define (error->string obj)
+      (cond
+       ((string? obj) obj)
+       ((error-object? obj) (apply string-append
+                                   (error-object-message obj)
+                                   (map (lambda (irr)
+                                          (string-append " " (write-to-string irr)))
+                                        (error-object-irritants obj))))
+       (else (write-to-string obj))))
+    (let* ((message (error->string obj))
+           (full-message (string-append error-prefix message error-postfix)))
       (dynamic-wind
           (lambda () (display full-message))
           ctn

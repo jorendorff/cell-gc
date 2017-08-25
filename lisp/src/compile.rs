@@ -26,6 +26,7 @@ pub mod op {
     pub const POP_ENV: OpCode = 14; // ()
     pub const SAVE: OpCode = 15; // ()
     pub const RESTORE: OpCode = 16; // ()
+    pub const TERMINATE: OpCode = 17; // ()
 }
 
 #[derive(IntoHeap)]

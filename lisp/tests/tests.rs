@@ -41,6 +41,7 @@ test!(Expanded, continuations);
 test!(Expanded, control);
 test!(Core, double);
 test!(Expanded, equivalence);
+test!(Expanded, exceptions);
 test!(Full, eval);
 test!(Core, extensions);
 test!(Core, y_combinator);

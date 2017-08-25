@@ -249,3 +249,44 @@
 (define void
   (letrec ((unspecified (if #f #f)))
     (lambda () unspecified)))
+;
+(define (error message . irritants)
+  (assert (string? message))
+  (raise (vector 'error message irritants)))
+(define (error-object? obj)
+  (if (vector? obj)
+      (if (> (vector-length obj) 0)
+          (eq? (vector-ref obj 0) 'error)
+          #f)
+      #f))
+(define (error-object-message obj)
+  (assert (error-object? obj))
+  (vector-ref obj 1))
+(define (error-object-irritants obj)
+  (assert (error-object? obj))
+  (vector-ref obj 2))
+;
+(define with-exception-handler #f)
+(define raise #f)
+(letrec* ((*handlers* (list default-exception-handler)))
+  (set! with-exception-handler
+        (lambda (handler thunk)
+          (dynamic-wind
+              (lambda ()
+                (set! *handlers* (cons handler *handlers*)))
+              thunk
+              (lambda ()
+                (set! *handlers* (cdr *handlers*))))))
+  (set! raise
+        (lambda (obj)
+          (define saved-handlers *handlers*)
+          (define handler (car saved-handlers))
+          (define rest (cdr saved-handlers))
+          (dynamic-wind
+              (lambda ()
+                (set! *handlers* rest))
+              (lambda ()
+                (handler obj)
+                (raise obj))
+              (lambda ()
+                (set! *handlers* saved-handlers))))))
