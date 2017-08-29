@@ -252,8 +252,8 @@ macro_rules! gc_generic_trivial_impl {
 
 gc_generic_trivial_impl!([T: ?Sized + Sync] &'static T, 0x2c90082b4b071552);
 gc_generic_trivial_impl!([T: Clone + Send + 'static] GcLeaf<T>, 0x3f2cff0110e82982);
-gc_generic_trivial_impl!([T: Clone + Send + 'static] Box<T>, 0x5d55e2e560c89ec2);
-gc_generic_trivial_impl!([T: Clone + Sync + 'static] ::std::sync::Arc<T>, 0x4d920888eb74e08);
+gc_generic_trivial_impl!([T: Clone + Send + ?Sized + 'static] Box<T>, 0x5d55e2e560c89ec2);
+gc_generic_trivial_impl!([T: Sync + ?Sized + 'static] ::std::sync::Arc<T>, 0x4d920888eb74e08);
 
 /// Currently, `#[derive(IntoHeap)]` only works for types that have a lifetime
 /// parameter.  This poses a problem because sometimes you want to store stuff
