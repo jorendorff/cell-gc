@@ -68,8 +68,27 @@ fn params_to_static(params: &mut syn::PathParameters, heap_lifetime: &syn::Lifet
     }
 }
 
-fn ty_param_bound_to_static(_bound: &mut syn::TyParamBound, _heap_lifetime: &syn::Lifetime) {
-    panic!("unsupported: bounds in heap data types");
+fn path_to_static(path: &mut syn::Path, heap_lifetime: &syn::Lifetime) {
+    for segment in &mut path.segments {
+        params_to_static(&mut segment.parameters, heap_lifetime);
+    }
+}
+
+fn ty_param_bound_to_static(bound: &mut syn::TyParamBound, heap_lifetime: &syn::Lifetime) {
+    match *bound {
+        syn::TyParamBound::Trait(ref mut poly_trait_ref, ref _modifier) => {
+            // If the lifetime is rebound, do not recurse.
+            for lifetime_def in &mut poly_trait_ref.bound_lifetimes {
+                if lifetime_def.lifetime == *heap_lifetime {
+                    return;
+                }
+            }
+
+            path_to_static(&mut poly_trait_ref.trait_ref, heap_lifetime);
+        }
+        syn::TyParamBound::Region(ref mut lifetime) =>
+            lifetime_to_static(lifetime, heap_lifetime),
+    }
 }
 
 fn ty_to_static(ty: &mut syn::Ty, heap_lifetime: &syn::Lifetime) {
@@ -97,9 +116,7 @@ fn ty_to_static(ty: &mut syn::Ty, heap_lifetime: &syn::Lifetime) {
             for qself in opt_qself {
                 ty_to_static(&mut qself.ty, heap_lifetime);
             }
-            for segment in &mut path.segments {
-                params_to_static(&mut segment.parameters, heap_lifetime);
-            }
+            path_to_static(path, heap_lifetime);
         }
         syn::Ty::TraitObject(ref mut bounds) => {
             for bound in bounds {
