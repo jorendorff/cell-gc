@@ -14,14 +14,18 @@
 
   (define terminal-todo '())
 
-  (define (virtual-display s)
-    (set! terminal-todo (cons (cons 'display s) terminal-todo)))
+  (define (virtual-display s . args)
+    (if (null? args)
+        (set! terminal-todo (cons (cons 'display s) terminal-todo))
+        (apply real-display s args)))
 
-  (define (virtual-write v)
-    (set! terminal-todo (cons (cons 'write v) terminal-todo)))
+  (define (virtual-write v . args)
+    (if (null? args)
+        (set! terminal-todo (cons (cons 'write v) terminal-todo))
+        (apply real-write v args)))
 
-  (define (virtual-newline)
-    (virtual-display "\n"))
+  (define (virtual-newline . args)
+    (apply virtual-display "\n" args))
 
   (define (erase-line)
     (real-display "\r") ;; move cursor to start of line

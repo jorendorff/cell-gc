@@ -5,7 +5,11 @@ use cell_gc::collections::VecRef;
 use compile::{self, Code};
 use env::{self, EnvironmentRef, StaticEnvironment};
 use errors::*;
-use std::io::{self, Write};
+use ports::{self, PortRef};
+use std::fmt;
+use std::fs::File;
+use std::io::{self, BufReader, BufWriter, Write};
+use std::path::Path;
 use std::sync::Arc;
 use std::vec;
 use toplevel;
@@ -477,29 +481,35 @@ fn apply<'h>(_hs: &mut GcHeapSession<'h>, mut args: Vec<Value<'h>>) -> Result<Tr
 }
 
 // 6.10 Input and output
+fn write_to_port<'h, T: fmt::Display>(proc_name: &str, value: T, out: Option<PortRef<'h>>) -> Result<()> {
+    match out {
+        None => {
+            let stdout = io::stdout();
+            let mut guard = stdout.lock();
+            write!(guard, "{}", value)
+                .chain_err(|| format!("{}: error writing to stdout", proc_name))
+        }
+        Some(port) => {
+            let arc = port.port_arc();
+            let mut guard = arc.lock().expect("port is poisoned");
+            let w = guard.as_open_textual_output()?;
+            write!(w, "{}", value)
+                .chain_err(|| format!("{}: error writing to port", proc_name))
+        }
+    }
+}
+
 builtins! {
-    fn write "write" <'h>(_hs, obj: Value<'h>) -> Result<()> {
-        let stdout = io::stdout();
-        let mut guard = stdout.lock();
-        write!(guard, "{}", obj)
-            .chain_err(|| "error writing to stdout")
+    fn write "write" <'h>(_hs, obj: Value<'h>, out: Option<PortRef<'h>>) -> Result<()> {
+        write_to_port("write", obj, out)
     }
 
-    fn display "display" <'h>(_hs, obj: Value<'h>) -> Result<()> {
-        let stdout = io::stdout();
-        let mut guard = stdout.lock();
-        write!(guard, "{}", value::DisplayValue(obj))
-            .chain_err(|| "error writing to stdout")
+    fn display "display" <'h>(_hs, obj: Value<'h>, out: Option<PortRef<'h>>) -> Result<()> {
+        write_to_port("display", value::DisplayValue(obj), out)
     }
 
-    fn newline "newline" <'h>(_hs) -> Result<()> {
-        write!(io::stdout(), "\n")
-            .chain_err(|| "error writing to stdout")
-    }
-
-    fn write_char "write-char" <'h>(_hs, c: char) -> Result<()> {
-        write!(io::stdout(), "{}", c)
-            .chain_err(|| "error writing to stdout")
+    fn write_char "write-char" <'h>(_hs, c: char, out: Option<PortRef<'h>>) -> Result<()> {
+        write_to_port("write-char", c, out)
     }
 }
 
@@ -543,19 +553,6 @@ builtins! {
         }
     }
 
-    // Read a line of input. Returns an empty string only on EOF.
-    fn read_line "read-line" <'h>(_hs) -> Result<String> {
-        use std::io;
-        use std::error::Error;
-
-        let mut line = String::new();
-        let _ = io::stdout().flush();
-        match io::stdin().read_line(&mut line) {
-            Err(err) => Err(err.description().into()),
-            Ok(_) => Ok(line)
-        }
-    }
-
     // Parse the given string. Return value is a keyword-payload pair,
     // (cons 'ok <list>) if data is a list of parsed values;
     // (cons 'error <message>) where message is a string;
@@ -586,7 +583,6 @@ builtins! {
     }
 
     fn load "load" <'h>(hs, path_str: Arc<String>, env: EnvironmentRef<'h>) -> Result<Value<'h>> {
-        use std::path::Path;
         use toplevel;
 
         let filename: &str = &path_str;
@@ -595,6 +591,203 @@ builtins! {
 
     fn write_to_string "write-to-string" <'h>(_hs, value: Value<'h>) -> String {
         format!("{}", value)
+    }
+}
+
+// R7RS 6.13 Input and output
+
+builtins! {
+    fn input_port_question "input-port?" <'h>(_hs, v: Value<'h>) -> bool {
+        v.is_input_port()
+    }
+
+    fn output_port_question "output-port?" <'h>(_hs, v: Value<'h>) -> bool {
+        v.is_output_port()
+    }
+
+    fn textual_port_question "textual-port?" <'h>(_hs, v: Value<'h>) -> bool {
+        v.is_textual_port()
+    }
+
+    fn binary_port_question "binary-port?" <'h>(_hs, v: Value<'h>) -> bool {
+        v.is_binary_port()
+    }
+
+    fn port_question "port?" <'h>(_hs, v: Value<'h>) -> bool {
+        v.is_port()
+    }
+
+    fn input_port_open_question "input-port-open?" <'h>(_hs, port: PortRef<'h>) -> Result<bool> {
+        let arc = port.port_arc();
+        let guard = arc.lock().expect("port is poisoned");
+        guard.is_input_open()
+    }
+
+    fn output_port_open_question "output-port-open?" <'h>(_hs, port: PortRef<'h>) -> Result<bool> {
+        let arc = port.port_arc();
+        let guard = arc.lock().expect("port is poisoned");
+        guard.is_output_open()
+    }
+
+    fn open_input_file "open-input-file" <'h>(hs, filename: Arc<String>) -> Result<Value<'h>> {
+        let path = Path::new(&filename as &str);
+        let file = File::open(path).chain_err(|| format!("open-input-file: error opening {:?}", path))?;
+        Ok(ports::buf_read_into_textual_input_port(hs, BufReader::new(file)))
+    }
+
+    fn open_output_file "open-output-file" <'h>(hs, filename: Arc<String>) -> Result<Value<'h>> {
+        let path = Path::new(&filename as &str);
+        let file = File::create(path).chain_err(|| format!("open-output-file: error opening {:?}", path))?;
+        Ok(ports::writer_into_textual_output_port(hs, BufWriter::new(file)))
+    }
+
+    fn open_binary_output_file "open-binary-output-file" <'h>(hs, filename: Arc<String>) -> Result<Value<'h>> {
+        let path = Path::new(&filename as &str);
+        let file = File::create(path).chain_err(|| format!("open-binary-output-file: error opening {:?}", path))?;
+        Ok(ports::writer_into_binary_output_port(hs, BufWriter::new(file)))
+    }
+
+    fn close_port "close-port" <'h>(_hs, port: PortRef<'h>) -> Result<()> {
+        let arc = port.port_arc();
+        let mut guard = arc.lock().expect("port is poisoned");
+        guard.close()
+    }
+
+    fn close_input_port "close-input-port" <'h>(_hs, port: PortRef<'h>) -> Result<()> {
+        let arc = port.port_arc();
+        let mut guard = arc.lock().expect("port is poisoned");
+        guard.close_input()
+    }
+
+    fn close_output_port "close-output-port" <'h>(_hs, port: PortRef<'h>) -> Result<()> {
+        let arc = port.port_arc();
+        let mut guard = arc.lock().expect("port is poisoned");
+        guard.close_output()
+    }
+
+    fn open_input_string "open-input-string" <'h>(hs, s: Arc<String>) -> Value<'h> {
+        let v: Vec<u8> = s.as_bytes().to_owned();
+        ports::buf_read_into_textual_input_port(hs, io::Cursor::new(v))
+    }
+
+    fn open_output_string "open-output-string" <'h>(hs) -> Value<'h> {
+        ports::new_output_string_port(hs)
+    }
+
+    fn get_output_string "get-output-string" <'h>(hs, port: PortRef<'h>) -> Result<String> {
+        let arc = port.port_arc();
+        let mut guard = arc.lock().expect("port is poisoned");
+        guard.get_output_string()
+    }
+
+    fn read "read" <'h>(hs, port: Option<PortRef<'h>>) -> Result<Value<'h>> {
+        use ports::TextualInputPort;
+
+        match port {
+            None => ports::StdinPort::new().read(hs),
+            Some(port) => {
+                let arc = port.port_arc();
+                let mut guard = arc.lock().expect("port is poisoned");
+                guard.as_open_textual_input()?.read(hs)
+            }
+        }
+    }
+
+    fn read_char "read-char" <'h>(_hs, port: Option<PortRef<'h>>) -> Result<Value<'h>> {
+        use ports::TextualInputPort;
+
+        let result = match port {
+            None => ports::StdinPort::new().read_char(),
+            Some(port) => {
+                let arc = port.port_arc();
+                let mut guard = arc.lock().expect("port is poisoned");
+                guard.as_open_textual_input()?.read_char()
+            }
+        };
+        Ok(match result? {
+            None => Value::EofObject,
+            Some(c) => Value::Char(c),
+        })
+    }
+
+    fn peek_char "peek-char" <'h>(_hs, port: Option<PortRef<'h>>) -> Result<Value<'h>> {
+        use ports::TextualInputPort;
+
+        let result = match port {
+            None => ports::StdinPort::new().peek_char(),
+            Some(port) => {
+                let arc = port.port_arc();
+                let mut guard = arc.lock().expect("port is poisoned");
+                guard.as_open_textual_input()?.peek_char()
+            }
+        };
+        Ok(match result? {
+            None => Value::EofObject,
+            Some(c) => Value::Char(c)
+        })
+    }
+
+    fn read_line "read-line" <'h>(_hs, port: Option<PortRef<'h>>) -> Result<String> {
+        use ports::TextualInputPort;
+
+        match port {
+            None => ports::StdinPort::new().read_line(),
+            Some(port) => {
+                let arc = port.port_arc();
+                let mut guard = arc.lock().expect("port is poisoned");
+                guard.as_open_textual_input()?.read_line()
+            }
+        }
+    }
+
+    fn eof_object_question "eof-object?" <'h>(_hs, v: Value<'h>) -> bool {
+        v.is_eof_object()
+    }
+
+    fn eof_object "eof-object" <'h>(_hs) -> Value<'h> {
+        Value::EofObject
+    }
+
+    fn char_ready_question "char-ready?" <'h>(_hs, port: Option<PortRef<'h>>) -> Result<bool> {
+        use ports::TextualInputPort;
+
+        match port {
+            None => ports::StdinPort::new().is_char_ready(),
+            Some(port) => {
+                let arc = port.port_arc();
+                let mut guard = arc.lock().expect("port is poisoned");
+                guard.as_open_textual_input()?.is_char_ready()
+            }
+        }
+    }
+
+    fn read_string "read-string" <'h>(_hs, k: usize, port: Option<PortRef<'h>>) -> Result<String> {
+        use ports::TextualInputPort;
+
+        match port {
+            None => ports::StdinPort::new().read_string(k),
+            Some(port) => {
+                let arc = port.port_arc();
+                let mut guard = arc.lock().expect("port is poisoned");
+                guard.as_open_textual_input()?.read_string(k)
+            }
+        }
+    }
+
+    fn flush_output_port "flush-output-port" <'h>(_hs, out: Option<PortRef<'h>>) -> Result<()> {
+        match out {
+            None => io::stdout().flush().chain_err(|| "flush-output-port: "),
+            Some(port) => {
+                let arc = port.port_arc();
+                let mut guard = arc.lock().expect("port is poisoned");
+                let w = if guard.is_textual_output() {
+                    guard.as_open_textual_output()
+                } else {
+                    guard.as_open_binary_output()
+                }?;
+                w.flush().chain_err(|| "flush-output-port: ")
+            }
+        }
     }
 }
 
@@ -611,6 +804,7 @@ pub static BUILTINS: &[(&'static str, BuiltinFn)] = &[
     (">=", numeric_ge),
     ("apply", apply),
     ("assert", assert),
+    ("binary-port?", binary_port_question),
     ("boolean?", boolean_question),
     ("car", car),
     ("cdr", cdr),
@@ -619,6 +813,7 @@ pub static BUILTINS: &[(&'static str, BuiltinFn)] = &[
     ("char-downcase", char_downcase),
     ("char-lower-case?", char_lower_case_question),
     ("char-numeric?", char_numeric_question),
+    ("char-ready?", char_ready_question),
     ("char-upcase", char_upcase),
     ("char-upper-case?", char_upper_case_question),
     ("char-whitespace?", char_whitespace_question),
@@ -627,28 +822,47 @@ pub static BUILTINS: &[(&'static str, BuiltinFn)] = &[
     ("char=?", char_eq),
     ("char>?", char_gt),
     ("char>=?", char_ge),
+    ("close-input-port", close_input_port),
+    ("close-output-port", close_output_port),
+    ("close-port", close_port),
     ("cons", cons),
     ("dis", dis),
     ("display", display),
+    ("eof-object", eof_object),
+    ("eof-object?", eof_object_question),
     ("eq?", eq_question),
     ("eqv?", eqv_question),
     ("eval", eval),
+    ("flush-output-port", flush_output_port),
     ("gensym", gensym),
     ("gensym?", gensym_question),
+    ("get-output-string", get_output_string),
+    ("input-port?", input_port_question),
+    ("input-port-open?", input_port_open_question),
     ("list->string", list_to_string),
     ("list->vector", list_to_vector),
     ("load", load),
     ("make-vector", make_vector),
     ("modulo", modulo),
-    ("newline", newline),
     ("null?", null_question),
     ("number?", number_question),
     ("number->string", number_to_string),
+    ("open-binary-output-file", open_binary_output_file),
+    ("open-input-file", open_input_file),
+    ("open-input-string", open_input_string),
+    ("open-output-file", open_output_file),
+    ("open-output-string", open_output_string),
+    ("output-port?", output_port_question),
+    ("output-port-open?", output_port_open_question),
     ("pair?", pair_question),
     ("parse", parse),
+    ("port?", port_question),
     ("procedure?", procedure_question),
     ("quotient", quotient),
+    ("read", read),
+    ("read-char", read_char),
     ("read-line", read_line),
+    ("read-string", read_string),
     ("remainder", remainder),
     ("set-car!", set_car),
     ("set-cdr!", set_cdr),
@@ -662,6 +876,8 @@ pub static BUILTINS: &[(&'static str, BuiltinFn)] = &[
     ("string=?", string_eq_question),
     ("symbol?", symbol_question),
     ("symbol->string", symbol_to_string),
+    ("peek-char", peek_char),
+    ("textual-port?", textual_port_question),
     ("vector", vector),
     ("vector?", vector_question),
     ("vector-length", vector_length),
@@ -734,6 +950,14 @@ pub fn define_builtins<'h>(hs: &mut GcHeapSession<'h>, env: &EnvironmentRef<'h>)
             Builtin(GcLeaf::new(BuiltinFnPtr(f))),
         );
     }
+
+    // The three standard streams are implemented as constant-procs for now.
+    let stdin = ports::stdin(hs);
+    env.push(InternedString::get("current-input-port"), env::constant_proc(hs, stdin));
+    let stdout = ports::stdout(hs);
+    env.push(InternedString::get("current-output-port"), env::constant_proc(hs, stdout));
+    let stderr = ports::stderr(hs);
+    env.push(InternedString::get("current-error-port"), env::constant_proc(hs, stderr));
 
     // Call/cc is implemented as a "lambda" because builtins do not get full
     // access to all the information that makes up the current continuation.

@@ -5,6 +5,7 @@ use cell_gc::collections::VecRef;
 use compile::CodeRef;
 use env::EnvironmentRef;
 use errors::Result;
+use ports::PortRef;
 use std::borrow::Borrow;
 use std::collections::HashSet;
 use std::fmt;
@@ -31,6 +32,7 @@ pub struct Lambda<'h> {
 pub enum Value<'h> {
     Unspecified,
     Nil,
+    EofObject,  // end-of-file object
     Bool(bool),
     Int(i32),
     Char(char),
@@ -43,6 +45,7 @@ pub enum Value<'h> {
     Cons(PairRef<'h>),
     Vector(VecRef<'h, Value<'h>>),
     Environment(EnvironmentRef<'h>),
+    Port(PortRef<'h>),
 }
 
 use self::Value::*;
@@ -52,6 +55,12 @@ pub type BuiltinFn = for<'b> fn(&mut GcHeapSession<'b>, Vec<Value<'b>>)
 
 #[derive(Copy)]
 pub struct BuiltinFnPtr(pub BuiltinFn);
+
+/// The `(display)` procedure prints values in a different style: strings and
+/// characters are written verbatim. Use this wrapper type to get that
+/// style of output.
+pub struct DisplayValue<'h>(pub Value<'h>);
+
 
 // This can't be #[derive]d because function pointers aren't Clone.
 // But they are Copy. A very weird thing about Rust.
@@ -88,11 +97,6 @@ impl<'h> fmt::Display for Value<'h> {
         self.print(f, false, &mut HashSet::new())
     }
 }
-
-/// The `(display)` procedure prints values in a different style: strings and
-/// characters are written verbatim. Use this wrapper type to get that
-/// style of output.
-pub struct DisplayValue<'h>(pub Value<'h>);
 
 impl<'h> fmt::Display for DisplayValue<'h> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -165,6 +169,7 @@ macro_rules! pattern_getter {
 impl<'h> Value<'h> {
     pattern_predicate!(is_unspecified, Unspecified);
     pattern_predicate!(is_nil, Nil);
+    pattern_predicate!(is_eof_object, EofObject);
 
     pattern_predicate!(is_boolean, Bool(_));
     pattern_getter_by_ref!(as_boolean, "boolean", bool, Bool(b) => b);
@@ -225,6 +230,38 @@ impl<'h> Value<'h> {
     pattern_getter!(as_environment, "environment", EnvironmentRef<'h>,
                     Environment(env) => env);
 
+    pattern_predicate!(is_port, Port(_));
+    pattern_getter!(as_port, "port", PortRef<'h>,
+                    Port(port) => port);
+
+    pub fn is_input_port(&self) -> bool {
+        match *self {
+            Port(ref port) => port.is_input(),
+            _ => false,
+        }
+    }
+
+    pub fn is_output_port(&self) -> bool {
+        match *self {
+            Port(ref port) => port.is_output(),
+            _ => false,
+        }
+    }
+
+    pub fn is_textual_port(&self) -> bool {
+        match *self {
+            Port(ref port) => port.is_textual(),
+            _ => false,
+        }
+    }
+
+    pub fn is_binary_port(&self) -> bool {
+        match *self {
+            Port(ref port) => port.is_binary(),
+            _ => false,
+        }
+    }
+
     fn print(&self, f: &mut fmt::Formatter, display: bool, seen: &mut HashSet<Value<'h>>)
         -> fmt::Result
     {
@@ -243,6 +280,7 @@ impl<'h> Value<'h> {
         match *self {
             Unspecified => write!(f, "#<unspecified>"),
             Nil => write!(f, "()"),
+            EofObject => write!(f, "#eof-object"),
             Bool(true) => write!(f, "#t"),
             Bool(false) => write!(f, "#f"),
             Char(c) =>
@@ -283,6 +321,7 @@ impl<'h> Value<'h> {
                 }
                 write!(f, ")")
             }
+            Port(_) => write!(f, "#port"),
             Environment(_) => write!(f, "#environment"),
         }
     }
@@ -519,6 +558,12 @@ impl<'h> ArgType<'h> for VecRef<'h, Value<'h>> {
 impl<'h> ArgType<'h> for EnvironmentRef<'h> {
     fn try_unpack(proc_name: &str, value: Value<'h>) -> Result<EnvironmentRef<'h>> {
         value.as_environment(proc_name)
+    }
+}
+
+impl<'h> ArgType<'h> for PortRef<'h> {
+    fn try_unpack(proc_name: &str, value: Value<'h>) -> Result<PortRef<'h>> {
+        value.as_port(proc_name)
     }
 }
 

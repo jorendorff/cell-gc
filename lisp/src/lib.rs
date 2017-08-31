@@ -20,5 +20,6 @@ mod compile;
 pub mod env;
 pub mod vm;
 
+mod ports;
 mod builtins;
 pub mod toplevel;
