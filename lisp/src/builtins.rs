@@ -625,39 +625,6 @@ fn apply<'h>(_hs: &mut GcHeapSession<'h>, mut args: Vec<Value<'h>>) -> Result<Tr
     })
 }
 
-// 6.10 Input and output
-fn write_to_port<'h, T: fmt::Display>(proc_name: &str, value: T, out: Option<PortRef<'h>>) -> Result<()> {
-    match out {
-        None => {
-            let stdout = io::stdout();
-            let mut guard = stdout.lock();
-            write!(guard, "{}", value)
-                .chain_err(|| format!("{}: error writing to stdout", proc_name))
-        }
-        Some(port) => {
-            let arc = port.port_arc();
-            let mut guard = arc.lock().expect("port is poisoned");
-            let w = guard.as_open_textual_output()?;
-            write!(w, "{}", value)
-                .chain_err(|| format!("{}: error writing to port", proc_name))
-        }
-    }
-}
-
-builtins! {
-    fn write "write" <'h>(_hs, obj: Value<'h>, out: Option<PortRef<'h>>) -> Result<()> {
-        write_to_port("write", obj, out)
-    }
-
-    fn display "display" <'h>(_hs, obj: Value<'h>, out: Option<PortRef<'h>>) -> Result<()> {
-        write_to_port("display", value::DisplayValue(obj), out)
-    }
-
-    fn write_char "write-char" <'h>(_hs, c: char, out: Option<PortRef<'h>>) -> Result<()> {
-        write_to_port("write-char", c, out)
-    }
-}
-
 // R7RS 6.13 Input and output
 
 builtins! {
@@ -936,6 +903,38 @@ builtins! {
                 Ok(Value::Int(u as i32))
             }
         }
+    }
+}
+
+fn write_to_port<'h, T: fmt::Display>(proc_name: &str, value: T, out: Option<PortRef<'h>>) -> Result<()> {
+    match out {
+        None => {
+            let stdout = io::stdout();
+            let mut guard = stdout.lock();
+            write!(guard, "{}", value)
+                .chain_err(|| format!("{}: error writing to stdout", proc_name))
+        }
+        Some(port) => {
+            let arc = port.port_arc();
+            let mut guard = arc.lock().expect("port is poisoned");
+            let w = guard.as_open_textual_output()?;
+            write!(w, "{}", value)
+                .chain_err(|| format!("{}: error writing to port", proc_name))
+        }
+    }
+}
+
+builtins! {
+    fn write "write" <'h>(_hs, obj: Value<'h>, out: Option<PortRef<'h>>) -> Result<()> {
+        write_to_port("write", obj, out)
+    }
+
+    fn display "display" <'h>(_hs, obj: Value<'h>, out: Option<PortRef<'h>>) -> Result<()> {
+        write_to_port("display", value::DisplayValue(obj), out)
+    }
+
+    fn write_char "write-char" <'h>(_hs, c: char, out: Option<PortRef<'h>>) -> Result<()> {
+        write_to_port("write-char", c, out)
     }
 
     fn flush_output_port "flush-output-port" <'h>(_hs, out: Option<PortRef<'h>>) -> Result<()> {
