@@ -658,76 +658,6 @@ builtins! {
     }
 }
 
-// Extensions
-builtins! {
-    fn assert "assert" <'h>(_hs, ok: bool, msg: Option<Value<'h>>) -> Result<()> {
-        if ok {
-            Ok(())
-        } else if let Some(msg) = msg {
-            Err(format!("assert: assertion failed: {}", msg).into())
-        } else {
-            Err("assert: assertion failed".into())
-        }
-    }
-
-    fn gensym "gensym" <'h>(_hs) -> Value<'h> {
-        let sym = InternedString::gensym();
-        assert!(sym.is_gensym());
-        Value::Symbol(GcLeaf::new(sym))
-    }
-
-    fn gensym_question "gensym?" <'h>(_hs, v: Value<'h>) -> bool {
-        match v {
-            Symbol(s) => s.is_gensym(),
-            _ => false,
-        }
-    }
-
-    fn eval "eval" <'h>(hs, expr: Value<'h>, env: EnvironmentRef<'h>) -> Result<Trampoline<'h>> {
-        let expr = env.expand(hs, expr)?;
-        let code = compile::compile_toplevel(hs, &env.senv(), expr)?;
-        Ok(Trampoline::TailEval { code, env })
-    }
-
-    fn dis "dis" <'h>(_hs, expr: Value<'h>) -> Result<()> {
-        if let Lambda(lambda) = expr {
-            lambda.code().dump();
-            Ok(())
-        } else {
-            Err("not a lambda".into())
-        }
-    }
-
-    // Parse the given string. Return value is a keyword-payload pair,
-    // (cons 'ok <list>) if data is a list of parsed values;
-    // (cons 'error <message>) where message is a string;
-    // (cons 'incomplete '()) if data doesn't parse, but is a prefix of something that would.
-    fn parse "parse" <'h>(hs, data: Arc<String>) -> Value<'h> {
-        use parse;
-        let (keyword, payload) =
-            match parse::parse(hs, &data) {
-                Ok(values) => {
-                    let mut out = Value::Nil;
-                    for v in values.into_iter().rev() {
-                        out = Value::Cons(hs.alloc(Pair {
-                            car: v,
-                            cdr: out
-                        }));
-                    }
-                    ("ok", out)
-                }
-                Err(ref err) if err.description() == "parse error: unexpected end of input" =>
-                    ("incomplete", Value::Nil),
-                Err(err) =>
-                    ("error", Value::ImmString(GcLeaf::new(InternedString::get(err.description())))),
-            };
-        Value::Cons(hs.alloc(Pair {
-            car: Value::Symbol(GcLeaf::new(InternedString::get(keyword))),
-            cdr: payload,
-        }))
-    }
-}
-
 // R7RS 6.13 Input and output
 
 builtins! {
@@ -1024,6 +954,78 @@ builtins! {
         }
     }
 }
+
+
+// Extensions
+builtins! {
+    fn assert "assert" <'h>(_hs, ok: bool, msg: Option<Value<'h>>) -> Result<()> {
+        if ok {
+            Ok(())
+        } else if let Some(msg) = msg {
+            Err(format!("assert: assertion failed: {}", msg).into())
+        } else {
+            Err("assert: assertion failed".into())
+        }
+    }
+
+    fn gensym "gensym" <'h>(_hs) -> Value<'h> {
+        let sym = InternedString::gensym();
+        assert!(sym.is_gensym());
+        Value::Symbol(GcLeaf::new(sym))
+    }
+
+    fn gensym_question "gensym?" <'h>(_hs, v: Value<'h>) -> bool {
+        match v {
+            Symbol(s) => s.is_gensym(),
+            _ => false,
+        }
+    }
+
+    fn eval "eval" <'h>(hs, expr: Value<'h>, env: EnvironmentRef<'h>) -> Result<Trampoline<'h>> {
+        let expr = env.expand(hs, expr)?;
+        let code = compile::compile_toplevel(hs, &env.senv(), expr)?;
+        Ok(Trampoline::TailEval { code, env })
+    }
+
+    fn dis "dis" <'h>(_hs, expr: Value<'h>) -> Result<()> {
+        if let Lambda(lambda) = expr {
+            lambda.code().dump();
+            Ok(())
+        } else {
+            Err("not a lambda".into())
+        }
+    }
+
+    // Parse the given string. Return value is a keyword-payload pair,
+    // (cons 'ok <list>) if data is a list of parsed values;
+    // (cons 'error <message>) where message is a string;
+    // (cons 'incomplete '()) if data doesn't parse, but is a prefix of something that would.
+    fn parse "parse" <'h>(hs, data: Arc<String>) -> Value<'h> {
+        use parse;
+        let (keyword, payload) =
+            match parse::parse(hs, &data) {
+                Ok(values) => {
+                    let mut out = Value::Nil;
+                    for v in values.into_iter().rev() {
+                        out = Value::Cons(hs.alloc(Pair {
+                            car: v,
+                            cdr: out
+                        }));
+                    }
+                    ("ok", out)
+                }
+                Err(ref err) if err.description() == "parse error: unexpected end of input" =>
+                    ("incomplete", Value::Nil),
+                Err(err) =>
+                    ("error", Value::ImmString(GcLeaf::new(InternedString::get(err.description())))),
+            };
+        Value::Cons(hs.alloc(Pair {
+            car: Value::Symbol(GcLeaf::new(InternedString::get(keyword))),
+            cdr: payload,
+        }))
+    }
+}
+
 
 // Builtin function list ///////////////////////////////////////////////////////
 
