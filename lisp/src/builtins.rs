@@ -937,6 +937,48 @@ builtins! {
         write_to_port("write-char", c, out)
     }
 
+    fn write_string "write-string" <'h>(_hs, string: Arc<String>, out: Option<PortRef<'h>>) -> Result<()> {
+        // TODO: support character slicing.
+        let s: &str = &string;
+        write_to_port("write-string", s, out)
+    }
+
+    fn write_u8 "write-u8" <'h>(_hs, byte: u8, port: Option<PortRef<'h>>) -> Result<()> {
+        let buf = [byte];
+        match port {
+            None => io::stdout().write(&buf),
+            Some(port) => {
+                let arc = port.port_arc();
+                let mut guard = arc.lock().expect("port is poisoned");
+                let w = guard.as_open_binary_output()?;
+                w.write(&buf)
+            }
+        }.chain_err(|| "write-u8: error writing to port")?;
+        Ok(())
+    }
+
+    fn write_bytevector "write-bytevector" <'h>(
+        _hs,
+        bytevector: ConstBytevector<'h>,
+        port: Option<PortRef<'h>>,
+        start: Option<usize>,
+        end: Option<usize>
+    ) -> Result<()> {
+        let (start, end) = optional_range("write-bytevector", start, end, bytevector.0.len())?;
+        let buffer = bytevector.0.get_all(); // FIXME: bad copy
+        let range = &buffer[start..end];
+        match port {
+            None => io::stdout().write_all(range),
+            Some(port) => {
+                let arc = port.port_arc();
+                let mut guard = arc.lock().expect("port is poisoned");
+                let w = guard.as_open_binary_output()?;
+                w.write_all(range)
+            }
+        }.chain_err(|| "write-bytevector: error writing to port")?;
+        Ok(())
+    }
+
     fn flush_output_port "flush-output-port" <'h>(_hs, out: Option<PortRef<'h>>) -> Result<()> {
         match out {
             None => io::stdout().flush().chain_err(|| "flush-output-port: "),
@@ -1135,6 +1177,9 @@ pub static BUILTINS: &[(&'static str, BuiltinFn)] = &[
     ("vector-set!", vector_set),
     ("write", write),
     ("write-char", write_char),
+    ("write-string", write_string),
+    ("write-u8", write_u8),
+    ("write-bytevector", write_bytevector),
 ];
 
 pub fn get_eval() -> BuiltinFn {
