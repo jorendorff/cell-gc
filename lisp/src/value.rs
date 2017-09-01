@@ -44,6 +44,8 @@ pub enum Value<'h> {
     Builtin(GcLeaf<BuiltinFnPtr>),
     Cons(PairRef<'h>),
     Vector(VecRef<'h, Value<'h>>),
+    ImmBytevector(VecRef<'h, u8>),
+    MutBytevector(VecRef<'h, u8>),
     Environment(EnvironmentRef<'h>),
     Port(PortRef<'h>),
 }
@@ -190,6 +192,14 @@ impl<'h> Value<'h> {
     pattern_predicate!(is_int, Int(_));
     pattern_getter_by_ref!(as_int, "integer", i32, Int(i) => i);
 
+    pub fn as_byte(&self, proc_name: &str) -> Result<u8> {
+        let i = self.as_int(proc_name)?;
+        if i < 0 || i > 0xff {
+            return Err(format!("{}: byte required", proc_name).into());
+        }
+        Ok(i as u8)
+    }
+
     pub fn as_index(&self, error_msg: &str) -> Result<usize> {
         match *self {
             Int(i) => {
@@ -212,6 +222,11 @@ impl<'h> Value<'h> {
     pattern_predicate!(is_vector, Vector(_));
     pattern_getter!(as_vector, "vector", VecRef<'h, Value<'h>>,
                     Vector(v) => v);
+
+    pattern_predicate!(is_bytevector, ImmBytevector(_) | MutBytevector(_));
+    pattern_getter!(as_bytevector, "bytevector", VecRef<'h, u8>,
+                    ImmBytevector(v) => v,
+                    MutBytevector(v) => v);
 
     pattern_predicate!(is_symbol, Symbol(_));
     pattern_getter!(as_symbol, "symbol", InternedString,
@@ -318,6 +333,16 @@ impl<'h> Value<'h> {
                         write!(f, " ")?;
                     }
                     v.get(i).print(f, display, seen)?;
+                }
+                write!(f, ")")
+            }
+            ImmBytevector(ref v) | MutBytevector(ref v) => {
+                write!(f, "#u8(")?;
+                for i in 0..v.len() {
+                    if i != 0 {
+                        write!(f, " ")?;
+                    }
+                    write!(f, "{}", v.get(i))?;
                 }
                 write!(f, ")")
             }
@@ -488,6 +513,12 @@ impl<'h, T: ArgType<'h>> ArgType<'h> for Option<T> {
 /// value is an iterator over "the rest" of the arguments passed.
 pub struct Rest<'h>(pub vec::IntoIter<Value<'h>>);
 
+impl<'h> Rest<'h> {
+    pub fn len(&self) -> usize {
+        self.0.as_slice().len()
+    }
+}
+
 impl<'h> Iterator for Rest<'h> {
     type Item = Value<'h>;
     fn next(&mut self) -> Option<Value<'h>> {
@@ -525,6 +556,12 @@ impl<'h> ArgType<'h> for char {
     }
 }
 
+impl<'h> ArgType<'h> for u8 {
+    fn try_unpack(proc_name: &str, value: Value<'h>) -> Result<u8> {
+        value.as_byte(proc_name)
+    }
+}
+
 impl<'h> ArgType<'h> for i32 {
     fn try_unpack(proc_name: &str, value: Value<'h>) -> Result<i32> {
         value.as_int(proc_name)
@@ -552,6 +589,12 @@ impl<'h> ArgType<'h> for PairRef<'h> {
 impl<'h> ArgType<'h> for VecRef<'h, Value<'h>> {
     fn try_unpack(proc_name: &str, value: Value<'h>) -> Result<VecRef<'h, Value<'h>>> {
         value.as_vector(proc_name)
+    }
+}
+
+impl<'h> ArgType<'h> for VecRef<'h, u8> {
+    fn try_unpack(proc_name: &str, value: Value<'h>) -> Result<VecRef<'h, u8>> {
+        value.as_bytevector(proc_name)
     }
 }
 
@@ -602,6 +645,12 @@ impl<'h> RetType<'h> for i32 {
     }
 }
 
+impl<'h> RetType<'h> for u8 {
+    fn pack(self, _hs: &mut GcHeapSession<'h>) -> Result<Trampoline<'h>> {
+        Ok(Trampoline::Value(Value::Int(self as i32)))
+    }
+}
+
 impl<'h> RetType<'h> for usize {
     fn pack(self, _hs: &mut GcHeapSession<'h>) -> Result<Trampoline<'h>> {
         if self > i32::max_value() as usize {
@@ -628,6 +677,12 @@ impl<'h> RetType<'h> for PairRef<'h> {
 impl<'h> RetType<'h> for Vec<Value<'h>> {
     fn pack(self, hs: &mut GcHeapSession<'h>) -> Result<Trampoline<'h>> {
         Ok(Trampoline::Value(Value::Vector(hs.alloc(self))))
+    }
+}
+
+impl<'h> RetType<'h> for Vec<u8> {
+    fn pack(self, hs: &mut GcHeapSession<'h>) -> Result<Trampoline<'h>> {
+        Ok(Trampoline::Value(Value::MutBytevector(hs.alloc(self))))
     }
 }
 

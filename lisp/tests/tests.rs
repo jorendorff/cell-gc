@@ -34,6 +34,7 @@ macro_rules! test {
 
 test!(Core, begin);
 test!(Core, booleans);
+test!(Expanded, bytevectors);
 test!(Core, characters);
 test!(Core, closure);
 test!(Core, cons);

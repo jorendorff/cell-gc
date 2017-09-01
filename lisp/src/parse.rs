@@ -30,6 +30,9 @@ pub trait Builder {
     /// A partially-constructed vector.
     type Vector;
 
+    /// A partially-constructed bytevector.
+    type Bytevector;
+
     fn identifier(&mut self, s: &str) -> Self::Datum;
     fn boolean(&mut self, b: bool) -> Self::Datum;
     fn integer(&mut self, i: i32) -> Self::Datum;
@@ -44,6 +47,9 @@ pub trait Builder {
     fn new_vector(&mut self) -> Self::Vector;
     fn vector_push(&mut self, v: &mut Self::Vector, d: Self::Datum);
     fn vector_close(&mut self, v: Self::Vector) -> Self::Datum;
+    fn new_bytevector(&mut self) -> Self::Bytevector;
+    fn bytevector_push(&mut self, v: &mut Self::Bytevector, byte: u8);
+    fn bytevector_close(&mut self, v: Self::Bytevector) -> Self::Datum;
 }
 
 /// A `Builder` that ignores and discards all input.
@@ -55,6 +61,7 @@ impl Builder for Ignore {
     type Datum = ();
     type List = ();
     type Vector = ();
+    type Bytevector = ();
 
     fn identifier(&mut self, _s: &str) {}
     fn boolean(&mut self, _b: bool) {}
@@ -70,6 +77,9 @@ impl Builder for Ignore {
     fn new_vector(&mut self) {}
     fn vector_push(&mut self, _v: &mut (), _d: ()) {}
     fn vector_close(&mut self, _v: ()) {}
+    fn new_bytevector(&mut self) {}
+    fn bytevector_push(&mut self, _v: &mut (), _byte: u8) {}
+    fn bytevector_close(&mut self, _v: ()) {}
 }
 
 /// A mut reference to a Builder is also a builder.
@@ -79,6 +89,7 @@ impl<'b, B: Builder> Builder for &'b mut B {
     type Datum = B::Datum;
     type List = B::List;
     type Vector = B::Vector;
+    type Bytevector = B::Bytevector;
 
     fn identifier(&mut self, s: &str) -> B::Datum { B::identifier(*self, s) }
     fn boolean(&mut self, b: bool) -> B::Datum { B::boolean(*self, b) }
@@ -96,6 +107,9 @@ impl<'b, B: Builder> Builder for &'b mut B {
     fn new_vector(&mut self) -> B::Vector { B::new_vector(*self) }
     fn vector_push(&mut self, v: &mut B::Vector, d: B::Datum) { B::vector_push(*self, v, d); }
     fn vector_close(&mut self, v: B::Vector) -> B::Datum { B::vector_close(*self, v) }
+    fn new_bytevector(&mut self) -> B::Bytevector { B::new_bytevector(*self) }
+    fn bytevector_push(&mut self, v: &mut B::Bytevector, byte: u8) { B::bytevector_push(*self, v, byte); }
+    fn bytevector_close(&mut self, v: B::Bytevector) -> B::Datum { B::bytevector_close(*self, v) }
 }
 
 /// Partial continuations for parsing, so that the parsing algorithm is
@@ -221,6 +235,45 @@ impl<'s, B: Builder> Parser<'s, B> {
         }
     }
 
+    pub fn parse_bytevector(&mut self) -> Result<()> {
+        let mut vec = self.builder.new_bytevector();
+        loop {
+            self.skip_space();
+            let start = self.point;
+            let t = token(&self.source[start..]);
+            match t {
+                IResult::Done(rest, token) => {
+                    self.point = self.source.len() - rest.len();
+                    match token {
+                        Token::Close => {
+                            break;
+                        }
+                        Token::Number(s) => {
+                            if let Ok(u) = u8::from_str(&s) {
+                                self.builder.bytevector_push(&mut vec, u);
+                            } else {
+                                return Err(
+                                    format!("parse error: expected byte or ')' in bytevector, got {}",
+                                            &self.source[start..self.point]).into()
+                                );
+                            }
+                        }
+                        _ => {
+                            return Err(
+                                format!("in bytevector, expected byte or ')' in bytevector, got {}",
+                                        &self.source[start..self.point]).into()
+                            );
+                        }
+                    }
+                }
+                IResult::Error(e) => return Err(e.description().into()),
+                IResult::Incomplete(_) => break,
+            }
+        }
+        let datum = self.builder.bytevector_close(vec);
+        self.push(datum)
+    }
+
     pub fn parse(mut self) -> Result<B> {
         loop {
             self.skip_space();
@@ -258,6 +311,7 @@ impl<'s, B: Builder> Parser<'s, B> {
                         Token::Open => self.open(),
                         Token::Close => self.close()?,
                         Token::OpenVector => self.stack.push(ReaderCtn::Vector(self.builder.new_vector())),
+                        Token::OpenBytevector => self.parse_bytevector()?,
                         Token::Quote => self.push_quote("quote"),
                         Token::Quasiquote => self.push_quote("quasiquote"),
                         Token::UnquoteSplicing => self.push_quote("unquote-splicing"),
@@ -293,6 +347,7 @@ enum Token {
     Open,
     Close,
     OpenVector,
+    OpenBytevector,
     Quote,
     Quasiquote,
     UnquoteSplicing,
@@ -333,6 +388,7 @@ named!(
       | map!(boolean, Token::Boolean)
       | map!(character, Token::Char)
       | value!(Token::OpenVector, tag!("#("))
+      | value!(Token::OpenBytevector, tag!("#u8("))
       | value!(Token::UnquoteSplicing, tag!(",@"))
       | value!(Token::Unquote, char!(','))
       | value!(Token::Dot, terminated!(char!('.'), peek!(delimiter)))
@@ -493,6 +549,7 @@ fn test_parse() {
         type Datum = String;
         type List = String;
         type Vector = String;
+        type Bytevector = String;
 
         fn identifier(&mut self, s: &str) -> String { s.to_string() }
         fn boolean(&mut self, b: bool) -> String { format!("{}", b) }
@@ -516,12 +573,20 @@ fn test_parse() {
         }
         fn new_vector(&mut self) -> String { "[".to_string() }
         fn vector_push(&mut self, v: &mut String, d: String) {
-            if v.len() > 1 {
+            if v.len() > 1 {  // already contains at least one element; 1 == "[".len()
                 v.push(' ');
             }
             *v += &d;
         }
         fn vector_close(&mut self, v: String) -> String { v + "]" }
+        fn new_bytevector(&mut self) -> String { "b[".to_string() }
+        fn bytevector_push(&mut self, v: &mut String, byte: u8) {
+            if v.len() > 2 {  // already contains at least one element; 2 == "b[".len()
+                v.push(' ');
+            }
+            *v += &format!("{}", byte);
+        }
+        fn bytevector_close(&mut self, v: String) -> String { v + "]" }
     }
 
     fn parse(s: &str) -> Result<Vec<String>> {
@@ -563,6 +628,17 @@ fn test_parse() {
     );
     assert!(parse("#(0 . 1)").is_err());
 
+    assert_eq!(parse("#u8()").unwrap(),
+               vec!["b[]"]);
+    assert_eq!(parse("#u8(  ;comments allowed here\n)").unwrap(),
+               vec!["b[]"]);
+    assert_eq!(parse("#u8(0 255)").unwrap(),
+               vec!["b[0 255]"]);
+    assert!(parse("#u8(a)").is_err());
+    assert!(parse("#u8(254 255 256)").is_err());
+    assert!(parse("#u8(-1)").is_err());
+    assert!(parse("#u8(-0)").is_err());
+
     assert_eq!(
         parse(
             ";; I stole these lines of code from <https://www.bluishcoder.co.nz/jsscheme/>.
@@ -590,6 +666,7 @@ impl<'v, 'h: 'v> Builder for ValueBuilder<'v, 'h> {
     type Datum = Value<'h>;
     type List = Option<(PairRef<'h>, PairRef<'h>)>;
     type Vector = VecRef<'h, Value<'h>>;
+    type Bytevector = Vec<u8>;
 
     fn identifier(&mut self, s: &str) -> Value<'h> {
         Value::Symbol(GcLeaf::new(InternedString::get(s)))
@@ -660,6 +737,18 @@ impl<'v, 'h: 'v> Builder for ValueBuilder<'v, 'h> {
 
     fn vector_close(&mut self, vector: VecRef<'h, Value<'h>>) -> Value<'h> {
         Value::Vector(vector)
+    }
+
+    fn new_bytevector(&mut self) -> Vec<u8> {
+        vec![]
+    }
+
+    fn bytevector_push(&mut self, bytevector: &mut Vec<u8>, byte: u8) {
+        bytevector.push(byte);
+    }
+
+    fn bytevector_close(&mut self, bytevector: Vec<u8>) -> Value<'h> {
+        Value::ImmBytevector(self.hs.alloc(bytevector))
     }
 }
 

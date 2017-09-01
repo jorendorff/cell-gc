@@ -455,6 +455,152 @@ builtins! {
     }
 }
 
+// R7RS 6.9 Bytevectors
+
+fn optional_range(
+    proc_name: &str,
+    start: Option<usize>,
+    end: Option<usize>,
+    len: usize,
+) -> Result<(usize, usize)> {
+    let start = match start {
+        Some(j) if j > len => return Err(
+            format!("{}: start index {} out of range {}", proc_name, j, len).into()
+        ),
+        Some(j) => j,
+        None => 0
+    };
+    let end = match end {
+        Some(k) if k < start => return Err(
+            format!("{}: start index {} > end index {}", proc_name, start, k).into()
+        ),
+        Some(k) => k,
+        None => len
+    };
+    Ok((start, end))
+}
+
+builtins! {
+    fn bytevector_question "bytevector?" <'h>(_hs, v: Value<'h>) -> bool {
+        v.is_bytevector()
+    }
+
+    fn make_bytevector "make-bytevector" <'h>(_hs, len: usize, byte: Option<u8>) -> Vec<u8> {
+        vec![byte.unwrap_or(0u8); len]
+    }
+
+    fn bytevector "bytevector" <'h>(_hs, rest: Rest<'h>) -> Result<Vec<u8>> {
+        let mut vec = Vec::with_capacity(rest.len());
+        for v in rest {
+            vec.push(v.as_byte("bytevector")?);
+        }
+        Ok(vec)
+    }
+
+    fn bytevector_length "bytevector-length" <'h>(_hs, bytevector: VecRef<'h, u8>) -> usize {
+        bytevector.len()
+    }
+
+    fn bytevector_u8_ref "bytevector-u8-ref" <'h>(_hs, bytevector: VecRef<'h, u8>, k: usize) -> Result<u8> {
+        if k >= bytevector.len() {
+            return Err(
+                format!("bytevector-u8-ref: index {} out of range {}", k, bytevector.len()).into()
+            );
+        }
+        Ok(bytevector.get(k))
+    }
+
+    fn bytevector_u8_set "bytevector-u8-set!" <'h>(
+        _hs, bytevector: VecRef<'h, u8>, k: usize, byte: u8
+    ) -> Result<()> {
+        if k >= bytevector.len() {
+            return Err(
+                format!("bytevector-u8-set!: index {} out of range {}", k, bytevector.len()).into()
+            );
+        }
+        bytevector.set(k, byte);
+        Ok(())
+    }
+
+    fn bytevector_copy "bytevector-copy" <'h>(
+        _hs,
+        bytevector: VecRef<'h, u8>,
+        start: Option<usize>,
+        end: Option<usize>
+    ) -> Result<Vec<u8>> {
+        let len = bytevector.len();
+        let (start, end) = optional_range("bytevector-copy", start, end, len)?;
+        let mut bytes = Vec::with_capacity(end - start);
+        for i in start..end {
+            bytes.push(bytevector.get(i));
+        }
+        Ok(bytes)
+    }
+
+    fn bytevector_copy_mut "bytevector-copy!" <'h>(
+        _hs,
+        to: VecRef<'h, u8>,
+        at: usize,
+        from: VecRef<'h, u8>,
+        start: Option<usize>,
+        end: Option<usize>
+    ) -> Result<()> {
+        if at > to.len() {
+            return Err(
+                format!("bytevector-copy!: second argument {} greater than destination bytevector length {}",
+                        at, to.len()).into()
+            );
+        }
+        let len = from.len();
+        let (start, end) = optional_range("bytevector-copy!", start, end, len)?;
+        if to.len() - at < end - start {
+            return Err(
+                format!("bytevector-copy!: can't copy range from {} to {} ({} bytes) \
+                         into bytevector of length {} starting at {} ({} bytes)",
+                        start, end, end - start,
+                        to.len(), at, to.len() - at).into()
+            );
+        }
+
+        let mut j = at;
+        for i in start .. end {
+            to.set(j, from.get(i));
+            j += 1;
+        }
+        Ok(())
+    }
+
+    fn bytevector_append "bytevector-append" <'h>(_hs, args: Rest<'h>) -> Result<Vec<u8>> {
+        let mut bytes = vec![];
+        for v in args {
+            bytes.extend(v.as_bytevector("bytevector-append")?.into_iter());
+        }
+        Ok(bytes)
+    }
+
+    fn utf8_to_string "utf8->string" <'h>(
+        _hs,
+        bytevector: VecRef<'h, u8>,
+        start: Option<usize>,
+        end: Option<usize>
+    ) -> Result<String> {
+        let len = bytevector.len();
+        let (start, end) = optional_range("utf8->string", start, end, len)?;
+        let mut bytes = Vec::with_capacity(end - start);
+        for i in start..end {
+            bytes.push(bytevector.get(i));
+        }
+        String::from_utf8(bytes).chain_err(|| "utf8->string: invalid UTF-8")
+    }
+
+    // TODO: support character indices (lame)
+    fn string_to_utf8 "string->utf8" <'h>(_hs, string: Arc<String>) -> Vec<u8> {
+        let slice: &str = &string;
+        slice.into()
+    }
+}
+
+
 // 6.9 Control features
 builtins! {
     fn procedure_question "procedure?" <'h>(_hs, v: Value<'h>) -> bool {
@@ -806,6 +952,14 @@ pub static BUILTINS: &[(&'static str, BuiltinFn)] = &[
     ("assert", assert),
     ("binary-port?", binary_port_question),
     ("boolean?", boolean_question),
+    ("bytevector", bytevector),
+    ("bytevector?", bytevector_question),
+    ("bytevector-append", bytevector_append),
+    ("bytevector-copy", bytevector_copy),
+    ("bytevector-copy!", bytevector_copy_mut),
+    ("bytevector-length", bytevector_length),
+    ("bytevector-u8-ref", bytevector_u8_ref),
+    ("bytevector-u8-set!", bytevector_u8_set),
     ("car", car),
     ("cdr", cdr),
     ("char?", char_question),
@@ -842,6 +996,7 @@ pub static BUILTINS: &[(&'static str, BuiltinFn)] = &[
     ("list->string", list_to_string),
     ("list->vector", list_to_vector),
     ("load", load),
+    ("make-bytevector", make_bytevector),
     ("make-vector", make_vector),
     ("modulo", modulo),
     ("null?", null_question),
@@ -856,6 +1011,7 @@ pub static BUILTINS: &[(&'static str, BuiltinFn)] = &[
     ("output-port-open?", output_port_open_question),
     ("pair?", pair_question),
     ("parse", parse),
+    ("peek-char", peek_char),
     ("port?", port_question),
     ("procedure?", procedure_question),
     ("quotient", quotient),
@@ -870,14 +1026,15 @@ pub static BUILTINS: &[(&'static str, BuiltinFn)] = &[
     ("string?", string_question),
     ("string->list", string_to_list),
     ("string->symbol", string_to_symbol),
+    ("string->utf8", string_to_utf8),
     ("string-append", string_append),
     ("string-length", string_length),
     ("string-ref", string_ref),
     ("string=?", string_eq_question),
     ("symbol?", symbol_question),
     ("symbol->string", symbol_to_string),
-    ("peek-char", peek_char),
     ("textual-port?", textual_port_question),
+    ("utf8->string", utf8_to_string),
     ("vector", vector),
     ("vector?", vector_question),
     ("vector-length", vector_length),

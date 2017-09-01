@@ -311,7 +311,8 @@
         (if (char? expr) #t
             (if (string? expr) #t
                 (if (boolean? expr) #t
-                    #f))))))
+                    (if (bytevector? expr) #t
+                        #f)))))))
 
 (define expand-expr
   (lambda (senv expr)

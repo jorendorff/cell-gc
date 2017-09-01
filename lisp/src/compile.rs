@@ -627,8 +627,18 @@ impl<'e, 'h> Emitter<'e, 'h> {
             v @ Value::Int(_) |
             v @ Value::Char(_) |
             v @ Value::ImmString(_) |
-            v @ Value::StringObj(_) => {
+            v @ Value::StringObj(_) |
+            v @ Value::ImmBytevector(_) => {
                 self.emit_constant(v)?;
+                self.emit_ctn(k);
+                Ok(())
+            }
+
+            // Ban one form of "three-dimensional" code, at least.
+            Value::MutBytevector(v) => {
+                let bytes = v.get_all();
+                let imm_val = Value::MutBytevector(self.hs.alloc(bytes));
+                self.emit_constant(imm_val)?;
                 self.emit_ctn(k);
                 Ok(())
             }
