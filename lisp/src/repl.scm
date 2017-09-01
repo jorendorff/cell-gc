@@ -153,6 +153,11 @@
              (lambda (exc) ;; on-error
                (cps-display-error exc ctn)))))
 
+  (define (write-to-string obj)
+    (let ((out (open-output-string)))
+      (write obj out)
+      (get-output-string out)))
+
   (define (cps-display-error obj ctn)
     (define (error->string obj)
       (cond

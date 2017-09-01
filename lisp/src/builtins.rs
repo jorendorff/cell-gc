@@ -726,10 +726,6 @@ builtins! {
             cdr: payload,
         }))
     }
-
-    fn write_to_string "write-to-string" <'h>(_hs, value: Value<'h>) -> String {
-        format!("{}", value)
-    }
 }
 
 // R7RS 6.13 Input and output
@@ -1138,7 +1134,6 @@ pub static BUILTINS: &[(&'static str, BuiltinFn)] = &[
     ("vector-set!", vector_set),
     ("write", write),
     ("write-char", write_char),
-    ("write-to-string", write_to_string),
 ];
 
 pub fn get_eval() -> BuiltinFn {
