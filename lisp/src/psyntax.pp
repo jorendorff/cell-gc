@@ -1832,7 +1832,7 @@
                                                                           ((lambda (t2143)
                                                                              (if t2143
                                                                                  t2143
-                                                                                 (null?
+                                                                                 (bytevector?
                                                                                    x2139)))
                                                                             (char?
                                                                               x2139))))

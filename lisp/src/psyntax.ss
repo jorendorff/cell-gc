@@ -785,7 +785,7 @@
   (syntax-rules ()
     ((_ e)
      (let ((x e))
-       (or (boolean? x) (number? x) (string? x) (char? x) (null? x))))))
+       (or (boolean? x) (number? x) (string? x) (char? x) (bytevector? x))))))
 )
 
 (define-syntax unannotate
