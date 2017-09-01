@@ -12,7 +12,6 @@ use std::io::{self, BufReader, BufWriter, Write};
 use std::path::Path;
 use std::sync::Arc;
 use std::vec;
-use toplevel;
 use value::{self, BuiltinFn, BuiltinFnPtr, ConstBytevector, InternedString, Lambda, Pair, Value};
 use value::{ArgType, Rest, RetType};
 use value::Value::*;
@@ -728,13 +727,6 @@ builtins! {
         }))
     }
 
-    fn load "load" <'h>(hs, path_str: Arc<String>, env: EnvironmentRef<'h>) -> Result<Value<'h>> {
-        use toplevel;
-
-        let filename: &str = &path_str;
-        toplevel::load(hs, &env, Path::new(filename))
-    }
-
     fn write_to_string "write-to-string" <'h>(_hs, value: Value<'h>) -> String {
         format!("{}", value)
     }
@@ -1095,7 +1087,6 @@ pub static BUILTINS: &[(&'static str, BuiltinFn)] = &[
     ("input-port-open?", input_port_open_question),
     ("list->string", list_to_string),
     ("list->vector", list_to_vector),
-    ("load", load),
     ("make-bytevector", make_bytevector),
     ("make-vector", make_vector),
     ("modulo", modulo),
@@ -1240,11 +1231,4 @@ pub fn define_builtins<'h>(hs: &mut GcHeapSession<'h>, env: &EnvironmentRef<'h>)
         InternedString::get("interaction-environment"),
         interaction_env_proc,
     );
-
-    // Bind the second argument of (load).
-    toplevel::eval_str(hs, env, "
-        (set! load (letrec* ((core-load load)
-                             (env (interaction-environment)))
-                     (lambda (filename)
-                       (core-load filename env))))").expect("defining (load)");
 }
