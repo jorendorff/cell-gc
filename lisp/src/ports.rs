@@ -56,7 +56,7 @@ pub trait AbstractPort: Send + 'static {
         Err("textual output port required".into())
     }
 
-    fn get_output_string(&mut self) -> Result<String> {
+    fn get_output_string(&self) -> Result<String> {
         Err("get-output-string: port was not created with open-output-string".into())
     }
 
@@ -64,6 +64,10 @@ pub trait AbstractPort: Send + 'static {
 
     fn as_open_binary_output(&mut self) -> Result<&mut Write> {
         Err("binary output port required".into())
+    }
+
+    fn get_output_bytevector(&self) -> Result<Vec<u8>> {
+        Err("get-output-bytevector: port was not created with open-output-bytevector".into())
     }
 
     fn is_output_open(&self) -> Result<bool> {
@@ -454,6 +458,8 @@ pub fn stderr<'h>(hs: &mut GcHeapSession<'h>) -> Value<'h> {
 }
 
 
+// open-output-string
+
 struct StringOut {
     buffer: Option<String>,
 }
@@ -492,7 +498,7 @@ impl AbstractPort for StringOut {
         }
     }
 
-    fn get_output_string(&mut self) -> Result<String> {
+    fn get_output_string(&self) -> Result<String> {
         match self.buffer {
             None => Err("output port is closed".into()),
             Some(ref s) => Ok(s.clone()),
@@ -507,12 +513,9 @@ impl AbstractPort for StringOut {
 }
 
 pub fn new_output_string_port<'h>(hs: &mut GcHeapSession<'h>) -> Value<'h> {
-    Value::Port(hs.alloc(Port {
-        port_arc: Arc::new(Mutex::new(StringOut {
-            buffer: Some(String::new()),
-        })),
-        phantom: PhantomData,
-    }))
+    port_into_value(hs, StringOut {
+        buffer: Some(String::new()),
+    })
 }
 
 
@@ -524,14 +527,18 @@ struct BinOut<W: Write + Send + 'static> {
 
 impl<W: Write + Send + 'static> AbstractPort for BinOut<W> {
     fn is_binary_output(&self) -> bool { true }
+
     fn as_open_binary_output(&mut self) -> Result<&mut Write> {
         match self.writer {
             Some(ref mut w) => Ok(w),
             None => Err("port is closed".into()),
         }
     }
+
     fn is_output_open(&self) -> Result<bool> { Ok(self.writer.is_some()) }
+
     fn close_output(&mut self) -> Result<()> { self.writer = None; Ok(())}
+
     fn close(&mut self) -> Result<()> { self.close_output() }
 }
 
@@ -539,10 +546,62 @@ pub fn writer_into_binary_output_port<'h, W: Write + Send + 'static>(
     hs: &mut GcHeapSession<'h>,
     writer: W
 ) -> Value<'h> {
-    Value::Port(hs.alloc(Port {
-        port_arc: Arc::new(Mutex::new(BinOut {
-            writer: Some(writer),
-        })),
-        phantom: PhantomData,
-    }))
+    port_into_value(hs, BinOut {
+        writer: Some(writer),
+    })
+}
+
+// open-output-bytevector
+
+struct BytesOut {
+    buffer: Option<Vec<u8>>,
+}
+
+impl Write for BytesOut {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        match self.buffer {
+            None => return Err(io::Error::new(io::ErrorKind::Other, "port is closed")),
+            Some(ref mut v) => v.write(buf),
+        }
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+
+    fn write_all(&mut self, buf: &[u8]) -> io::Result<()> {
+        self.write(buf)?;
+        Ok(())
+    }
+}
+
+impl AbstractPort for BytesOut {
+    fn is_binary_output(&self) -> bool { true }
+
+    fn as_open_binary_output(&mut self) -> Result<&mut Write> {
+        if self.buffer.is_some() {
+            Ok(self)
+        } else {
+            Err("output port is closed".into())
+        }
+    }
+
+    fn get_output_bytevector(&self) -> Result<Vec<u8>> {
+        match self.buffer {
+            None => Err("output port is closed".into()),
+            Some(ref v) => Ok(v.clone()),
+        }
+    }
+
+    fn is_output_open(&self) -> Result<bool> { Ok(self.buffer.is_some()) }
+
+    fn close_output(&mut self) -> Result<()> { self.buffer = None; Ok(())}
+
+    fn close(&mut self) -> Result<()> { self.close_output() }
+}
+
+pub fn new_output_bytevector_port<'h>(hs: &mut GcHeapSession<'h>) -> Value<'h> {
+    port_into_value(hs, BytesOut {
+        buffer: Some(Vec::new()),
+    })
 }

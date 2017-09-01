@@ -703,7 +703,7 @@ builtins! {
     }
 
     fn open_input_string "open-input-string" <'h>(hs, s: Arc<String>) -> Value<'h> {
-        let v: Vec<u8> = s.as_bytes().to_owned();
+        let v: Vec<u8> = s.as_bytes().to_owned(); // FIXME: bad copy
         ports::buf_read_into_textual_input_port(hs, io::Cursor::new(v))
     }
 
@@ -711,10 +711,31 @@ builtins! {
         ports::new_output_string_port(hs)
     }
 
-    fn get_output_string "get-output-string" <'h>(hs, port: PortRef<'h>) -> Result<String> {
+    fn get_output_string "get-output-string" <'h>(_hs, port: PortRef<'h>) -> Result<String> {
         let arc = port.port_arc();
-        let mut guard = arc.lock().expect("port is poisoned");
+        let guard = arc.lock().expect("port is poisoned");
         guard.get_output_string()
+    }
+
+    fn open_input_bytevector "open-input-bytevector" <'h>(
+        hs,
+        bytevector: VecRef<'h, u8>
+    ) -> Value<'h> {
+        let v: Vec<u8> = bytevector.get_all(); // FIXME: bad copy
+        ports::buf_read_into_binary_input_port(hs, io::Cursor::new(v))
+    }
+
+    fn open_output_bytevector "open-output-bytevector" <'h>(hs) -> Value<'h> {
+        ports::new_output_bytevector_port(hs)
+    }
+
+    fn get_output_bytevector "get-output-bytevector" <'h>(
+        _hs,
+        port: PortRef<'h>
+    ) -> Result<Vec<u8>> {
+        let arc = port.port_arc();
+        let guard = arc.lock().expect("port is poisoned");
+        guard.get_output_bytevector()
     }
 
     fn read "read" <'h>(hs, port: Option<PortRef<'h>>) -> Result<Value<'h>> {
@@ -1121,6 +1142,7 @@ pub static BUILTINS: &[(&'static str, BuiltinFn)] = &[
     ("flush-output-port", flush_output_port),
     ("gensym", gensym),
     ("gensym?", gensym_question),
+    ("get-output-bytevector", get_output_bytevector),
     ("get-output-string", get_output_string),
     ("input-port?", input_port_question),
     ("input-port-open?", input_port_open_question),
@@ -1134,8 +1156,10 @@ pub static BUILTINS: &[(&'static str, BuiltinFn)] = &[
     ("number->string", number_to_string),
     ("open-binary-input-file", open_binary_input_file),
     ("open-binary-output-file", open_binary_output_file),
+    ("open-input-bytevector", open_input_bytevector),
     ("open-input-file", open_input_file),
     ("open-input-string", open_input_string),
+    ("open-output-bytevector", open_output_bytevector),
     ("open-output-file", open_output_file),
     ("open-output-string", open_output_string),
     ("output-port?", output_port_question),
