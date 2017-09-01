@@ -63,6 +63,10 @@ pub struct BuiltinFnPtr(pub BuiltinFn);
 /// style of output.
 pub struct DisplayValue<'h>(pub Value<'h>);
 
+/// Reference to a bytevector, through which the user agrees not to modify
+/// anything.
+pub struct ConstBytevector<'h>(pub VecRef<'h, u8>);
+
 
 // This can't be #[derive]d because function pointers aren't Clone.
 // But they are Copy. A very weird thing about Rust.
@@ -224,8 +228,10 @@ impl<'h> Value<'h> {
                     Vector(v) => v);
 
     pattern_predicate!(is_bytevector, ImmBytevector(_) | MutBytevector(_));
-    pattern_getter!(as_bytevector, "bytevector", VecRef<'h, u8>,
-                    ImmBytevector(v) => v,
+    pattern_getter!(as_bytevector, "bytevector", ConstBytevector<'h>,
+                    ImmBytevector(v) => ConstBytevector(v),
+                    MutBytevector(v) => ConstBytevector(v));
+    pattern_getter!(as_mut_bytevector, "mutable bytevector", VecRef<'h, u8>,
                     MutBytevector(v) => v);
 
     pattern_predicate!(is_symbol, Symbol(_));
@@ -594,6 +600,12 @@ impl<'h> ArgType<'h> for VecRef<'h, Value<'h>> {
 
 impl<'h> ArgType<'h> for VecRef<'h, u8> {
     fn try_unpack(proc_name: &str, value: Value<'h>) -> Result<VecRef<'h, u8>> {
+        value.as_mut_bytevector(proc_name)
+    }
+}
+
+impl<'h> ArgType<'h> for ConstBytevector<'h> {
+    fn try_unpack(proc_name: &str, value: Value<'h>) -> Result<ConstBytevector<'h>> {
         value.as_bytevector(proc_name)
     }
 }

@@ -22,9 +22,7 @@ pub trait TextualInputPort: Send {
 pub trait BinaryInputPort: Send {
     fn read_u8(&mut self) -> Result<Option<u8>>;
     fn peek_u8(&mut self) -> Result<Option<u8>>;
-    fn is_u8_ready(&mut self) -> Result<bool>;
-    fn read_bytevector(&mut self, k: usize) -> Result<Option<Vec<u8>>>;
-    fn read_into_bytevector(&mut self, buf: &mut [u8]) -> Result<Option<usize>>;
+    fn read_into(&mut self, buf: &mut [u8]) -> Result<Option<usize>>;
 }
 
 pub trait AbstractPort: Send + 'static {
@@ -213,6 +211,99 @@ pub fn buf_read_into_textual_input_port<'h, R: BufRead + Send + 'static>(
 }
 
 
+// Binary input ports
+
+struct BytesIn<R: BufRead> {
+    reader: Option<R>,
+}
+
+impl<R: BufRead> BytesIn<R> {
+    fn borrow_reader<'s>(&'s mut self, proc_name: &str) -> Result<&'s mut R> {
+        match self.reader {
+            None => Err(format!("{}: input port is closed", proc_name).into()),
+            Some(ref mut reader) => Ok(reader),
+        }
+    }
+}
+
+fn read_u8<R: BufRead>(reader: &mut R) -> Result<Option<u8>> {
+    let mut buf: [u8; 1] = [0];
+    let bytes_read = reader.read(&mut buf).chain_err(|| "read-u8: error reading from port")?;
+    if bytes_read == 0 {
+        Ok(None)
+    } else {
+        debug_assert!(bytes_read == 1);
+        Ok(Some(buf[0]))
+    }
+}
+
+fn peek_u8<R: BufRead>(reader: &mut R) -> Result<Option<u8>> {
+    let buf = reader.fill_buf().chain_err(|| "peek-u8: error reading from port")?;
+    if buf.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(buf[0]))
+    }
+}
+
+fn read_into<R: BufRead>(reader: &mut R, buf: &mut [u8]) -> Result<Option<usize>> {
+    let mut total_read = 0;
+    while total_read < buf.len() {
+        let bytes_read = reader.read(&mut buf[total_read..])
+            .chain_err(|| "read-bytevector!: error reading from port")?;
+        if bytes_read == 0 {
+            if total_read == 0 {
+                return Ok(None);
+            }
+            break;
+        }
+        total_read += bytes_read;
+    }
+    Ok(Some(total_read))
+}
+
+impl<R: BufRead + Send> BinaryInputPort for BytesIn<R> {
+    fn read_u8(&mut self) -> Result<Option<u8>> {
+        read_u8(self.borrow_reader("read-u8")?)
+    }
+
+    fn peek_u8(&mut self) -> Result<Option<u8>> {
+        peek_u8(self.borrow_reader("peek-u8")?)
+    }
+
+    fn read_into(&mut self, buf: &mut [u8]) -> Result<Option<usize>> {
+        read_into(self.borrow_reader("read-bytevector")?, buf)
+    }
+}
+
+pub fn buf_read_into_binary_input_port<'h, R: BufRead + Send + 'static>(
+    hs: &mut GcHeapSession<'h>,
+    reader: R
+) -> Value<'h> {
+    port_into_value(hs, BytesIn {
+        reader: Some(reader)
+    })
+}
+
+impl<R: BufRead + Send + 'static> AbstractPort for BytesIn<R> {
+    fn is_binary_input(&self) -> bool { true }
+
+    fn as_open_binary_input(&mut self) -> Result<&mut BinaryInputPort> {
+        if self.reader.is_some() {
+            Ok(self)
+        } else {
+            Err("input port is closed".into())
+        }
+    }
+
+    fn is_input_open(&self) -> Result<bool> { Ok(self.reader.is_some()) }
+
+    fn close_input(&mut self) -> Result<()> { self.reader = None; Ok(()) }
+
+    fn close(&mut self) -> Result<()> { self.close_input() }
+}
+
+
 // Stdin
 
 pub struct StdinPort {
@@ -225,60 +316,74 @@ impl StdinPort {
             is_open: true,
         }
     }
+
+    fn check_open(&self, proc_name: &str) -> Result<()> {
+        if self.is_open {
+            Ok(())
+        } else {
+            Err(format!("{}: stdin is closed", proc_name).into())
+        }
+    }
 }
 
 impl TextualInputPort for StdinPort {
     fn read<'h>(&mut self, _hs: &mut GcHeapSession<'h>) -> Result<Value<'h>> {
-        if self.is_open {
-            Err("read: unimplemented".into())
-        } else {
-            Err("read: stdin is closed".into())
-        }
+        self.check_open("read")?;
+        Err("read: unimplemented".into())
     }
 
     fn read_char(&mut self) -> Result<Option<char>> {
-        if self.is_open {
-            Err("read-char: unimplemented".into())
-        } else {
-            Err("read-char: stdin is closed".into())
-        }
+        self.check_open("read-char")?;
+        Err("read-char: unimplemented".into())
     }
 
     fn peek_char(&mut self) -> Result<Option<char>> {
-        if self.is_open {
-            Err("peek-char: unimplemented".into())
-        } else {
-            Err("peek-char: stdin is closed".into())
-        }
+        self.check_open("peek-char")?;
+        Err("peek-char: unimplemented".into())
     }
 
     fn read_line(&mut self) -> Result<String> {
-        if self.is_open {
-            io::stdout().flush().chain_err(|| "read-line: error flushing stdout")?;
-            let stdin = io::stdin();
-            let mut guard = stdin.lock();
-            let mut buffer = String::new();
-            guard.read_line(&mut buffer).chain_err(|| "read-line: error reading stdin")?;
-            Ok(buffer)
-        } else {
-            Err("read-line: stdin is closed".into())
-        }
+        self.check_open("read-line")?;
+
+        io::stdout().flush().chain_err(|| "read-line: error flushing stdout")?;
+        let stdin = io::stdin();
+        let mut guard = stdin.lock();
+        let mut buffer = String::new();
+        guard.read_line(&mut buffer).chain_err(|| "read-line: error reading stdin")?;
+        Ok(buffer)
     }
 
     fn is_char_ready(&mut self) -> Result<bool> {
-        if self.is_open {
-            Err("char-ready?: unimplemented".into())
-        } else {
-            Err("char-ready?: stdin is closed".into())
-        }
+        self.check_open("char-ready?")?;
+        Err("char-ready?: unimplemented".into())
     }
 
     fn read_string(&mut self, _k: usize) -> Result<String> {
-        if self.is_open {
-            Err("read-string: unimplemented".into())
-        } else {
-            Err("read-string: stdin is closed".into())
-        }
+        self.check_open("read-string")?;
+        Err("read-string: unimplemented".into())
+    }
+}
+
+impl BinaryInputPort for StdinPort {
+    fn read_u8(&mut self) -> Result<Option<u8>> {
+        self.check_open("read-u8")?;
+        let stdin = io::stdin();
+        let mut guard = stdin.lock();
+        read_u8(&mut guard)
+    }
+
+    fn peek_u8(&mut self) -> Result<Option<u8>> {
+        self.check_open("peek-u8")?;
+        let stdin = io::stdin();
+        let mut guard = stdin.lock();
+        peek_u8(&mut guard)
+    }
+
+    fn read_into(&mut self, buf: &mut [u8]) -> Result<Option<usize>> {
+        self.check_open("read-bytevector")?;
+        let stdin = io::stdin();
+        let mut guard = stdin.lock();
+        read_into(&mut guard, buf)
     }
 }
 

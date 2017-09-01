@@ -13,7 +13,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::vec;
 use toplevel;
-use value::{self, BuiltinFn, BuiltinFnPtr, InternedString, Lambda, Pair, Value};
+use value::{self, BuiltinFn, BuiltinFnPtr, ConstBytevector, InternedString, Lambda, Pair, Value};
 use value::{ArgType, Rest, RetType};
 use value::Value::*;
 use vm::Trampoline;
@@ -497,17 +497,17 @@ builtins! {
         Ok(vec)
     }
 
-    fn bytevector_length "bytevector-length" <'h>(_hs, bytevector: VecRef<'h, u8>) -> usize {
-        bytevector.len()
+    fn bytevector_length "bytevector-length" <'h>(_hs, bytevector: ConstBytevector<'h>) -> usize {
+        bytevector.0.len()
     }
 
-    fn bytevector_u8_ref "bytevector-u8-ref" <'h>(_hs, bytevector: VecRef<'h, u8>, k: usize) -> Result<u8> {
-        if k >= bytevector.len() {
+    fn bytevector_u8_ref "bytevector-u8-ref" <'h>(_hs, bytevector: ConstBytevector<'h>, k: usize) -> Result<u8> {
+        if k >= bytevector.0.len() {
             return Err(
-                format!("bytevector-u8-ref: index {} out of range {}", k, bytevector.len()).into()
+                format!("bytevector-u8-ref: index {} out of range {}", k, bytevector.0.len()).into()
             );
         }
-        Ok(bytevector.get(k))
+        Ok(bytevector.0.get(k))
     }
 
     fn bytevector_u8_set "bytevector-u8-set!" <'h>(
@@ -524,15 +524,15 @@ builtins! {
 
     fn bytevector_copy "bytevector-copy" <'h>(
         _hs,
-        bytevector: VecRef<'h, u8>,
+        bytevector: ConstBytevector<'h>,
         start: Option<usize>,
         end: Option<usize>
     ) -> Result<Vec<u8>> {
-        let len = bytevector.len();
+        let len = bytevector.0.len();
         let (start, end) = optional_range("bytevector-copy", start, end, len)?;
-        let mut bytes = Vec::with_capacity(end - start);
+        let mut bytes = Vec::with_capacity(end - start);  // bad: slow copy
         for i in start..end {
-            bytes.push(bytevector.get(i));
+            bytes.push(bytevector.0.get(i));
         }
         Ok(bytes)
     }
@@ -541,7 +541,7 @@ builtins! {
         _hs,
         to: VecRef<'h, u8>,
         at: usize,
-        from: VecRef<'h, u8>,
+        from: ConstBytevector<'h>,
         start: Option<usize>,
         end: Option<usize>
     ) -> Result<()> {
@@ -551,7 +551,7 @@ builtins! {
                         at, to.len()).into()
             );
         }
-        let len = from.len();
+        let len = from.0.len();
         let (start, end) = optional_range("bytevector-copy!", start, end, len)?;
         if to.len() - at < end - start {
             return Err(
@@ -564,7 +564,7 @@ builtins! {
 
         let mut j = at;
         for i in start .. end {
-            to.set(j, from.get(i));
+            to.set(j, from.0.get(i));
             j += 1;
         }
         Ok(())
@@ -573,22 +573,22 @@ builtins! {
     fn bytevector_append "bytevector-append" <'h>(_hs, args: Rest<'h>) -> Result<Vec<u8>> {
         let mut bytes = vec![];
         for v in args {
-            bytes.extend(v.as_bytevector("bytevector-append")?.into_iter());
+            bytes.extend(v.as_bytevector("bytevector-append")?.0.into_iter());
         }
         Ok(bytes)
     }
 
     fn utf8_to_string "utf8->string" <'h>(
         _hs,
-        bytevector: VecRef<'h, u8>,
+        bytevector: ConstBytevector<'h>,
         start: Option<usize>,
         end: Option<usize>
     ) -> Result<String> {
-        let len = bytevector.len();
+        let len = bytevector.0.len();
         let (start, end) = optional_range("utf8->string", start, end, len)?;
         let mut bytes = Vec::with_capacity(end - start);
         for i in start..end {
-            bytes.push(bytevector.get(i));
+            bytes.push(bytevector.0.get(i));
         }
         String::from_utf8(bytes).chain_err(|| "utf8->string: invalid UTF-8")
     }
@@ -781,6 +781,12 @@ builtins! {
         Ok(ports::buf_read_into_textual_input_port(hs, BufReader::new(file)))
     }
 
+    fn open_binary_input_file "open-binary-input-file" <'h>(hs, filename: Arc<String>) -> Result<Value<'h>> {
+        let path = Path::new(&filename as &str);
+        let file = File::open(path).chain_err(|| format!("open-input-file: error opening {:?}", path))?;
+        Ok(ports::buf_read_into_binary_input_port(hs, BufReader::new(file)))
+    }
+
     fn open_output_file "open-output-file" <'h>(hs, filename: Arc<String>) -> Result<Value<'h>> {
         let path = Path::new(&filename as &str);
         let file = File::create(path).chain_err(|| format!("open-output-file: error opening {:?}", path))?;
@@ -920,6 +926,100 @@ builtins! {
         }
     }
 
+    fn read_u8 "read-u8" <'h>(_hs, port: Option<PortRef<'h>>) -> Result<Value<'h>> {
+        use ports::BinaryInputPort;
+
+        let result = match port {
+            None => ports::StdinPort::new().read_u8(),
+            Some(port) => {
+                let arc = port.port_arc();
+                let mut guard = arc.lock().expect("port is poisoned");
+                guard.as_open_binary_input()?.read_u8()
+            }
+        };
+        match result? {
+            None => Ok(Value::EofObject),
+            Some(u) => Ok(Value::Int(u as i32)),
+        }
+    }
+
+    fn peek_u8 "peek-u8" <'h>(_hs, port: Option<PortRef<'h>>) -> Result<Value<'h>> {
+        use ports::BinaryInputPort;
+
+        let result = match port {
+            None => ports::StdinPort::new().peek_u8(),
+            Some(port) => {
+                let arc = port.port_arc();
+                let mut guard = arc.lock().expect("port is poisoned");
+                guard.as_open_binary_input()?.peek_u8()
+            }
+        };
+        match result? {
+            None => Ok(Value::EofObject),
+            Some(u) => Ok(Value::Int(u as i32)),
+        }
+    }
+
+    fn read_bytevector "read-bytevector" <'h>(
+        hs,
+        k: usize,
+        port: Option<PortRef<'h>>
+    ) -> Result<Value<'h>> {
+        use ports::BinaryInputPort;
+
+        let mut buf = vec![0; k];
+        let bytes_read = match port {
+            None => ports::StdinPort::new().read_into(&mut buf),
+            Some(port) => {
+                let arc = port.port_arc();
+                let mut guard = arc.lock().expect("port is poisoned");
+                guard.as_open_binary_input()?.read_into(&mut buf)
+            }
+        };
+
+        match bytes_read? {
+            None => Ok(Value::EofObject),
+            Some(u) => {
+                buf.truncate(u);
+                Ok(Value::MutBytevector(hs.alloc(buf)))
+            }
+        }
+    }
+
+    fn read_bytevector_mut "read-bytevector!" <'h>(
+        hs,
+        bytevector: VecRef<'h, u8>,
+        port: Option<PortRef<'h>>,
+        start: Option<usize>,
+        end: Option<usize>
+    ) -> Result<Value<'h>> {
+        use ports::BinaryInputPort;
+
+        let (start, end) = optional_range("read-bytevector!", start, end, bytevector.len())?;
+        let mut buf = vec![0; end - start]; // bad, forced to copy
+        let bytes_read = match port {
+            None => ports::StdinPort::new().read_into(&mut buf),
+            Some(port) => {
+                let arc = port.port_arc();
+                let mut guard = arc.lock().expect("port is poisoned");
+                guard.as_open_binary_input()?.read_into(&mut buf)
+            }
+        };
+
+        match bytes_read? {
+            None => Ok(Value::EofObject),
+            Some(u) => {
+                for i in 0..u {
+                    bytevector.set(start + i, buf[i]);
+                }
+                // So far, there's no way to create a bytevector with a size
+                // larger than i32::max.
+                assert!(u > i32::max_value() as usize);
+                Ok(Value::Int(u as i32))
+            }
+        }
+    }
+
     fn flush_output_port "flush-output-port" <'h>(_hs, out: Option<PortRef<'h>>) -> Result<()> {
         match out {
             None => io::stdout().flush().chain_err(|| "flush-output-port: "),
@@ -1002,6 +1102,7 @@ pub static BUILTINS: &[(&'static str, BuiltinFn)] = &[
     ("null?", null_question),
     ("number?", number_question),
     ("number->string", number_to_string),
+    ("open-binary-input-file", open_binary_input_file),
     ("open-binary-output-file", open_binary_output_file),
     ("open-input-file", open_input_file),
     ("open-input-string", open_input_string),
@@ -1012,13 +1113,17 @@ pub static BUILTINS: &[(&'static str, BuiltinFn)] = &[
     ("pair?", pair_question),
     ("parse", parse),
     ("peek-char", peek_char),
+    ("peek-u8", peek_u8),
     ("port?", port_question),
     ("procedure?", procedure_question),
     ("quotient", quotient),
     ("read", read),
+    ("read-bytevector", read_bytevector),
+    ("read-bytevector!", read_bytevector_mut),
     ("read-char", read_char),
     ("read-line", read_line),
     ("read-string", read_string),
+    ("read-u8", read_u8),
     ("remainder", remainder),
     ("set-car!", set_car),
     ("set-cdr!", set_cdr),
