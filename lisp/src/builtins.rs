@@ -7,7 +7,7 @@ use env::{self, EnvironmentRef, StaticEnvironment};
 use errors::*;
 use ports::{self, PortRef};
 use std::fmt;
-use std::fs::File;
+use std::fs::{self, File};
 use std::io::{self, BufReader, BufWriter, Write};
 use std::path::Path;
 use std::sync::Arc;
@@ -1005,6 +1005,20 @@ builtins! {
 }
 
 
+// R7RS 6.14 System interface
+builtins! {
+    fn file_exists_question "file-exists?" <'h>(_hs, filename: Arc<String>) -> bool {
+        let path = Path::new(&filename as &str);
+        path.is_file()
+    }
+
+    fn delete_file "delete-file" <'h>(_hs, filename: Arc<String>) -> Result<()> {
+        let path = Path::new(&filename as &str);
+        fs::remove_file(path).chain_err(|| "delete-file")
+    }
+}
+
+
 // Extensions
 builtins! {
     fn assert "assert" <'h>(_hs, ok: bool, msg: Option<Value<'h>>) -> Result<()> {
@@ -1118,6 +1132,7 @@ pub static BUILTINS: &[(&'static str, BuiltinFn)] = &[
     ("close-output-port", close_output_port),
     ("close-port", close_port),
     ("cons", cons),
+    ("delete-file", delete_file),
     ("dis", dis),
     ("display", display),
     ("eof-object", eof_object),
@@ -1125,6 +1140,7 @@ pub static BUILTINS: &[(&'static str, BuiltinFn)] = &[
     ("eq?", eq_question),
     ("eqv?", eqv_question),
     ("eval", eval),
+    ("file-exists?", file_exists_question),
     ("flush-output-port", flush_output_port),
     ("gensym", gensym),
     ("gensym?", gensym_question),
