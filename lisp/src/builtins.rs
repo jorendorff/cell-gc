@@ -806,19 +806,6 @@ builtins! {
         Value::EofObject
     }
 
-    fn char_ready_question "char-ready?" <'h>(_hs, port: Option<PortRef<'h>>) -> Result<bool> {
-        use ports::TextualInputPort;
-
-        match port {
-            None => ports::StdinPort::new().is_char_ready(),
-            Some(port) => {
-                let arc = port.port_arc();
-                let mut guard = arc.lock().expect("port is poisoned");
-                guard.as_open_textual_input()?.is_char_ready()
-            }
-        }
-    }
-
     fn read_string "read-string" <'h>(_hs, k: usize, port: Option<PortRef<'h>>) -> Result<String> {
         use ports::TextualInputPort;
 
@@ -1119,7 +1106,6 @@ pub static BUILTINS: &[(&'static str, BuiltinFn)] = &[
     ("char-downcase", char_downcase),
     ("char-lower-case?", char_lower_case_question),
     ("char-numeric?", char_numeric_question),
-    ("char-ready?", char_ready_question),
     ("char-upcase", char_upcase),
     ("char-upper-case?", char_upper_case_question),
     ("char-whitespace?", char_whitespace_question),

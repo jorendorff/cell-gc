@@ -15,7 +15,6 @@ pub trait TextualInputPort: Send {
     fn read_char(&mut self) -> Result<Option<char>>;
     fn peek_char(&mut self) -> Result<Option<char>>;
     fn read_line(&mut self) -> Result<String>;
-    fn is_char_ready(&mut self) -> Result<bool>;
     fn read_string(&mut self, k: usize) -> Result<String>;
 }
 
@@ -169,13 +168,6 @@ impl<R: BufRead + Send + 'static> TextualInputPort for TextIn<R> {
                 reader.read_line(&mut s).chain_err(|| "read-line: error reading from port")?;
                 Ok(s)
             }
-        }
-    }
-
-    fn is_char_ready(&mut self) -> Result<bool> {
-        match self.reader {
-            None => Err("char-ready?: port is closed".into()),
-            Some(ref mut _reader) => Err("char-ready?: unimplemented".into()),
         }
     }
 
@@ -355,11 +347,6 @@ impl TextualInputPort for StdinPort {
         let mut buffer = String::new();
         guard.read_line(&mut buffer).chain_err(|| "read-line: error reading stdin")?;
         Ok(buffer)
-    }
-
-    fn is_char_ready(&mut self) -> Result<bool> {
-        self.check_open("char-ready?")?;
-        Err("char-ready?: unimplemented".into())
     }
 
     fn read_string(&mut self, _k: usize) -> Result<String> {
