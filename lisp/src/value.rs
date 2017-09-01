@@ -79,7 +79,7 @@ impl Clone for BuiltinFnPtr {
 impl Hash for BuiltinFnPtr {
     #[inline]
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.0.hash(state);
+        (self.0 as usize).hash(state);
     }
 }
 
