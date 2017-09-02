@@ -7,7 +7,6 @@ repository = "https://github.com/jorendorff/cell-gc/"
 version = "0.2.1"
 
 [dependencies]
-bit-vec = "0.4"
 
 [dependencies.cell-gc-derive]
 path = "cell-gc-derive"

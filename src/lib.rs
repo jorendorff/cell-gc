@@ -229,8 +229,6 @@
 
 #![deny(missing_docs)]
 
-extern crate bit_vec;
-
 pub mod traits;
 mod pages;
 mod heap;
