@@ -64,7 +64,11 @@ pub struct BuiltinFnPtr(pub BuiltinFn);
 pub struct DisplayValue<'h>(pub Value<'h>);
 
 /// Reference to a bytevector, through which the user agrees not to modify
-/// anything.
+/// anything. It's on the honor system; we do not use Rust types to guarantee
+/// that immutable bytevectors really never change. At the Rust level, all
+/// bytevectors are considered mutable, and actually mutating an immutable one
+/// would not be unsafe (== lead to crashes), although from Scheme's point
+/// of view it would of course be a bug.
 pub struct ConstBytevector<'h>(pub VecRef<'h, u8>);
 
 
