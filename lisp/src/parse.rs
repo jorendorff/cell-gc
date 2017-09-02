@@ -117,7 +117,6 @@ impl<'b, B: Builder> Builder for &'b mut B {
 /// the parser, telling where the next value we parse needs to be stored, and
 /// what happens after that.
 enum ReaderCtn<B: Builder> {
-    Toplevel,
     List(B::List),
     ImproperList(B::List),
     Vector(B::Vector),
@@ -147,7 +146,7 @@ impl<'s, B: Builder> Parser<'s, B> {
             source,
             point: 0,
             builder: builder,
-            stack: vec![ReaderCtn::Toplevel],
+            stack: vec![],
         }
     }
 
@@ -161,53 +160,8 @@ impl<'s, B: Builder> Parser<'s, B> {
         }
     }
 
-    fn push(&mut self, mut d: B::Datum) -> Result<()> {
-        loop {
-            match *self.stack.last_mut().unwrap() {
-                ReaderCtn::Toplevel => {
-                    self.builder.toplevel_push(d);
-                    return Ok(());
-                }
-                ReaderCtn::List(ref mut list) => {
-                    self.builder.list_push(list, d);
-                    return Ok(());
-                }
-                ReaderCtn::Vector(ref mut vector) => {
-                    self.builder.vector_push(vector, d);
-                    return Ok(());
-                }
-                _ => {}
-            }
-            match self.stack.pop().unwrap() {
-                ReaderCtn::ImproperList(list) => {
-                    self.eat_close_paren()?;
-                    d = self.builder.list_improper_close(list, d);
-                }
-                ReaderCtn::Quote(mut list) => {
-                    self.builder.list_push(&mut list, d);
-                    d = self.builder.list_close(list);
-                }
-                _ => panic!("missing case in Parser::push()"),
-            }
-        }
-    }
-
     fn open(&mut self) {
         self.stack.push(ReaderCtn::List(self.builder.new_list()));
-    }
-
-    fn close(&mut self) -> Result<()> {
-        match self.stack.pop().unwrap() {
-            ReaderCtn::List(list) => {
-                let d = self.builder.list_close(list);
-                self.push(d)
-            }
-            ReaderCtn::Vector(vector) => {
-                let d = self.builder.vector_close(vector);
-                self.push(d)
-            }
-            _ => Err("unexpected ')'".into())
-        }
     }
 
     fn dot(&mut self) -> Result<()> {
@@ -235,7 +189,7 @@ impl<'s, B: Builder> Parser<'s, B> {
         }
     }
 
-    pub fn parse_bytevector(&mut self) -> Result<()> {
+    pub fn parse_bytevector(&mut self) -> Result<B::Datum> {
         let mut vec = self.builder.new_bytevector();
         loop {
             self.skip_space();
@@ -270,66 +224,123 @@ impl<'s, B: Builder> Parser<'s, B> {
                 IResult::Incomplete(_) => break,
             }
         }
-        let datum = self.builder.bytevector_close(vec);
-        self.push(datum)
+        Ok(self.builder.bytevector_close(vec))
     }
 
-    pub fn parse(mut self) -> Result<B> {
+    pub fn parse_datum(&mut self) -> Result<Option<B::Datum>> {
         loop {
             self.skip_space();
             let start = self.point;
             let t = token(&self.source[start..]);
-            match t {
+            let mut datum = match t {
+                IResult::Error(e) => {
+                    return Err(e.description().into());
+                }
+                IResult::Incomplete(_) => {
+                    break;
+                }
                 IResult::Done(rest, token) => {
                     self.point = self.source.len() - rest.len();
                     match token {
                         Token::Identifier => {
                             let s = &self.source[start..self.point];
-                            let s = self.builder.identifier(&s);
-                            self.push(s)?;
+                            self.builder.identifier(&s)
                         }
-                        Token::Boolean(b) => {
-                            let b = self.builder.boolean(b);
-                            self.push(b)?;
-                        }
+                        Token::Boolean(b) => self.builder.boolean(b),
                         Token::Number(s) => {
                             if let Ok(i) = i32::from_str(&s) {
-                                let i = self.builder.integer(i);
-                                self.push(i)?;
+                                self.builder.integer(i)
                             } else {
                                 return Err(format!("unsupported number token {}", s).into())
                             }
                         }
-                        Token::Char(c) => {
-                            let c = self.builder.character(c);
-                            self.push(c)?;
+                        Token::Char(c) => self.builder.character(c),
+                        Token::String(s) => self.builder.string(s),
+                        Token::Open => {
+                            self.open();
+                            continue;
                         }
-                        Token::String(s) => {
-                            let s = self.builder.string(s);
-                            self.push(s)?;
+                        Token::Close => {
+                            match self.stack.pop().unwrap() {
+                                ReaderCtn::List(list) => self.builder.list_close(list),
+                                ReaderCtn::Vector(vector) => self.builder.vector_close(vector),
+                                _ => return Err("unexpected ')'".into()),
+                            }
                         }
-                        Token::Open => self.open(),
-                        Token::Close => self.close()?,
-                        Token::OpenVector => self.stack.push(ReaderCtn::Vector(self.builder.new_vector())),
+
+                        Token::OpenVector => {
+                            self.stack.push(ReaderCtn::Vector(self.builder.new_vector()));
+                            continue;
+                        }
                         Token::OpenBytevector => self.parse_bytevector()?,
-                        Token::Quote => self.push_quote("quote"),
-                        Token::Quasiquote => self.push_quote("quasiquote"),
-                        Token::UnquoteSplicing => self.push_quote("unquote-splicing"),
-                        Token::Unquote => self.push_quote("unquote"),
-                        Token::Dot => self.dot()?
+                        Token::Quote => {
+                            self.push_quote("quote");
+                            continue;
+                        }
+                        Token::Quasiquote => {
+                            self.push_quote("quasiquote");
+                            continue;
+                        }
+                        Token::UnquoteSplicing => {
+                            self.push_quote("unquote-splicing");
+                            continue;
+                        }
+                        Token::Unquote => {
+                            self.push_quote("unquote");
+                            continue;
+                        }
+                        Token::Dot => {
+                            self.dot()?;
+                            continue;
+                        }
                     }
                 }
-                IResult::Error(e) => return Err(e.description().into()),
-                IResult::Incomplete(_) => break,
+            };
+
+            loop {
+                match self.stack.last_mut() {
+                    None => {
+                        return Ok(Some(datum));
+                    }
+                    Some(&mut ReaderCtn::List(ref mut list)) => {
+                        self.builder.list_push(list, datum);
+                        break;
+                    }
+                    Some(&mut ReaderCtn::Vector(ref mut vector)) => {
+                        self.builder.vector_push(vector, datum);
+                        break;
+                    }
+                    _ => {}
+                }
+                match self.stack.pop().unwrap() {
+                    ReaderCtn::ImproperList(list) => {
+                        self.eat_close_paren()?;
+                        datum = self.builder.list_improper_close(list, datum);
+                    }
+                    ReaderCtn::Quote(mut list) => {
+                        self.builder.list_push(&mut list, datum);
+                        datum = self.builder.list_close(list);
+                    }
+                    _ => panic!("missing case in Parser::parse()"),
+                }
             }
         }
 
+        // Incomplete token. Assuming the input was a complete program/file, we
+        // either have EOF or an error.
         self.skip_space();
         if self.point < self.source.len() {
-            return Err(format!("parse error at offset {}", self.point).into());
+            Err(format!("parse error at offset {}", self.point).into())
+        } else if !self.stack.is_empty() {
+            Err("parse error: unexpected end of input".into())
+        } else {
+            Ok(None)
         }
-        if self.stack.len() != 1 {
-            return Err("parse error: unexpected end of input".into());
+    }
+
+    pub fn parse_all(mut self) -> Result<B> {
+        while let Some(datum) = self.parse_datum()? {
+            self.builder.toplevel_push(datum);
         }
         Ok(self.builder)
     }
@@ -752,10 +763,21 @@ impl<'v, 'h: 'v> Builder for ValueBuilder<'v, 'h> {
     }
 }
 
+/// Given a source string, read one datum and return the `Value` for the object
+/// represented by the datum. On success, returns `Ok(Some((value,
+/// remainder_of_string)))`. On end of input, returns `Ok(None)`.
+pub fn parse<'h, 's>(
+    hs: &mut GcHeapSession<'h>,
+    source: &'s str
+) -> Result<Option<(Value<'h>, &'s str)>> {
+    let mut parser = Parser::new(source, ValueBuilder::new(hs));
+    let opt_datum = parser.parse_datum()?;
+    Ok(opt_datum.map(|d| (d, &source[parser.point..])))
+}
+
 /// Top level entry point to s-expression parsing. Takes a source string and
-/// returns a `Value` which can contain `Pair` and `Vector` objects allocated
-/// in the GC heap.
-pub fn parse<'h>(hs: &mut GcHeapSession<'h>, source: &str) -> Result<Vec<Value<'h>>> {
+/// returns a vector of `Value`s.
+pub fn parse_all<'h>(hs: &mut GcHeapSession<'h>, source: &str) -> Result<Vec<Value<'h>>> {
     let parser = Parser::new(source, ValueBuilder::new(hs));
-    Ok(parser.parse()?.toplevel)
+    Ok(parser.parse_all()?.toplevel)
 }

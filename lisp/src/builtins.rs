@@ -1080,7 +1080,7 @@ builtins! {
     fn parse "parse" <'h>(hs, data: Arc<String>) -> Value<'h> {
         use parse;
         let (keyword, payload) =
-            match parse::parse(hs, &data) {
+            match parse::parse_all(hs, &data) {
                 Ok(values) => {
                     let mut out = Value::Nil;
                     for v in values.into_iter().rev() {

@@ -123,7 +123,7 @@ pub fn eval_str<'h>(
     env: &EnvironmentRef<'h>,
     code: &str,
 ) -> Result<Value<'h>> {
-    let forms = parse::parse(hs, code)?;
+    let forms = parse::parse_all(hs, code)?;
     eval_toplevel_forms(hs, env, forms)
 }
 
