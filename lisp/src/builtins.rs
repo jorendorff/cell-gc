@@ -6,6 +6,7 @@ use compile::{self, Code};
 use env::{self, EnvironmentRef, StaticEnvironment};
 use errors::*;
 use ports::{self, PortRef};
+use std;
 use std::fmt;
 use std::fs::{self, File};
 use std::io::{self, BufReader, BufWriter, Write};
@@ -337,6 +338,19 @@ builtins! {
         // to 'i'.  Fine with me.
         let mut up = c.to_lowercase();
         up.next().unwrap_or(c)
+    }
+
+    fn char_to_integer "char->integer" <'h>(_hs, c: char) -> i32 {
+        c as i32
+    }
+
+    fn integer_to_char "integer->char" <'h>(_hs, i: i32) -> Result<char> {
+        match std::char::from_u32(i as u32) {
+            None =>
+                Err(format!("integer->char: integer {} is out of range \
+                             for Unicode characters", i).into()),
+            Some(c) => Ok(c),
+        }
     }
 }
 
@@ -1116,6 +1130,7 @@ pub static BUILTINS: &[(&'static str, BuiltinFn)] = &[
     ("car", car),
     ("cdr", cdr),
     ("char?", char_question),
+    ("char->integer", char_to_integer),
     ("char-alphabetic?", char_alphabetic_question),
     ("char-downcase", char_downcase),
     ("char-lower-case?", char_lower_case_question),
@@ -1148,6 +1163,7 @@ pub static BUILTINS: &[(&'static str, BuiltinFn)] = &[
     ("get-output-string", get_output_string),
     ("input-port?", input_port_question),
     ("input-port-open?", input_port_open_question),
+    ("integer->char", integer_to_char),
     ("list->string", list_to_string),
     ("list->vector", list_to_vector),
     ("make-bytevector", make_bytevector),
