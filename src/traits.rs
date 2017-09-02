@@ -1,7 +1,30 @@
 //! The traits defined here are implementation details of cell_gc.
 //!
 //! Application code does not need to use these traits. They are public only so
-//! that `#[derive(IntoHeap)]` can use it. Use the friendly macro!
+//! that `#[derive(IntoHeap)]` can use them. Use the friendly macro!
+//!
+//! Summary of the types that are allowed in the GC heap:
+//!
+//! ```text
+//! machine types
+//!     ----> themselves
+//! String, &'static T, GcLeaf<T: Clone>, Box<T: Clone>, Arc<T: Sync>
+//!     ----> themselves
+//! PhantomData<&'h T>
+//!     ----> itself
+//! GcRef<'h, T: IntoHeapAllocation>
+//!     ----> Pointer<T::In>
+//! Option<T: IntoHeap>
+//!     ----> Option<T::In>
+//! FooRef stack-to-gc-heap smart pointer
+//!     ----> Pointer<FooStorage>
+//! tuples of IntoHeap types
+//!     ----> tuples of corresponding InHeap types
+//! structs/enums with IntoHeap fields and #[derive(IntoHeap)]
+//!     ----> structs/enums with corresponding InHeap fields
+//! Vec<T: IntoHeap>, VecRef<'h, T>
+//!     ----> Vec<T::In>, Pointer<Vec<T::In>>
+//! ```
 
 use gc_leaf::GcLeaf;
 use gc_ref::GcRef;
