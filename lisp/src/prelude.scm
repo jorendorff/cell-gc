@@ -318,7 +318,7 @@
                 (set! *handlers* saved-handlers))))))
 ;
 (define (call-with-port port proc)
-  (letrec* ((v (proc)))
+  (letrec* ((v (proc port)))
     (close-port port)
     v))
 (define (call-with-input-file filename proc)
