@@ -785,16 +785,22 @@ builtins! {
         })
     }
 
-    fn read_line "read-line" <'h>(_hs, port: Option<PortRef<'h>>) -> Result<String> {
+    fn read_line "read-line" <'h>(hs, port: Option<PortRef<'h>>) -> Result<Value<'h>> {
         use ports::TextualInputPort;
 
-        match port {
-            None => ports::StdinPort::new().read_line(),
+        let line = match port {
+            None => ports::StdinPort::new().read_line()?,
             Some(port) => {
                 let arc = port.port_arc();
                 let mut guard = arc.lock().expect("port is poisoned");
-                guard.as_open_textual_input()?.read_line()
+                guard.as_open_textual_input()?.read_line()?
             }
+        };
+
+        if line == "" {
+            Ok(Value::EofObject)
+        } else {
+            Ok(StringObj(GcLeaf::new(value::NonInternedStringObject(Arc::new(line)))))
         }
     }
 

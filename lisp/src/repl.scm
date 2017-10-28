@@ -93,7 +93,7 @@
                       (set! redo-stack (cdr redo-stack))
                       (display recorded-line)
                       recorded-line))))
-      (if (= (string-length line) 0)
+      (if (eof-object? line)
           (begin (display "\n")
                  (flush-virtual-writes)
                  (on-eof))
