@@ -41,9 +41,9 @@
               (reverse terminal-todo))
     (set! terminal-todo '()))
 
-  (define (virtual-read-line)
+  (define (virtual-read-line . args)
     (flush-virtual-writes)
-    (real-read-line))
+    (apply real-read-line args))
 
   (define (virtual-output?)
     (eq? display virtual-display))
