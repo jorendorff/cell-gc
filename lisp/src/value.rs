@@ -6,6 +6,7 @@ use compile::CodeRef;
 use env::EnvironmentRef;
 use errors::Result;
 use ports::PortRef;
+use protobj;
 use std::borrow::Borrow;
 use std::collections::HashSet;
 use std::fmt;
@@ -48,6 +49,8 @@ pub enum Value<'h> {
     MutBytevector(VecRef<'h, u8>),
     Environment(EnvironmentRef<'h>),
     Port(PortRef<'h>),
+    Object(protobj::ObjectRef<'h>),
+    Shype(protobj::ShypeRef<'h>)
 }
 
 use self::Value::*;
@@ -254,6 +257,10 @@ impl<'h> Value<'h> {
     pattern_predicate!(is_port, Port(_));
     pattern_getter!(as_port, "port", PortRef<'h>,
                     Port(port) => port);
+    pattern_getter!(as_object, "object", protobj::ObjectRef<'h>,
+                    Object(object) => object);
+    pattern_getter!(as_shype, "shype", protobj::ShypeRef<'h>,
+                    Shype(shype) => shype);
 
     pub fn is_input_port(&self) -> bool {
         match *self {
@@ -282,6 +289,9 @@ impl<'h> Value<'h> {
             _ => false,
         }
     }
+
+    pattern_predicate!(is_object, Object(_));
+    pattern_predicate!(is_shype, Shype(_));
 
     fn print(&self, f: &mut fmt::Formatter, display: bool, seen: &mut HashSet<Value<'h>>)
         -> fmt::Result
@@ -354,6 +364,8 @@ impl<'h> Value<'h> {
             }
             Port(_) => write!(f, "#port"),
             Environment(_) => write!(f, "#environment"),
+            Object(_) => write!(f, "#object"),
+            Shype(_) => write!(f, "#shype")
         }
     }
 }
@@ -622,6 +634,18 @@ impl<'h> ArgType<'h> for PortRef<'h> {
     }
 }
 
+impl<'h> ArgType<'h> for protobj::ObjectRef<'h> {
+    fn try_unpack(proc_name: &str, value: Value<'h>) -> Result<protobj::ObjectRef<'h>> {
+        value.as_object(proc_name)
+    }
+}
+
+impl<'h> ArgType<'h> for protobj::ShypeRef<'h> {
+    fn try_unpack(proc_name: &str, value: Value<'h>) -> Result<protobj::ShypeRef<'h>> {
+        value.as_shype(proc_name)
+    }
+}
+
 
 pub trait RetType<'h> {
     fn pack(self, hs: &mut GcHeapSession<'h>) -> Result<Trampoline<'h>>;
@@ -707,6 +731,27 @@ impl<'h> RetType<'h> for () {
 impl<'h> RetType<'h> for Trampoline<'h> {
     fn pack(self, _hs: &mut GcHeapSession<'h>) -> Result<Trampoline<'h>> {
         Ok(self)
+    }
+}
+
+impl<'h> RetType<'h> for protobj::ObjectRef<'h> {
+    fn pack(self, _hs: &mut GcHeapSession<'h>) -> Result<Trampoline<'h>> {
+        Ok(Trampoline::Value(Value::Object(self)))
+    }
+}
+
+impl<'h> RetType<'h> for protobj::ShypeRef<'h> {
+    fn pack(self, _hs: &mut GcHeapSession<'h>) -> Result<Trampoline<'h>> {
+        Ok(Trampoline::Value(Value::Shype(self)))
+    }
+}
+
+impl<'h, T: RetType<'h>> RetType<'h> for Option<T> {
+    fn pack(self, _hs: &mut GcHeapSession<'h>) -> Result<Trampoline<'h>> {
+        match self {
+            None => Ok(Trampoline::Value(Value::Bool(false))),
+            Some(v) => v.pack(_hs)
+        }
     }
 }
 
