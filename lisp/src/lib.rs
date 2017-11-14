@@ -23,3 +23,4 @@ pub mod vm;
 mod ports;
 mod builtins;
 pub mod toplevel;
+mod protobj;

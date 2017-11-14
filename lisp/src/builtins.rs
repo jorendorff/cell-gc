@@ -6,6 +6,8 @@ use compile::{self, Code};
 use env::{self, EnvironmentRef, StaticEnvironment};
 use errors::*;
 use ports::{self, PortRef};
+use protobj;
+use protobj::{ShypeRef, ObjectRef};
 use std::fmt;
 use std::fs::{self, File};
 use std::io::{self, BufReader, BufWriter, Write};
@@ -1010,6 +1012,83 @@ builtins! {
     }
 }
 
+// Ext: JS-style prototype-based objects
+builtins! {
+    fn is_shype "protobj:shype?" <'h>(_hs, v: Value<'h>) -> bool {
+        v.is_shype()
+    }
+
+    fn shype_parent "protobj:shype-parent" <'h>(_hs, sh: ShypeRef<'h>) -> Option<ShypeRef<'h>> {
+        sh.get_parent()
+    }
+
+    fn make_root_shype "protobj:make-root-shype" <'h>(hs) -> ShypeRef<'h> {
+        protobj::Shype::new_root(hs)
+    }
+
+    fn is_object "protobj:object?" <'h>(_hs, v: Value<'h>) -> bool {
+        v.is_object()
+    }
+
+    fn make_object "protobj:make-object" <'h>(hs, shype: ShypeRef<'h>,
+                                                  mb_proto: Option<ObjectRef<'h>>)
+        -> ObjectRef<'h>
+    {
+        // A new object shype must be a root shype.
+        if !shype.is_root() {
+            return Err("not a root shype".into());
+        }
+
+        shype.new_object(mb_proto, hs)
+    }
+
+    fn object_shype "protobj:object-shype" <'h>(hs, obj: ObjectRef<'h>) -> ShypeRef<'h> {
+        obj.shype()
+    }
+
+    fn object_set_property "protobj:object-set-property" <'h>(hs, obj: ObjectRef<'h>,
+                                                                  name: Value<'h>,
+                                                                  value: Value<'h>)
+        -> ()
+    {
+        let name_str = name.as_symbol("protobj:object-set-property")?;
+        obj.set_property(&name_str, value, hs);
+    }
+
+    fn object_get_property "protobj:object-get-property" <'h>(hs, obj: ObjectRef<'h>,
+                                                                  name: Value<'h>) -> Value<'h>
+    {
+        let name_str = name.as_symbol("protobj:object-get-property")?;
+        obj.get_property(&name_str)
+    }
+
+    fn object_has_own_property "protobj:object-has-own-property" <'h>(hs, obj: ObjectRef<'h>,
+                                                                          name: Value<'h>) -> bool
+    {
+        let name_str = name.as_symbol("protobj:object-get-property")?;
+        obj.has_own_property(&name_str)
+    }
+
+    fn object_prototype "protobj:object-prototype" <'h>(hs, obj: ObjectRef<'h>) -> Option<ObjectRef<'h>> {
+        obj.get_prototype()
+    }
+
+    fn object_own_property_names "protobj:object-own-property-names" <'h>(hs, obj: ObjectRef<'h>)
+        -> Value<'h>
+    {
+        let names = obj.own_property_names();
+
+        let mut list = Value::Nil;
+        for name in names.into_iter().rev() {
+            list = Value::Cons(hs.alloc(Pair {
+                car: Value::Symbol(GcLeaf::new(name)),
+                cdr: list,
+            }));
+        }
+        list
+    }
+}
+
 
 // R7RS 6.14 System interface
 builtins! {
@@ -1212,6 +1291,19 @@ pub static BUILTINS: &[(&'static str, BuiltinFn)] = &[
     ("write-string", write_string),
     ("write-u8", write_u8),
     ("write-bytevector", write_bytevector),
+
+    // object methods
+    ("protobj:make-root-shype", make_root_shype),
+    ("protobj:shype?", is_shype),
+    ("protobj:shype-parent", shype_parent),
+    ("protobj:make-object", make_object),
+    ("protobj:object?", is_object),
+    ("protobj:object-shype", object_shype),
+    ("protobj:object-set-property", object_set_property),
+    ("protobj:object-get-property", object_get_property),
+    ("protobj:object-has-own-property", object_has_own_property),
+    ("protobj:object-prototype", object_prototype),
+    ("protobj:object-own-property-names", object_own_property_names),
 ];
 
 pub fn get_eval() -> BuiltinFn {
