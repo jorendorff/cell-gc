@@ -10,7 +10,7 @@ use value::InternedString;
 pub struct Shype<'h> {
     parent: Option<ShypeRef<'h>>,
     first_child: Option<ShypeRef<'h>>,
-    pub next_sibling: Option<ShypeRef<'h>>,
+    next_sibling: Option<ShypeRef<'h>>,
     variant: ShypeVariant<'h>
 }
 
