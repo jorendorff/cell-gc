@@ -301,18 +301,16 @@ impl<'h> ShypeRef<'h> {
         None
     }
 
-    /** Does the shype lookup to sets the property `name` on object `obj` to `value`.
-     * If the property is already defined on the object, that shype and the slot
-     * number is returned.  If not, a new child shype is found or created for the
-     * property and returned.
-     *
-     * Returns `(shype, slot, add)` where `shype` is the shype describing
-     * the property, `slot` is the slot the value should be stored to, and
-     * `add` indicates if the slot is to be added to the object (instead
-     * of using an existing slot).
-     */
-    pub fn set_property(&self, obj: ObjectRef<'h>, name: &InternedString,
-                                   hs: &mut GcHeapSession<'h>)
+    /// Does the shype lookup to sets the property `name` on object `obj` to `value`.
+    /// If the property is already defined on the object, that shype and the slot
+    /// number is returned.  If not, a new child shype is found or created for the
+    /// property and returned.
+    ///
+    /// Returns `(shype, slot, add)` where `shype` is the shype describing
+    /// the property, `slot` is the slot the value should be stored to, and
+    /// `add` indicates if the slot is to be added to the object (instead
+    /// of using an existing slot).
+    pub fn set_property(&self, obj: ObjectRef<'h>, name: &InternedString, hs: &mut GcHeapSession<'h>)
         -> (ShypeRef<'h>, u32, bool)
     {
         assert!(obj.shype() == *self);
@@ -371,9 +369,8 @@ impl<'h> ShypeRef<'h> {
         false
     }
 
-    /** Return a shype that is either this shype or a descendant shype that models
-     * a prototype-object.
-     */
+    /// Return a shype that is either this shype or a descendant shype that
+    /// models a prototype-object.
     pub fn become_prototype_of(&self, target_shype: ShypeRef<'h>, hs: &mut GcHeapSession<'h>)
         -> (ShypeRef<'h>, bool)
     {
