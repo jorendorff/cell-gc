@@ -1045,34 +1045,41 @@ builtins! {
                                                                   value: Value<'h>)
         -> ()
     {
-        let arc_name = name.as_string("protobj:object-set-property")?;
-        let name_str = InternedString::intern_arc(arc_name);
-
+        let name_str = name.as_symbol("protobj:object-set-property")?;
         obj.set_property(&name_str, value, hs);
     }
+
     fn object_get_property "protobj:object-get-property" <'h>(hs, obj: ObjectRef<'h>,
                                                                   name: Value<'h>) -> Value<'h>
     {
-        let arc_name = name.as_string("protobj:object-get-property")?;
-        let name_str = InternedString::intern_arc(arc_name);
-
+        let name_str = name.as_symbol("protobj:object-get-property")?;
         obj.get_property(&name_str)
     }
+
     fn object_has_own_property "protobj:object-has-own-property" <'h>(hs, obj: ObjectRef<'h>,
                                                                           name: Value<'h>) -> bool
     {
-        let arc_name = name.as_string("protobj:object-get-property")?;
-        let name_str = InternedString::intern_arc(arc_name);
-
+        let name_str = name.as_symbol("protobj:object-get-property")?;
         obj.has_own_property(&name_str)
     }
+
     fn object_prototype "protobj:object-prototype" <'h>(hs, obj: ObjectRef<'h>) -> Option<ObjectRef<'h>> {
         obj.get_prototype()
     }
+
     fn object_own_property_names "protobj:object-own-property-names" <'h>(hs, obj: ObjectRef<'h>)
-        -> Vec<Value<'h>>
+        -> Value<'h>
     {
-        obj.own_property_names()
+        let names = obj.own_property_names();
+
+        let mut list = Value::Nil;
+        for name in names.into_iter().rev() {
+            list = Value::Cons(hs.alloc(Pair {
+                car: Value::Symbol(GcLeaf::new(name)),
+                cdr: list,
+            }));
+        }
+        list
     }
 }
 

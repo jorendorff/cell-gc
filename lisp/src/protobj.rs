@@ -342,11 +342,11 @@ impl<'h> ShypeRef<'h> {
         (Shype::new_add_prop(hs, self.clone(), name, slot), slot, true)
     }
 
-    pub fn own_property_names(&self) -> Vec<Value<'h>> {
+    pub fn own_property_names(&self) -> Vec<InternedString> {
         let mut result = Vec::new();
         for anc_shype in self.root_path_iter() {
             if let ShypeVariant::AddProperty(ref name, _) = anc_shype.variant() {
-                result.push(Value::ImmString(name.clone()));
+                result.push(name.clone().unwrap());
             }
         }
         result
@@ -492,7 +492,7 @@ impl<'h> ObjectRef<'h> {
         self.shype().has_own_property(name)
     }
 
-    pub fn own_property_names(&self) -> Vec<Value<'h>> {
+    pub fn own_property_names(&self) -> Vec<InternedString> {
         self.shype().own_property_names()
     }
 }
