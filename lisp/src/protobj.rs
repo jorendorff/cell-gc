@@ -1,5 +1,5 @@
-use std;
-use std::iter::Iterator;
+/// A simple prototypal object system.
+
 use cell_gc::collections::VecRef;
 use cell_gc::GcHeapSession;
 use cell_gc::GcLeaf;
@@ -138,7 +138,7 @@ impl<'h> ObjectRef<'h> {
     }
 
     pub fn num_slots(&self) -> u32 {
-        assert!(self.prop_slots().len() <= std::u32::MAX as usize);
+        assert!(self.prop_slots().len() <= u32::max_value() as usize);
         self.prop_slots().len() as u32
     }
 
