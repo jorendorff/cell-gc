@@ -149,6 +149,7 @@ impl<'h> ObjectRef<'h> {
     pub fn next_slotno(&self) -> u32 {
         self.num_slots()
     }
+
     pub fn add_slot(&self, val: Value<'h>) -> u32 {
         self.prop_slots().push(val);
         self.num_slots() - 1
@@ -164,7 +165,7 @@ impl<'h> Iterator for ObjectProtoIter<'h> {
     fn next(&mut self) -> Option<ObjectRef<'h>> {
         let ret = self.mb_object.clone();
         if let Some(ref obj) = ret {
-            self.mb_object = SpecificObjectView::new(obj.clone()).get_prototype();
+            self.mb_object = obj.get_prototype();
         }
         ret
     }
@@ -238,18 +239,16 @@ impl<'h> ShypeRef<'h> {
 
         // Create a new object with this shype.
         let obj = ObjectRef::allocate(hs, self.clone());
-        let mut obj_view = SpecificObjectView::new(obj.clone());
 
         // Set the prototype of this object to proto.
         if let Some(proto) = mb_proto {
-            obj_view.set_prototype(proto, hs);
+            obj.set_prototype(proto, hs);
         }
 
         obj
     }
 
-    pub fn get_prototype(&self) -> Option<ObjectRef<'h>>
-    {
+    pub fn get_prototype(&self) -> Option<ObjectRef<'h>> {
         for anc_shype in self.root_path_iter() {
             // Check for setPrototype 
             if let ShypeVariant::SetPrototype(ref proto) = anc_shype.variant() {
@@ -423,29 +422,16 @@ impl<'h> ShypeRef<'h> {
     }
 }
 
-pub struct SpecificObjectView<'h> {
-    object: ObjectRef<'h>
-}
-
-impl<'h> SpecificObjectView<'h> {
-    pub fn new(object: ObjectRef<'h>) -> SpecificObjectView<'h> {
-        SpecificObjectView { object }
-    }
-
-    pub fn specific_shype_view(&self) -> ShypeRef<'h> {
-        self.object.shype()
-    }
-
+impl<'h> ObjectRef<'h> {
     pub fn proto_chain_iter(&self) -> ObjectProtoIter<'h> {
-        ObjectProtoIter { mb_object: Some(self.object.clone()) }
+        ObjectProtoIter { mb_object: Some(self.clone()) }
     }
 
     pub fn get_prototype(&self) -> Option<ObjectRef<'h>> {
-        self.specific_shype_view().get_prototype()
+        self.shype().get_prototype()
     }
 
-    pub fn get_property(&self, name: &InternedString) -> Value<'h>
-    {
+    pub fn get_property(&self, name: &InternedString) -> Value<'h> {
         for obj in self.proto_chain_iter() {
             if let Some((_, slot)) = obj.shype().get_own_property(name) {
                 return obj.get_slot(slot);
@@ -455,64 +441,63 @@ impl<'h> SpecificObjectView<'h> {
         Value::Bool(false)
     }
 
-    pub fn set_property(&mut self, name: &InternedString, value: Value<'h>, hs: &mut GcHeapSession<'h>)
+    pub fn set_property(&self, name: &InternedString, value: Value<'h>, hs: &mut GcHeapSession<'h>)
         -> ShypeRef<'h>
     {
-        let shype_view = self.specific_shype_view();
-        let (shype, slot, add) = shype_view.set_property(self.object.clone(), name, hs);
-        assert!(slot <= self.object.num_slots());
+        let old_shype = self.shype();
+        let (shype, slot, add) = old_shype.set_property(self.clone(), name, hs);
+        assert!(slot <= self.num_slots());
         if add {
-            assert!(shype.parent() == Some(self.object.shype()));
-            assert!(slot == self.object.num_slots());
-            let added_slot = self.object.add_slot(value);
+            assert!(shype.parent() == Some(self.shype()));
+            assert!(slot == self.num_slots());
+            let added_slot = self.add_slot(value);
             assert!(added_slot == slot);
-            self.object.set_shype(shype.clone());
+            self.set_shype(shype.clone());
         } else {
-            assert!(shype_view.has_ancestor_shype(shype.clone()));
-            assert!(slot < self.object.num_slots());
-            self.object.set_slot(slot, value);
+            assert!(old_shype.has_ancestor_shype(shype.clone()));
+            assert!(slot < self.num_slots());
+            self.set_slot(slot, value);
         }
         shype
     }
 
-    pub fn become_prototype_of(&mut self, target_shype: ShypeRef<'h>, hs: &mut GcHeapSession<'h>)
+    pub fn become_prototype_of(&self, target_shype: ShypeRef<'h>, hs: &mut GcHeapSession<'h>)
         -> ShypeRef<'h>
     {
-        let shype_view = self.specific_shype_view();
-        let (shype, set) = shype_view.become_prototype_of(target_shype, hs);
+        let old_shype = self.shype();
+        let (shype, set) = old_shype.become_prototype_of(target_shype, hs);
         if set {
-            assert!(shype.parent() == Some(self.object.shype()));
-            self.object.set_shype(shype.clone());
+            assert!(shype.parent() == Some(self.shype()));
+            self.set_shype(shype.clone());
         } else {
-            assert!(shype_view.has_ancestor_shype(shype.clone()));
+            assert!(old_shype.has_ancestor_shype(shype.clone()));
         }
         shype
     }
 
-    pub fn set_prototype(&mut self, proto: ObjectRef<'h>, hs: &mut GcHeapSession<'h>)
+    pub fn set_prototype(&self, proto: ObjectRef<'h>, hs: &mut GcHeapSession<'h>)
         -> ShypeRef<'h>
     {
         // Get the shype that the target object needs to have.
-        let shype_view = self.specific_shype_view();
-        let (setproto_shype, set_target) = shype_view.set_prototype(proto.clone(), hs);
-        let target_shype = if set_target { setproto_shype.clone() } else { self.object.shype() };
-        
+        let old_shype = self.shype();
+        let (setproto_shype, set_target) = old_shype.set_prototype(proto.clone(), hs);
+        let target_shype = if set_target { setproto_shype.clone() } else { old_shype };
+
         // Get the shype that the proto object needs to have.
-        let mut proto_view = SpecificObjectView::new(proto);
-        proto_view.become_prototype_of(target_shype.clone(), hs);
+        proto.become_prototype_of(target_shype.clone(), hs);
 
         if set_target {
             assert!(&setproto_shype == &target_shype);
-            self.object.set_shype(setproto_shype.clone());
+            self.set_shype(setproto_shype.clone());
         }
         setproto_shype
     }
 
     pub fn has_own_property(&self, name: &InternedString) -> bool {
-        self.specific_shype_view().has_own_property(name)
+        self.shype().has_own_property(name)
     }
 
     pub fn own_property_names(&self) -> Vec<Value<'h>> {
-        self.specific_shype_view().own_property_names()
+        self.shype().own_property_names()
     }
 }

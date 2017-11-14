@@ -1048,8 +1048,7 @@ builtins! {
         let arc_name = name.as_string("protobj:object-set-property")?;
         let name_str = InternedString::intern_arc(arc_name);
 
-        let mut view = protobj::SpecificObjectView::new(obj);
-        view.set_property(&name_str, value, hs);
+        obj.set_property(&name_str, value, hs);
     }
     fn object_get_property "protobj:object-get-property" <'h>(hs, obj: ObjectRef<'h>,
                                                                   name: Value<'h>) -> Value<'h>
@@ -1057,8 +1056,7 @@ builtins! {
         let arc_name = name.as_string("protobj:object-get-property")?;
         let name_str = InternedString::intern_arc(arc_name);
 
-        let view = protobj::SpecificObjectView::new(obj);
-        view.get_property(&name_str)
+        obj.get_property(&name_str)
     }
     fn object_has_own_property "protobj:object-has-own-property" <'h>(hs, obj: ObjectRef<'h>,
                                                                           name: Value<'h>) -> bool
@@ -1066,18 +1064,15 @@ builtins! {
         let arc_name = name.as_string("protobj:object-get-property")?;
         let name_str = InternedString::intern_arc(arc_name);
 
-        let view = protobj::SpecificObjectView::new(obj);
-        view.has_own_property(&name_str)
+        obj.has_own_property(&name_str)
     }
     fn object_prototype "protobj:object-prototype" <'h>(hs, obj: ObjectRef<'h>) -> Option<ObjectRef<'h>> {
-        let view = protobj::SpecificObjectView::new(obj);
-        view.get_prototype()
+        obj.get_prototype()
     }
     fn object_own_property_names "protobj:object-own-property-names" <'h>(hs, obj: ObjectRef<'h>)
         -> Vec<Value<'h>>
     {
-        let view = protobj::SpecificObjectView::new(obj);
-        view.own_property_names()
+        obj.own_property_names()
     }
 }
 
