@@ -46,6 +46,7 @@ impl<'h> Shype<'h> {
                                                GcLeaf::new(PropDescr::Slot(slotno)))
         }
     }
+
     pub fn new_set_proto(proto: ObjectRef<'h>) -> Shype<'h> {
         Shype {
             parent: None,
@@ -54,6 +55,7 @@ impl<'h> Shype<'h> {
             variant: ShypeVariant::SetPrototype(proto)
         }
     }
+
     pub fn new_become_proto(target_shype: ShypeRef<'h>) -> Shype<'h> {
         Shype {
             parent: None,
@@ -91,8 +93,10 @@ impl<'h> Iterator for ShypeParentIter<'h> {
 pub struct ShypeNextSiblingIter<'h> {
     mb_shype: Option<ShypeRef<'h>>
 }
+
 impl<'h> Iterator for ShypeNextSiblingIter<'h> {
     type Item = ShypeRef<'h>;
+
     fn next(&mut self) -> Option<ShypeRef<'h>> {
         let ret = self.mb_shype.clone();
         if let Some(ref sr) = ret {
@@ -154,6 +158,7 @@ impl<'h> ObjectRef<'h> {
 pub struct ObjectProtoIter<'h> {
     mb_object: Option<ObjectRef<'h>>
 }
+
 impl<'h> Iterator for ObjectProtoIter<'h> {
     type Item = ObjectRef<'h>;
     fn next(&mut self) -> Option<ObjectRef<'h>> {
@@ -165,24 +170,13 @@ impl<'h> Iterator for ObjectProtoIter<'h> {
     }
 }
 
-pub struct SpecificShypeView<'h> {
-    shype: ShypeRef<'h>
-}
-
-impl<'h> SpecificShypeView<'h> {
-    pub fn new(shype: ShypeRef<'h>) -> SpecificShypeView<'h> {
-        SpecificShypeView { shype: shype }
-    }
-
-    pub fn shype(&self) -> ShypeRef<'h> {
-        self.shype.clone()
-    }
-
+impl<'h> ShypeRef<'h> {
     pub fn root_path_iter(&self) -> ShypeParentIter<'h> {
-        ShypeParentIter { mb_shype: Some(self.shype.clone()) }
+        ShypeParentIter { mb_shype: Some(self.clone()) }
     }
+
     pub fn children_iter(&self) -> ShypeNextSiblingIter<'h> {
-        ShypeNextSiblingIter { mb_shype: self.shype.first_child() }
+        ShypeNextSiblingIter { mb_shype: self.first_child() }
     }
 
     pub fn each_addprop<T, I, F>(iter: I, mut f: F) -> Option<T>
@@ -199,8 +193,10 @@ impl<'h> SpecificShypeView<'h> {
         None
     }
 
-    fn select_named_addprop(name: &InternedString,      shype: ShypeRef<'h>,
-                            prop_name: &InternedString, descr: &PropDescr)
+    fn select_named_addprop(name: &InternedString,
+                            shype: ShypeRef<'h>,
+                            prop_name: &InternedString,
+                            descr: &PropDescr)
         -> Option<(ShypeRef<'h>, PropDescr)>
     {
         if prop_name == name {
@@ -226,22 +222,22 @@ impl<'h> SpecificShypeView<'h> {
         })
     }
 
-    fn add_child(&mut self, child: ShypeRef<'h>) -> ShypeRef<'h> {
+    fn add_child(&self, child: ShypeRef<'h>) -> ShypeRef<'h> {
         assert!(child.parent().is_none());
         assert!(child.next_sibling().is_none());
-        child.set_parent(Some(self.shype().clone()));
-        child.set_next_sibling(self.shype().first_child().clone());
-        self.shype.set_first_child(Some(child.clone()));
+        child.set_parent(Some(self.clone()));
+        child.set_next_sibling(self.first_child());
+        self.set_first_child(Some(child.clone()));
         child
     }
 
-    pub fn new_object(&mut self, mb_proto: Option<ObjectRef<'h>>, hs: &mut GcHeapSession<'h>)
+    pub fn new_object(&self, mb_proto: Option<ObjectRef<'h>>, hs: &mut GcHeapSession<'h>)
          -> ObjectRef<'h>
     {
-        assert!(self.shype.variant() == ShypeVariant::Root);
+        assert!(self.variant() == ShypeVariant::Root);
 
         // Create a new object with this shype.
-        let obj = ObjectRef::allocate(hs, self.shype.clone());
+        let obj = ObjectRef::allocate(hs, self.clone());
         let mut obj_view = SpecificObjectView::new(obj.clone());
 
         // Set the prototype of this object to proto.
@@ -264,7 +260,7 @@ impl<'h> SpecificShypeView<'h> {
         None
     }
 
-    pub fn set_prototype(&mut self, proto: ObjectRef<'h>, hs: &mut GcHeapSession<'h>)
+    pub fn set_prototype(&self, proto: ObjectRef<'h>, hs: &mut GcHeapSession<'h>)
         -> (ShypeRef<'h>, bool)
     {
         // First, check to see if the current proto is already the right one.
@@ -315,11 +311,11 @@ impl<'h> SpecificShypeView<'h> {
      * `add` indicates if the slot is to be added to the object (instead
      * of using an existing slot).
      */
-    pub fn set_property(&mut self, obj: ObjectRef<'h>, name: &InternedString,
+    pub fn set_property(&self, obj: ObjectRef<'h>, name: &InternedString,
                                    hs: &mut GcHeapSession<'h>)
         -> (ShypeRef<'h>, u32, bool)
     {
-        assert!(obj.shype() == self.shype());
+        assert!(obj.shype() == *self);
 
         // Look up to see if a shype exists for the property.
         if let Some((shype, descr)) = self.lookup_root_path_addprop(name) {
@@ -381,7 +377,7 @@ impl<'h> SpecificShypeView<'h> {
     /** Return a shype that is either this shype or a descendant shype that models
      * a prototype-object.
      */
-    pub fn become_prototype_of(&mut self, target_shype: ShypeRef<'h>, hs: &mut GcHeapSession<'h>)
+    pub fn become_prototype_of(&self, target_shype: ShypeRef<'h>, hs: &mut GcHeapSession<'h>)
         -> (ShypeRef<'h>, bool)
     {
         // Find any existing BecomeProto.
@@ -436,8 +432,8 @@ impl<'h> SpecificObjectView<'h> {
         SpecificObjectView { object }
     }
 
-    pub fn specific_shype_view(&self) -> SpecificShypeView<'h> {
-        SpecificShypeView::new(self.object.shype())
+    pub fn specific_shype_view(&self) -> ShypeRef<'h> {
+        self.object.shype()
     }
 
     pub fn proto_chain_iter(&self) -> ObjectProtoIter<'h> {
@@ -451,8 +447,7 @@ impl<'h> SpecificObjectView<'h> {
     pub fn get_property(&self, name: &InternedString) -> Value<'h>
     {
         for obj in self.proto_chain_iter() {
-            let mut shype_view = SpecificShypeView::new(obj.shype());
-            if let Some((_, slot)) = shype_view.get_own_property(name) {
+            if let Some((_, slot)) = obj.shype().get_own_property(name) {
                 return obj.get_slot(slot);
             }
         }
@@ -463,7 +458,7 @@ impl<'h> SpecificObjectView<'h> {
     pub fn set_property(&mut self, name: &InternedString, value: Value<'h>, hs: &mut GcHeapSession<'h>)
         -> ShypeRef<'h>
     {
-        let mut shype_view = self.specific_shype_view();
+        let shype_view = self.specific_shype_view();
         let (shype, slot, add) = shype_view.set_property(self.object.clone(), name, hs);
         assert!(slot <= self.object.num_slots());
         if add {
@@ -483,7 +478,7 @@ impl<'h> SpecificObjectView<'h> {
     pub fn become_prototype_of(&mut self, target_shype: ShypeRef<'h>, hs: &mut GcHeapSession<'h>)
         -> ShypeRef<'h>
     {
-        let mut shype_view = self.specific_shype_view();
+        let shype_view = self.specific_shype_view();
         let (shype, set) = shype_view.become_prototype_of(target_shype, hs);
         if set {
             assert!(shype.parent() == Some(self.object.shype()));
@@ -498,7 +493,7 @@ impl<'h> SpecificObjectView<'h> {
         -> ShypeRef<'h>
     {
         // Get the shype that the target object needs to have.
-        let mut shype_view = self.specific_shype_view();
+        let shype_view = self.specific_shype_view();
         let (setproto_shype, set_target) = shype_view.set_prototype(proto.clone(), hs);
         let target_shype = if set_target { setproto_shype.clone() } else { self.object.shype() };
         

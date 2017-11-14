@@ -1011,29 +1011,35 @@ builtins! {
     fn is_shype "protobj:is-shype" <'h>(_hs, v: Value<'h>) -> bool {
         v.is_shype()
     }
+
     fn shype_parent "protobj:shype-parent" <'h>(_hs, sh: ShypeRef<'h>) -> Option<ShypeRef<'h>> {
         sh.get_parent()
     }
+
     fn make_root_shype "protobj:make-root-shype" <'h>(hs) -> ShypeRef<'h> {
         hs.alloc(protobj::Shype::new_root())
     }
+
     fn is_object "protobj:is-object" <'h>(_hs, v: Value<'h>) -> bool {
         v.is_object()
     }
+
     fn make_object "protobj:make-object" <'h>(hs, shype: ShypeRef<'h>,
                                                   mb_proto: Option<ObjectRef<'h>>)
         -> ObjectRef<'h>
     {
         // A new object shype must be a root shype.
-        if ! shype.is_root() {
+        if !shype.is_root() {
             return Err("not a root shype".into());
         }
 
-        protobj::SpecificShypeView::new(shype.clone()).new_object(mb_proto, hs)
+        shype.new_object(mb_proto, hs)
     }
+
     fn object_shype "protobj:object-shype" <'h>(hs, obj: ObjectRef<'h>) -> ShypeRef<'h> {
         obj.shype()
     }
+
     fn object_set_property "protobj:object-set-property" <'h>(hs, obj: ObjectRef<'h>,
                                                                   name: Value<'h>,
                                                                   value: Value<'h>)
