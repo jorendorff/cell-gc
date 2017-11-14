@@ -1008,7 +1008,7 @@ builtins! {
 
 // Ext: JS-style prototype-based objects
 builtins! {
-    fn is_shype "protobj:is-shype" <'h>(_hs, v: Value<'h>) -> bool {
+    fn is_shype "protobj:shype?" <'h>(_hs, v: Value<'h>) -> bool {
         v.is_shype()
     }
 
@@ -1017,10 +1017,10 @@ builtins! {
     }
 
     fn make_root_shype "protobj:make-root-shype" <'h>(hs) -> ShypeRef<'h> {
-        hs.alloc(protobj::Shype::new_root())
+        protobj::Shype::new_root(hs)
     }
 
-    fn is_object "protobj:is-object" <'h>(_hs, v: Value<'h>) -> bool {
+    fn is_object "protobj:object?" <'h>(_hs, v: Value<'h>) -> bool {
         v.is_object()
     }
 
@@ -1281,10 +1281,10 @@ pub static BUILTINS: &[(&'static str, BuiltinFn)] = &[
 
     // object methods
     ("protobj:make-root-shype", make_root_shype),
-    ("protobj:is-shype", is_shype),
+    ("protobj:shype?", is_shype),
     ("protobj:shype-parent", shype_parent),
     ("protobj:make-object", make_object),
-    ("protobj:is-object", is_object),
+    ("protobj:object?", is_object),
     ("protobj:object-shype", object_shype),
     ("protobj:object-set-property", object_set_property),
     ("protobj:object-get-property", object_get_property),

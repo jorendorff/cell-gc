@@ -29,13 +29,13 @@ pub enum PropDescr {
 }
 
 impl<'h> Shype<'h> {
-    pub fn new_root() -> Shype<'h> {
-        Shype {
+    pub fn new_root(hs: &mut GcHeapSession<'h>) -> ShypeRef<'h> {
+        hs.alloc(Shype {
             parent: None,
             first_child: None,
             next_sibling: None,
             variant: ShypeVariant::Root
-        }
+        })
     }
 
     fn new_child(hs: &mut GcHeapSession<'h>, parent: ShypeRef<'h>, variant: ShypeVariant<'h>)
