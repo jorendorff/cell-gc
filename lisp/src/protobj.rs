@@ -37,32 +37,45 @@ impl<'h> Shype<'h> {
             variant: ShypeVariant::Root
         }
     }
-    pub fn new_add_prop(name: &InternedString, slotno: u32) -> Shype<'h> {
-        Shype {
-            parent: None,
+
+    fn new_child(hs: &mut GcHeapSession<'h>, parent: ShypeRef<'h>, variant: ShypeVariant<'h>)
+        -> ShypeRef<'h>
+    {
+        let shype = hs.alloc(Shype {
+            parent: Some(parent.clone()),
             first_child: None,
-            next_sibling: None,
-            variant: ShypeVariant::AddProperty(GcLeaf::new(name.clone()),
-                                               GcLeaf::new(PropDescr::Slot(slotno)))
-        }
+            next_sibling: parent.first_child(),
+            variant: variant,
+        });
+
+        parent.set_first_child(Some(shype.clone()));
+        shype
     }
 
-    pub fn new_set_proto(proto: ObjectRef<'h>) -> Shype<'h> {
-        Shype {
-            parent: None,
-            first_child: None,
-            next_sibling: None,
-            variant: ShypeVariant::SetPrototype(proto)
-        }
+    fn new_add_prop(
+        hs: &mut GcHeapSession<'h>,
+        parent: ShypeRef<'h>,
+        name: &InternedString,
+        slotno: u32,
+    ) -> ShypeRef<'h> {
+        Shype::new_child(hs, parent, ShypeVariant::AddProperty(GcLeaf::new(name.clone()),
+                                                               GcLeaf::new(PropDescr::Slot(slotno))))
     }
 
-    pub fn new_become_proto(target_shype: ShypeRef<'h>) -> Shype<'h> {
-        Shype {
-            parent: None,
-            first_child: None,
-            next_sibling: None,
-            variant: ShypeVariant::BecomePrototype(target_shype)
-        }
+    fn new_set_proto(
+        hs: &mut GcHeapSession<'h>,
+        parent: ShypeRef<'h>,
+        proto: ObjectRef<'h>,
+    ) -> ShypeRef<'h> {
+        Shype::new_child(hs, parent, ShypeVariant::SetPrototype(proto))
+    }
+
+    fn new_become_proto(
+        hs: &mut GcHeapSession<'h>,
+        parent: ShypeRef<'h>,
+        target_shype: ShypeRef<'h>,
+    ) -> ShypeRef<'h> {
+        Shype::new_child(hs, parent, ShypeVariant::BecomePrototype(target_shype))
     }
 }
 
@@ -223,15 +236,6 @@ impl<'h> ShypeRef<'h> {
         })
     }
 
-    fn add_child(&self, child: ShypeRef<'h>) -> ShypeRef<'h> {
-        assert!(child.parent().is_none());
-        assert!(child.next_sibling().is_none());
-        child.set_parent(Some(self.clone()));
-        child.set_next_sibling(self.first_child());
-        self.set_first_child(Some(child.clone()));
-        child
-    }
-
     pub fn new_object(&self, mb_proto: Option<ObjectRef<'h>>, hs: &mut GcHeapSession<'h>)
          -> ObjectRef<'h>
     {
@@ -283,10 +287,7 @@ impl<'h> ShypeRef<'h> {
         }
 
         // Create a SetPrototype(proto) and add it as a child shype.
-        let shype = hs.alloc(Shype::new_set_proto(proto));
-        self.add_child(shype.clone());
-
-        (shype, true)
+        (Shype::new_set_proto(hs, self.clone(), proto), true)
     }
 
     pub fn get_own_property(&self, name: &InternedString) -> Option<(ShypeRef<'h>, u32)> {
@@ -338,10 +339,7 @@ impl<'h> ShypeRef<'h> {
 
         // Otherwise, create a new property shype as a child.
         let slot = obj.num_slots();
-        let shype = hs.alloc(Shype::new_add_prop(name, slot));
-        self.add_child(shype.clone());
-
-        (shype, slot, true)
+        (Shype::new_add_prop(hs, self.clone(), name, slot), slot, true)
     }
 
     pub fn own_property_names(&self) -> Vec<Value<'h>> {
@@ -415,10 +413,7 @@ impl<'h> ShypeRef<'h> {
         }
 
         // Otherwise, add a child BecomePrototype shype.
-        let shype = hs.alloc(Shype::new_become_proto(target_shype));
-        self.add_child(shype.clone());
-
-        (shype, true)
+        (Shype::new_become_proto(hs, self.clone(), target_shype), true)
     }
 }
 
