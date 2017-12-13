@@ -5,6 +5,7 @@ license = "MIT"
 name = "cell-gc"
 repository = "https://github.com/jorendorff/cell-gc/"
 version = "0.2.1"
+readme = "README.md"
 
 [dependencies]
 
