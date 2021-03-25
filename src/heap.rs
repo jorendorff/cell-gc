@@ -76,16 +76,19 @@
 use gc_ref::{GcFrozenRef, GcRef};
 use marking::{MarkingTracer, mark};
 use pages::{self, PageSet, PageSetRef, TypedPage, UninitializedAllocation};
+use poison;
 use ptr::{Pointer, UntypedPointer};
 use signposts;
+use ssb::StoreBuffer;
 use std::any::TypeId;
+use std::cell::RefCell;
 use std::cmp;
 use std::collections::HashMap;
 use std::hash::{Hasher, BuildHasher};
 use std::marker::PhantomData;
 use std::mem;
 use std::sync::{Arc, Mutex, Weak};
-use traits::{InHeap, IntoHeapAllocation};
+use traits::{InHeap, IntoHeapAllocation, IntoHeapBase, Tracer};
 
 /// A universe in which you can store values that implement
 /// `IntoHeapAllocation`. The values are mutable and they can point to each
@@ -96,6 +99,12 @@ pub struct GcHeap {
     /// This owns the page sets, which own the pages. The cleanup when you drop
     /// a `GcHeap` is done by `PageSet::drop`.
     page_sets: HashMap<TypeId, PageSet, BuildTrivialHasher>,
+
+    /// The store buffer remembers the cross generational edges from the tenured
+    /// heap into the nursery heap. (Because we use a non-moving, sticky mark
+    /// bit implementation of generational GC, these are only conceptually
+    /// different heaps, not physically different heaps.)
+    nursery_store_buffer: RefCell<StoreBuffer>,
 
     /// Tracer for the mark phase of GC.
     marking_tracer: Option<MarkingTracer>,
@@ -116,6 +125,9 @@ pub struct GcHeap {
     /// sweep and reset the counter to some new value based on the heap's
     /// current size, `self.alloc_counter`.
     gc_counter: usize,
+
+    /// TODO FITZGEN
+    nth_gc: usize,
 
     /// The number of objects allocated in the heap.
     ///
@@ -160,8 +172,9 @@ where
 }
 
 /// See `Heap::gc_counter` and `Heap::alloc_counter`.
-const GC_COUNTER_START: usize = 2048;
+const GC_COUNTER_START: usize = 8192;
 const MIN_ALLOCS_BEFORE_GC: usize = GC_COUNTER_START;
+const NURSERY_COLLECTIONS_PER_FULL_GC: usize = 7;
 
 impl GcHeap {
     /// Create a new, empty heap.
@@ -169,8 +182,10 @@ impl GcHeap {
         GcHeap {
             page_sets: HashMap::with_hasher(BuildTrivialHasher),
             marking_tracer: Some(MarkingTracer::default()),
+            nursery_store_buffer: RefCell::new(StoreBuffer::default()),
             dropped_frozen_ptrs: Arc::new(Mutex::new(Vec::new())),
             gc_counter: GC_COUNTER_START,
+            nth_gc: 0,
             alloc_counter: 0,
         }
     }
@@ -269,12 +284,21 @@ impl GcHeap {
     /// same time.
     pub(crate) fn with_marking_tracer<F, O>(&mut self, mut f: F) -> O
     where
-        F: FnMut(&mut Self, &mut MarkingTracer) -> O,
+        F: FnMut(&mut MarkingTracer) -> O,
     {
         let mut tracer = self.take_marking_tracer();
-        let retval = f(self, &mut tracer);
+        let retval = f(&mut tracer);
         self.replace_marking_tracer(tracer);
         retval
+    }
+
+    /// Invoke the given function with the nursery store buffer.
+    pub(crate) fn with_nursery_store_buffer<F, O>(&self, mut f: F) -> O
+    where
+        F: FnMut(&mut StoreBuffer) -> O,
+    {
+        let mut store_buffer = self.nursery_store_buffer.borrow_mut();
+        f(&mut *store_buffer)
     }
 
     /// Clear all mark bits in preparation for GC.
@@ -285,6 +309,13 @@ impl GcHeap {
     pub(crate) unsafe fn clear_mark_bits(&mut self, roots: &mut Vec<UntypedPointer>) {
         for page_set in self.page_sets.values_mut() {
             page_set.clear_mark_bits(roots);
+        }
+    }
+
+    /// Walk the pages and collect all of the roots.
+    pub(crate) fn mark_and_collect_roots(&mut self, roots: &mut Vec<UntypedPointer>) {
+        for page_set in self.page_sets.values_mut() {
+            page_set.mark_and_collect_roots(roots);
         }
     }
 
@@ -304,10 +335,27 @@ impl GcHeap {
         }
     }
 
-    /// Perform GC.
-    fn gc(&mut self) {
+    fn gc_impl(&mut self, nursery: bool) {
+        println!("GC: nursery? {}", nursery);
+        self.nth_gc += 1;
+
         self.unpin_dropped_ptrs();
-        mark(self);
+
+        let mut roots = vec![];
+        if nursery {
+            self.mark_and_collect_roots(&mut roots);
+            let mut store_buffer = self.nursery_store_buffer.borrow_mut();
+            unsafe {
+                roots.extend(store_buffer.drain());
+            }
+        } else {
+            unsafe {
+                let _sp = signposts::ClearMarkBits::new();
+                self.clear_mark_bits(&mut roots);
+            }
+        }
+
+        mark(self, roots);
 
         let _sp = signposts::Sweeping::new();
 
@@ -324,10 +372,42 @@ impl GcHeap {
         );
         self.alloc_counter -= num_swept;
 
-        // Schedule a GC for when the heap reaches 4x its current size. Unless
-        // the heap is really small, in which case we don't want to set the gc
-        // counter get to some ridiculously low number.
+        println!("num_swept = {}", num_swept);
+
+        println!("gc_counter before = {}", self.gc_counter);
+        // self.gc_counter = if nursery {
+        //     // Delay full GC for another 4x the number of objects that this
+        //     // nursery collection swept. Therefore, if nursery collection is
+        //     // really effective, full GC is very delayed, and if nursery
+        //     // collection is ineffective, we will do a full GC sooner.
+        //     cmp::max(self.gc_counter + num_swept * 4, self.alloc_counter)
+        // } else {
+        //     // Schedule a GC for when the heap reaches 4x its current
+        //     // size. Unless the heap is really small, in which case we don't
+        //     // want to set the gc counter get to some ridiculously low number.
+        //     cmp::max(self.alloc_counter * 3, MIN_ALLOCS_BEFORE_GC)
+        // };
         self.gc_counter = cmp::max(self.alloc_counter * 3, MIN_ALLOCS_BEFORE_GC);
+
+        println!("gc_counter after = {}", self.gc_counter);
+    }
+
+    fn scheduled_gc(&mut self) {
+        if self.nth_gc % (NURSERY_COLLECTIONS_PER_FULL_GC + 1) == NURSERY_COLLECTIONS_PER_FULL_GC {
+            self.tenured_gc();
+        } else {
+            self.nursery_gc();
+        }
+    }
+
+    /// Do a gc of the full heap.
+    fn tenured_gc(&mut self) {
+        self.gc_impl(false);
+    }
+
+    /// Do a nursery collection.
+    fn nursery_gc(&mut self) {
+        self.gc_impl(true);
     }
 
     fn is_empty(&self) -> bool {
@@ -407,13 +487,13 @@ impl<'h> GcHeapSession<'h> {
     fn try_slow_alloc<T: IntoHeapAllocation<'h>>(&mut self, value: T) -> Option<T::Ref> {
         self.heap.gc_counter = self.heap.gc_counter.saturating_sub(1);
         if self.heap.gc_counter == 0 {
-            self.heap.gc();
+            self.heap.scheduled_gc();
         }
         unsafe {
             let allocation = match self.get_page_set::<T::In>().try_alloc() {
                 Some(p) => p,
                 None => {
-                    self.heap.gc();
+                    self.heap.tenured_gc();
                     match self.get_page_set::<T::In>().try_alloc() {
                         Some(p) => p,
                         None => return None,
@@ -442,7 +522,7 @@ impl<'h> GcHeapSession<'h> {
 
     /// Do garbage collection.
     pub fn force_gc(&mut self) {
-        self.heap.gc();
+        self.heap.tenured_gc();
     }
 
     /// Freeze a reference to a GC thing so that it can outlive the current GC
@@ -478,7 +558,6 @@ impl<'h> GcHeapSession<'h> {
         self.heap.is_empty()
     }
 }
-
 
 // TrivialHasher ///////////////////////////////////////////////////////////////
 
@@ -531,3 +610,87 @@ impl BuildHasher for BuildTrivialHasher {
     }
 }
 
+/// TODO FITZGEN
+pub trait CanGc {
+    /// TODO FITZGEN
+    fn can_gc() -> bool;
+}
+
+/// TODO FITZGEN
+pub enum NoGc {}
+
+impl CanGc for NoGc {
+    #[inline(always)]
+    fn can_gc() -> bool {
+        false
+    }
+}
+
+/// TODO FITZGEN
+pub enum YesGc {}
+
+impl CanGc for YesGc {
+    #[inline(always)]
+    fn can_gc() -> bool {
+        true
+    }
+}
+
+/// The post-write barrier to remember cross generational tenured to nursery
+/// edges.
+///
+/// target.edge = written;
+#[inline(always)]
+pub unsafe fn post_write_barrier<'h, T, U, AllowGc>(target: &Pointer<T::In>, written: &U::In)
+where
+    T: IntoHeapAllocation<'h>,
+    U: IntoHeapBase,
+    AllowGc: CanGc,
+{
+    poison::assert_is_not_poisoned(target.as_raw());
+    if pages::get_mark_bit(*target) {
+        post_write_barrier_slow::<T, U, AllowGc>(target, written);
+    }
+}
+
+#[inline(never)]
+unsafe fn post_write_barrier_slow<'h, T, U, AllowGc>(target: &Pointer<T::In>, written: &U::In)
+where
+    T: IntoHeapAllocation<'h>,
+    U: IntoHeapBase,
+    AllowGc: CanGc,
+{
+    struct Remember<'a> {
+        store_buffer: &'a mut StoreBuffer,
+        need_gc: bool,
+    }
+
+    impl<'a> Tracer for Remember<'a> {
+        fn visit<U: InHeap>(&mut self, ptr: Pointer<U>) {
+            unsafe {
+                poison::assert_is_not_poisoned(ptr.as_raw());
+                if !pages::get_mark_bit(ptr) {
+                    self.need_gc |= self.store_buffer.insert::<U>(ptr);
+                }
+            }
+        }
+    }
+
+    poison::assert_is_not_poisoned(target.as_raw());
+    let heap = GcHeap::from_allocation::<T>(*target) as *mut GcHeap;
+
+    let need_gc = (*heap).with_nursery_store_buffer(|sb| {
+        let mut remember = Remember {
+            store_buffer: sb,
+            need_gc: false,
+        };
+
+        written.trace(&mut remember);
+
+        remember.need_gc
+    });
+
+    if AllowGc::can_gc() && need_gc {
+        (*heap).nursery_gc();
+    }
+}

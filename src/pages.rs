@@ -8,6 +8,7 @@ use std::any::TypeId;
 use std::{cmp, mem, ptr};
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
+use poison;
 use traits::{InHeap, Tracer};
 
 /// Stores mark bits, pin counts, and an "am I in use?" bit for heap allocations.
@@ -152,7 +153,6 @@ pub struct PageHeader {
     type_id: TypeId,
     mark_fn: unsafe fn(UntypedPointer, &mut MarkingTracer),
     freelist: *mut (),
-    allocation_size: usize,
 }
 
 impl PageHeader {
@@ -194,38 +194,69 @@ impl PageHeader {
         (self as *const PageHeader as usize) + Self::begin_offset()
     }
 
-    fn end(&self) -> usize {
-        let capacity = (PAGE_SIZE - Self::begin_offset()) / self.allocation_size;
-        self.begin() + capacity * self.allocation_size
+    /// Get a pointer just after the last object this page has capacity for.
+    ///
+    /// # Safety
+    ///
+    /// If the provided allocation size is incorrect, then the resulting pointer
+    /// can be incorrect.
+    unsafe fn end(&self, allocation_size: usize) -> usize {
+        let capacity = (PAGE_SIZE - Self::begin_offset()) / allocation_size;
+        self.begin() + capacity * allocation_size
     }
 
-    pub fn clear_mark_bits(&mut self, roots: &mut Vec<UntypedPointer>) {
+    /// Clear this page's mark bits.
+    ///
+    /// # Safety
+    ///
+    /// If the provided allocation size is incorrect, then this method could
+    /// read and write the incorrect memory locations.
+    pub unsafe fn clear_mark_bits(&mut self, allocation_size: usize, roots: &mut Vec<UntypedPointer>) {
         let mut addr = self.begin();
-        let end = self.end();
+        let end = self.end(allocation_size);
         while addr < end {
-            let mark_word = unsafe { &mut *(addr as *mut MarkWord) };
-            mark_word.unmark();
+            let mark_word = &mut *(addr as *mut MarkWord);
             if mark_word.is_pinned() {
-                let ptr =
-                    unsafe {
-                        UntypedPointer::new((addr + mem::size_of::<MarkWord>()) as *const ())
-                    };
+                mark_word.mark();
+                let ptr = UntypedPointer::new((addr + mem::size_of::<MarkWord>()) as *const ());
+                roots.push(ptr);
+            } else {
+                mark_word.unmark();
+            }
+            addr += allocation_size;
+        }
+    }
+
+    /// Collect all the roots in this page.
+    pub unsafe fn mark_and_collect_roots(&mut self, allocation_size: usize, roots: &mut Vec<UntypedPointer>) {
+        let mut addr = self.begin();
+        let end = self.end(allocation_size);
+        while addr < end {
+            let mark_word = &mut *(addr as *mut MarkWord);
+            if mark_word.is_pinned() {
+                mark_word.mark();
+                let ptr = UntypedPointer::new((addr + mem::size_of::<MarkWord>()) as *const ());
                 roots.push(ptr);
             }
-            addr += self.allocation_size;
+            addr += allocation_size;
         }
     }
 
     /// True if nothing on this page is allocated.
-    pub fn is_empty(&self) -> bool {
+    ///
+    /// # Safety
+    ///
+    /// If the provided allocation size is incorrect, then this method could
+    /// read incorrect memory locations.
+    pub unsafe fn is_empty(&self, allocation_size: usize) -> bool {
         let mut addr = self.begin();
-        let end = self.end();
+        let end = self.end(allocation_size);
         while addr < end {
-            let mark_word = unsafe { &mut *(addr as *mut MarkWord) };
+            let mark_word = &mut *(addr as *mut MarkWord);
             if mark_word.is_allocated() {
                 return false;
             }
-            addr += self.allocation_size;
+            addr += allocation_size;
         }
         true
     }
@@ -392,6 +423,8 @@ impl<U: InHeap> TypedPage<U> {
         MarkWord::from_ptr(ptr, |mw| {
             debug_assert!(!mw.is_allocated());
             mw.set_allocated();
+            // Clear the sticky bit, if it was stuck.
+            mw.unmark();
         });
         UninitializedAllocation { ptr }
     }
@@ -407,11 +440,7 @@ impl<U: InHeap> TypedPage<U> {
             if mw.is_allocated() && !mw.is_marked() {
                 let object_ptr = (addr + mem::size_of::<MarkWord>()) as *mut U;
                 ptr::drop_in_place(object_ptr);
-                if cfg!(debug_assertions) || cfg!(test) {
-                    // Paint the unused memory with a known-bad value.
-                    const SWEPT_BYTE: u8 = 0xf4;
-                    ptr::write_bytes(object_ptr, SWEPT_BYTE, 1);
-                }
+                poison::paint::swept(object_ptr);
                 mw.clear_allocated();
                 self.add_to_free_list(object_ptr);
                 num_swept += 1;
@@ -438,7 +467,7 @@ unsafe fn sweep_entry_point<U: InHeap>(header: &mut PageHeader) -> usize {
 /// All pages in this collection have matching `.heap` and `.mark_fn` fields.
 pub struct PageSet {
     heap: *mut GcHeap,
-
+    allocation_size: usize,
     sweep_fn: unsafe fn(&mut PageHeader) -> usize,
 
     /// Total number of pages in the following lists.
@@ -487,7 +516,7 @@ impl Drop for PageSet {
                 unsafe {
                     let mut roots_to_ignore = vec![];
                     let next = (*page).next_page;
-                    (*page).clear_mark_bits(&mut roots_to_ignore);
+                    (*page).clear_mark_bits(self.allocation_size, &mut roots_to_ignore);
                     (self.sweep_fn)(&mut *page); // drop all objects remaining in the page
                     ptr::drop_in_place(page); // drop the header
                     Vec::from_raw_parts(page as *mut u8, 0, PAGE_SIZE); // free the page
@@ -507,6 +536,7 @@ impl PageSet {
     pub unsafe fn new<'h, U: InHeap>(heap: *mut GcHeap) -> PageSet {
         PageSet {
             heap,
+            allocation_size: TypedPage::<U>::allocation_size(),
             sweep_fn: sweep_entry_point::<U>,
             page_count: 0,
             full_pages: ptr::null_mut(),
@@ -548,7 +578,14 @@ impl PageSet {
     ///
     /// This must be called only at the beginning of a GC cycle.
     pub unsafe fn clear_mark_bits(&mut self, roots: &mut Vec<UntypedPointer>) {
-        self.each_page_mut(|page| page.clear_mark_bits(roots));
+        let size = self.allocation_size;
+        self.each_page_mut(|page| page.clear_mark_bits(size, roots));
+    }
+
+    /// Collect all the roots in this page set.
+    pub fn mark_and_collect_roots(&mut self, roots: &mut Vec<UntypedPointer>) {
+        let size = self.allocation_size;
+        self.each_page_mut(|page| unsafe { page.mark_and_collect_roots(size, roots); });
     }
 
     /// Sweep all unmarked objects from all pages and return the number of
@@ -595,7 +632,9 @@ impl PageSet {
     /// True if nothing is allocated in this set of pages.
     pub fn all_pages_are_empty(&self) -> bool {
         let mut empty = true;
-        self.each_page(|page| { empty &= page.is_empty(); });
+        self.each_page(|page| {
+            empty &= unsafe { page.is_empty(self.allocation_size) };
+        });
         empty
     }
 
@@ -720,7 +759,6 @@ impl<'a, U: InHeap> PageSetRef<'a, U> {
                         type_id: heap_type_id::<U>(),
                         mark_fn: mark_entry_point::<U>,
                         freelist: ptr::null_mut(),
-                        allocation_size: TypedPage::<U>::allocation_size()
                     },
                     allocations: PhantomData,
                 },

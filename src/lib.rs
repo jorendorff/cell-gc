@@ -237,11 +237,13 @@ mod gc_leaf;
 pub mod collections;
 pub mod ptr;
 mod marking;
+pub mod poison;
 mod signposts;
+mod ssb;
 
 pub use gc_leaf::GcLeaf;
 pub use gc_ref::{GcFrozenRef, GcRef};
-pub use heap::{GcHeap, GcHeapSession, with_heap};
+pub use heap::{GcHeap, GcHeapSession, with_heap, post_write_barrier, YesGc};
 
 /// Return the number of allocations of a given type that fit in a "page".
 /// (Unstable. This is a temporary hack for testing.)

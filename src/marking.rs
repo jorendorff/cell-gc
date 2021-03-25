@@ -2,21 +2,17 @@
 
 use heap::GcHeap;
 use pages::{self, PageHeader};
+use poison;
 use ptr::{Pointer, UntypedPointer};
 use signposts;
 use traits::{InHeap, Tracer};
 
 /// Perform all the marking for a collection.
-pub fn mark<'h>(heap: &mut GcHeap) {
+pub fn mark<'h>(heap: &mut GcHeap, roots: Vec<UntypedPointer>) {
     let _sp = signposts::Marking::new();
 
-    heap.with_marking_tracer(|heap, mut tracer| {
-        let mut roots = vec![];
-        unsafe {
-            heap.clear_mark_bits(&mut roots);
-        }
-
-        for ptr in roots {
+    heap.with_marking_tracer(|mut tracer| {
+        for &ptr in &roots {
             unsafe {
                 (*PageHeader::find(ptr)).mark(ptr, &mut tracer);
             }
@@ -86,6 +82,10 @@ impl<'h> MarkingTracer {
 
 impl Tracer for MarkingTracer {
     fn visit<U: InHeap>(&mut self, ptr: Pointer<U>) {
+        unsafe {
+            poison::assert_is_not_poisoned(ptr.as_raw());
+        }
+
         let is_marked = unsafe { pages::get_mark_bit(ptr) };
         if is_marked {
             return;

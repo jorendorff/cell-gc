@@ -1,6 +1,7 @@
 //! Collections for use with GC references.
 
 use gc_ref::GcRef;
+use heap::{NoGc, post_write_barrier};
 use ptr::Pointer;
 use std::cmp::Ordering;
 use std::hash::{Hash, Hasher};
@@ -117,6 +118,10 @@ impl<'h, T: IntoHeap<'h>> VecRef<'h, T> {
     ///
     /// Like `with_storage`, except the caller must ensure that no other
     /// references to the vector exist. It still amounts to: don't nest.
+    ///
+    /// Additionally, it is the responsibility of the caller to ensure that
+    /// generational post-write barriers are invoked on the the storage's
+    /// elements, if they are modified.
     unsafe fn with_storage_mut<'v, 'b, R, F>(&'v self, f: F) -> R
     where
         F: FnOnce(&'b mut Vec<T::In>) -> R,
@@ -167,8 +172,13 @@ impl<'h, T: IntoHeap<'h>> VecRef<'h, T> {
     pub fn set(&self, index: usize, value: T) {
         let u = value.into_heap();
         unsafe {
-            self.with_storage_mut(|v| v[index] = u);
-        }
+            self.with_storage_mut(|v| {
+                v[index] = u;
+                // We can't allow this post-barrier to trigger a nursery
+                // collection because it might re-enter this `with_storage`.
+                post_write_barrier::<Vec<T>, T, NoGc>(&self.0.ptr(), &v[index]);
+            })
+        };
     }
 
     /// The capacity of this vector.
@@ -225,7 +235,12 @@ impl<'h, T: IntoHeap<'h>> VecRef<'h, T> {
     pub fn insert(&self, index: usize, element: T) {
         let u = element.into_heap();
         unsafe {
-            self.with_storage_mut(|v| v.insert(index, u));
+            self.with_storage_mut(|v| {
+                v.insert(index, u);
+                // We can't allow this post-barrier to trigger a nursery
+                // collection because it might re-enter this `with_storage`.
+                post_write_barrier::<Vec<T>, T, NoGc>(&self.0.ptr(), &v[index]);
+            });
         }
     }
 
@@ -250,7 +265,12 @@ impl<'h, T: IntoHeap<'h>> VecRef<'h, T> {
     pub fn push(&self, value: T) {
         let u = value.into_heap();
         unsafe {
-            self.with_storage_mut(|v| v.push(u));
+            self.with_storage_mut(|v| {
+                v.push(u);
+                // We can't allow this post-barrier to trigger a nursery
+                // collection because it might re-enter this `with_storage`.
+                post_write_barrier::<Vec<T>, T, NoGc>(&self.0.ptr(), v.last().unwrap());
+            });
         }
     }
 
@@ -269,7 +289,15 @@ impl<'h, T: IntoHeap<'h>> VecRef<'h, T> {
         let mut tmp: Vec<T::In> = vec![];
         unsafe {
             other.with_storage_mut(|src| mem::swap(src, &mut tmp));
-            self.with_storage_mut(|dest| dest.append(&mut tmp));
+            self.with_storage_mut(|dest| {
+                let n = dest.len();
+                dest.append(&mut tmp);
+                for x in dest.iter().skip(n) {
+                    // We can't allow this post-barrier to trigger a nursery
+                    // collection because it might re-enter this `with_storage`.
+                    post_write_barrier::<Vec<T>, T, NoGc>(&self.0.ptr(), x);
+                }
+            });
         }
     }
 
